@@ -60,6 +60,14 @@ async def get_library():
     return JSONResponse(lib)
 
 
+@app.post("/library/refresh")
+async def refresh_library():
+    lib = await device_service.refresh_library()
+    if lib is None:
+        raise HTTPException(status_code=404, detail="No iPod selected or library not available")
+    return JSONResponse(lib)
+
+
 @app.get("/devices/events")
 async def device_events(request: Request):
     async def stream():
