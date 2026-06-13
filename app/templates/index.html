@@ -215,6 +215,13 @@
     }
     .refresh-btn:hover { color: var(--text); border-color: var(--dim); }
     .refresh-btn.spinning { animation: spin .7s linear infinite; }
+    .eject-btn {
+      background: none; border: 1px solid var(--border); color: var(--dim);
+      border-radius: 5px; padding: 3px 7px; cursor: pointer; font-size: 13px;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      transition: color .15s, border-color .15s;
+    }
+    .eject-btn:hover { color: #e06c6c; border-color: #e06c6c; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ── Player ─────────────────────────────────────────────────── */
@@ -768,9 +775,9 @@
   <header class="header">
 
     <!-- iPod icon; becomes a clickable picker when multiple iPods are connected -->
-    <div class="ipod-icon-wrap" :class="{ 'has-picker': ipodDevices.length > 0 }">
+    <div class="ipod-icon-wrap" :class="{ 'has-picker': devices.length > 0 }">
       <div class="ipod-icon"
-           @click="ipodDevices.length > 0 && (showDevicePicker = !showDevicePicker)"
+           @click="devices.length > 0 && (showDevicePicker = !showDevicePicker)"
            @keydown.escape.window="showDevicePicker = false">
         <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
           <rect x="5" y="2" width="18" height="24" rx="3.5" stroke="#aaa" stroke-width="1.5" fill="none"/>
@@ -789,12 +796,12 @@
            x-show="showDevicePicker"
            @click.outside="showDevicePicker = false"
            style="display:none">
-        <template x-for="d in ipodDevices" :key="d.devnode">
+        <template x-for="d in devices" :key="d.devnode">
           <div class="dp-row"
                :class="{ active: d.devnode === selectedDevnode }"
                @click.stop="selectDevice(d.devnode)">
             <span class="dp-name" x-text="d.devname"></span>
-            <span class="dp-meta" x-text="(d.size_bytes / 1073741824).toFixed(0) + ' GB ' + d.fstype"></span>
+            <span class="dp-meta" x-text="(d.size_bytes / 1073741824).toFixed(0) + ' GB ' + d.fstype + (d.mounted ? '' : ' — not mounted')"></span>
           </div>
         </template>
       </div>
@@ -803,16 +810,18 @@
     <!-- Device name + subtitle + refresh -->
     <div style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
       <div class="device-info">
-      <h1 x-text="library ? library.ipod_name : (ipodDevices.length ? (selectedDevice?.devname || 'nasTune') : 'nasTune')"></h1>
+      <h1 x-text="library ? library.ipod_name : (devices.length ? (selectedDevice?.devname || 'nasTune') : 'nasTune')"></h1>
       <div class="sub" x-show="library"
            x-text="library ? library.device.model_name + ' · ' + library.fs_total_gb + ' GB ' + library.fs_type + ' · UUID ' + library.device.uuid : ''">
       </div>
       <div class="sub" x-show="!library"
-           x-text="libraryLoading ? 'Loading library…' : (libraryError ? 'Error loading library' : (ipodDevices.length ? 'Select a device above' : 'No iPods connected'))">
+           x-text="libraryLoading ? 'Loading library…' : (libraryError ? 'Error loading library' : (selectedDevice && !selectedDevice.mounted ? 'Click to mount iPod' : (devices.length ? 'Select a device above' : 'No iPods connected')))">
       </div>
     </div>
       <button class="refresh-btn" x-show="library" :class="{ spinning: libraryRefreshing }"
               @click="refreshLibrary" :disabled="libraryRefreshing" title="Reload library from iPod">&#x21BB;</button>
+      <button class="eject-btn" x-show="selectedDevnode" @click="ejectDevice"
+              title="Eject iPod">&#x23CF;</button>
     </div>
 
     <!-- Storage bar (only when library loaded) -->
@@ -820,7 +829,7 @@
     <div class="storage-wrap" x-show="library">
       <div class="storage-labels">
         <span x-text="(library?.fs_used_gb || 0) + ' GB used'"></span>
-        <span x-text="(library?.fs_total_gb || 0) + ' GB'"></span>
+        <span x-text="((library?.fs_total_gb || 0) - (library?.fs_used_gb || 0)).toFixed(2) + ' GB free'"></span>
       </div>
       <div class="storage-bar">
         <div class="storage-fill" :style="'width:' + (library?.used_pct || 0) + '%'"></div>
@@ -855,7 +864,7 @@
   <div style="flex:1; overflow:hidden; display:flex; flex-direction:column;">
 
     <!-- No iPods connected -->
-    <div x-show="!libraryLoading && !library && ipodDevices.length === 0"
+    <div x-show="!libraryLoading && !library && devices.length === 0"
          style="flex:1; display:flex; align-items:center; justify-content:center;">
       <div class="empty">
         <span class="empty-icon">&#x1F3B5;</span>
@@ -1158,6 +1167,25 @@
       async selectDevice(devnode) {
         if (this.selectedDevnode === devnode) { this.showDevicePicker = false; return; }
         this.showDevicePicker = false;
+        // Mount first if needed
+        const device = this.devices.find(d => d.devnode === devnode);
+        if (device && !device.mounted) {
+          this.libraryLoading = true;
+          this.libraryError = null;
+          const mr = await fetch('/devices/mount', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ devnode }),
+          });
+          if (!mr.ok) {
+            const d = await mr.json().catch(() => ({}));
+            this.libraryError = d.detail || 'Mount failed';
+            this.libraryLoading = false;
+            return;
+          }
+          // SSE will update device list; wait briefly then proceed
+          await new Promise(r => setTimeout(r, 500));
+        }
         this.selectedDevnode = devnode;
         this.library = null;
         this.selectedArtist = null;
@@ -1457,6 +1485,32 @@
         this.playerContext = { artist: this.selectedArtist || '', album: al.name };
         this.playerArtUrl = this.artUrl(al);
         this._loadAndPlay();
+      },
+
+      async ejectDevice() {
+        if (!this.selectedDevnode) return;
+        if (this.playerVisible) this.stopPlayback();
+        try {
+          const r = await fetch('/devices/eject', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ devnode: this.selectedDevnode }),
+          });
+          if (!r.ok) {
+            const data = await r.json().catch(() => ({}));
+            alert(data.detail || 'Eject failed');
+            return;
+          }
+          this.library = null;
+          this.selectedArtist = null;
+          this.selectedAlbum = null;
+          this.selectedTrack = null;
+          this.albumArtUrl = null;
+          this.selectedDevnode = null;
+          await this.loadDevices();
+        } catch (e) {
+          alert('Eject failed: ' + e.message);
+        }
       },
 
       stopPlayback() {
