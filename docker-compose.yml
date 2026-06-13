@@ -8,7 +8,8 @@ services:
       - /dev:/dev
       - /run/udev:/run/udev:ro
       - /mnt/music:/music:ro  # NAS music share — read-only
-      - ./ipod:/mnt/ipod   # iPod mount point shared with host
+      - ./ipod:/mnt/ipod       # iPod mount point shared with host
+      - ./data:/data           # persistent SQLite database
     devices:
       - /dev/bus/usb
     environment:
