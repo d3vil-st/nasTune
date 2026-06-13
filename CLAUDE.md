@@ -26,8 +26,9 @@ The backend is built around [gpod-utils](https://github.com/d3vil-st/gpod-utils)
 | ASGI server | **Uvicorn** | Minimal, production-ready |
 | Templating | **Jinja2** | Server-side HTML, no JS build step |
 | Frontend reactivity | **HTMX** | Attribute-driven partial page updates, SSE support |
-| Minor client interactivity | **Alpine.js** (single CDN script tag) | Checkboxes, toggles, modals — no build step |
+| Client-side state | **Alpine.js** (single CDN script tag) | 3-pane browser state, modals, detail panel — no build step |
 | iPod CLI backend | **gpod-utils** (`gpod-ls`, `gpod-cp`, `gpod-rm`) | Wraps libgpod, supports iPod Classic and iPod 5 |
+| Album art extraction | **mutagen** | Pure-Python; reads ALAC/M4A `covr`, MP3 `APIC`, FLAC picture blocks |
 | Device discovery | **udev + lsblk** via `asyncio.subprocess` | Detect and identify connected iPods |
 | Music library index | **Beets** (`beet ls --format json`) or **Plex API** | NAS library metadata without re-indexing |
 | Container runtime | **Docker** with `/dev` mounted and `SYS_ADMIN` cap | Required for USB access and mount syscalls |
@@ -39,63 +40,37 @@ Do **not** introduce Node.js, npm, webpack, or any frontend build pipeline. All 
 ## Repository structure
 
 ```
-ipod-nas-webui/
-├── CLAUDE.md                  # This file
-├── Dockerfile
+nasTune/
+├── CLAUDE.md
+├── Dockerfile                 # Ubuntu 26.04 base; installs gpod-utils deb + Python venv
 ├── docker-compose.yml
+├── requirements.txt           # fastapi, uvicorn[standard], jinja2, python-multipart, mutagen
 ├── app/
-│   ├── main.py                # FastAPI app entrypoint
-│   ├── routers/
-│   │   ├── devices.py         # iPod discovery and mount endpoints
-│   │   ├── library.py         # NAS music library browsing
-│   │   ├── ipod.py            # iPod content read/write (gpod-ls, gpod-cp, gpod-rm)
-│   │   └── sync.py            # Diff + sync orchestration
-│   ├── services/
-│   │   ├── gpod.py            # Async wrappers around gpod-utils CLI
-│   │   ├── udev.py            # USB device detection
-│   │   ├── mounter.py         # Mount/unmount iPod block devices
-│   │   └── beets.py           # Beets/Plex library indexing
-│   ├── templates/
-│   │   ├── base.html
-│   │   ├── index.html         # Dashboard: connected devices
-│   │   ├── ipod.html          # iPod content browser
-│   │   ├── library.html       # NAS library browser
-│   │   └── sync.html          # Diff view + sync controls
-│   └── static/
-│       └── style.css          # Minimal custom CSS only
-├── tests/
-└── requirements.txt
+│   ├── main.py                # FastAPI app; GET / (browser), GET /artwork (art extraction)
+│   └── services/
+│       ├── gpod.py            # Runs gpod-ls, parses JSON → nested artist/album/track dicts
+│       └── artwork.py         # mutagen-based artwork extractor (M4A/MP3/FLAC)
+└── app/templates/
+    └── index.html             # Full iTunes-like 3-pane dark UI (Alpine.js, inline CSS/JS)
 ```
 
 ---
 
 ## Docker setup
 
-```yaml
-# docker-compose.yml
-services:
-  ipodweb:
-    build: .
-    privileged: true            # required for mount syscalls
-    volumes:
-      - /dev:/dev
-      - /run/udev:/run/udev:ro
-      - /mnt/music:/music:ro   # NAS music share, read-only
-      - /tmp/ipod:/mnt/ipod    # iPod mount point inside container
-    ports:
-      - "8080:8080"
-    devices:
-      - /dev/bus/usb
-    restart: unless-stopped
+The Dockerfile uses `ubuntu:26.04` (matches the gpod-utils `.deb` target). It installs the pre-built `gpod-utils_1.4.4.ubuntu26.04_amd64.deb` from GitHub releases — no compilation needed. A Python venv is created at `/opt/venv`.
+
+```bash
+docker compose up --build   # build + start on port 127.0.0.1:8080
 ```
 
-The container image must include:
-- `gpod-utils` (built from source or pre-packaged)
-- `libgpod` and its dependencies
-- `udev` tools (`udevadm`, `lsblk`, `blkid`)
-- `mount` / `umount`
-- `ffmpeg` (optional, for transcoding to AAC/ALAC if needed)
-- Python 3.12+ with dependencies from `requirements.txt`
+Key docker-compose volumes:
+- `/dev:/dev` + `/dev/bus/usb` — USB device access
+- `/run/udev:/run/udev:ro` — udev event detection
+- `./ipod:/mnt/ipod` — iPod mount point (host directory shared with container)
+- `/mnt/music:/music:ro` — NAS music share (read-only)
+
+`privileged: true` is required for mount syscalls inside the container.
 
 ---
 
@@ -157,20 +132,20 @@ The container image must include:
 
 ## gpod-utils CLI reference
 
-All interaction with the iPod goes through these three commands:
+All interaction with the iPod goes through these three commands. The `IPOD_MOUNT_POINT` environment variable is read natively by gpod-utils — no explicit path argument needed.
 
 ```bash
-# List all tracks on iPod as JSON
-gpod-ls --json /mnt/ipod
+# List all tracks on iPod as JSON (IPOD_MOUNT_POINT must be set)
+gpod-ls
 
 # Copy files to iPod
-gpod-cp /mnt/ipod /music/Artist/Album/track.mp3
+gpod-cp /music/Artist/Album/track.mp3
 
 # Remove a track from iPod (by persistent ID or path)
-gpod-rm /mnt/ipod <track-id>
+gpod-rm <track-id>
 ```
 
-Always check gpod-utils documentation for exact flags — the `--json` flag and argument order should be verified against the installed version.
+`gpod-ls` JSON output schema: `ipod_data.device` (model, capacity, uuid) + `ipod_data.playlists.items[]` where `type == "master"` contains all tracks. Track fields include `id`, `ipod_path`, `title`, `artist`, `album`, `albumartist`, `filetype`, `bitrate`, `samplerate`, `tracklen` (ms), `track_nr`, `year`, `size`, `artwork` (bool), `rating` (0–100), `playcount`.
 
 ---
 
@@ -197,11 +172,11 @@ Expose streaming endpoints as SSE using FastAPI's `StreamingResponse` with `medi
 
 ## Frontend conventions
 
-- Use **HTMX** for all dynamic updates: `hx-get`, `hx-post`, `hx-swap`, `hx-trigger`
-- Use `hx-ext="sse"` for progress streaming (gpod-cp output)
-- Use **Alpine.js** (`x-data`, `x-show`, `x-on`) only for purely client-side UI state (modal open/close, checkbox select-all)
-- All pages are full server-rendered HTML — no JSON API needed for the UI layer (JSON endpoints are acceptable for internal use)
-- Keep CSS minimal; use a single `style.css`. A small utility CSS framework (e.g. PicoCSS or Milligram, delivered via CDN) is acceptable if it keeps custom CSS near zero
+- The current PoC uses **Alpine.js** as the primary interactivity layer — the full library JSON is embedded in the page on first load and all filtering/navigation is client-side. HTMX is reserved for future streaming features (gpod-cp progress via SSE).
+- Use **HTMX** for partial page updates and SSE streaming when implementing write operations
+- All pages are server-rendered HTML (Jinja2); the `tojson` filter must be registered manually on `templates.env.filters` — Starlette 1.3+ does not include it by default
+- **Starlette 1.3+ API change**: `TemplateResponse` signature is `(request, name, context)` — the `request` is the first positional arg, not inside the context dict
+- Keep CSS in `<style>` blocks inside the template (PoC); extract to `app/static/style.css` when the file grows unwieldy
 - No TypeScript, no React, no Vue, no bundler
 
 ---
@@ -231,15 +206,15 @@ Expose streaming endpoints as SSE using FastAPI's `StreamingResponse` with `medi
 ## Development setup (local, no Docker)
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
 # Run dev server with auto-reload
-uvicorn app.main:app --reload --port 8080
+IPOD_MOUNT_POINT=/mnt/ipod uvicorn app.main:app --reload --port 8080
 ```
 
-For local development without a real iPod, create a mock directory structure at `/tmp/ipod-mock/iPod_Control/iTunes/` with a sample iTunesDB, and point gpod-ls at it.
+`gpod-ls` must be on `PATH`. Install from the pre-built deb or build from source. Without a real iPod, the app renders an error banner showing the mount point — that's expected.
 
 ---
 
