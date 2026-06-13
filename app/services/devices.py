@@ -11,6 +11,7 @@ from app.services.fs_utils import FS_LABELS, fs_type, fs_usage
 log = logging.getLogger(__name__)
 
 MOUNT_BASE = Path(os.environ.get("IPOD_MOUNT_BASE", "/mnt/ipods"))
+AUTOMOUNT = os.environ.get("IPOD_AUTOMOUNT", "0").strip().lower() in ("1", "true", "yes")
 _IPOD_SENTINEL = "iPod_Control/iTunes/iTunesDB"
 _IPOD_FSTYPES = {"vfat", "hfsplus", "hfs", "exfat", "msdos"}
 
@@ -63,13 +64,31 @@ class DeviceService:
         self.selected: str | None = None
         self._cache: dict[str, dict] = {}          # devnode -> parsed library
         self._subscribers: set[asyncio.Queue] = set()
+        self._active_streams: dict[str, int] = {}  # devnode -> open stream count
+        self._loading: set[str] = set()            # devnodes currently running gpod-ls
+
+    # ── Stream tracking ──────────────────────────────────────────────
+
+    def stream_start(self, devnode: str) -> None:
+        self._active_streams[devnode] = self._active_streams.get(devnode, 0) + 1
+
+    def stream_end(self, devnode: str) -> None:
+        n = self._active_streams.get(devnode, 0)
+        if n > 1:
+            self._active_streams[devnode] = n - 1
+        else:
+            self._active_streams.pop(devnode, None)
+
+    def is_busy(self, devnode: str) -> bool:
+        return self._active_streams.get(devnode, 0) > 0 or devnode in self._loading
 
     async def start(self) -> None:
         debug = os.environ.get("IPOD_MOUNT_POINT")
         if debug:
             log.info("Device service: registering IPOD_MOUNT_POINT=%s as manual device", debug)
             await self._init_debug(debug)
-        log.info("Device service: starting auto-discovery poll loop (mount base: %s)", MOUNT_BASE)
+        log.info("Device service: starting auto-discovery poll loop (mount base: %s, automount: %s)",
+                 MOUNT_BASE, "enabled" if AUTOMOUNT else "disabled")
         asyncio.create_task(self._poll_loop())
 
     # ── Debug / manual mode ──────────────────────────────────────────
@@ -187,7 +206,7 @@ class DeviceService:
         if existing_mount:
             log.info("  %s already mounted at %s", devnode, existing_mount)
             mount_str = existing_mount
-        else:
+        elif AUTOMOUNT:
             mount_path = MOUNT_BASE / devname
             log.info("  Mounting %s → %s", devnode, mount_path)
             await asyncio.to_thread(mount_path.mkdir, parents=True, exist_ok=True)
@@ -195,6 +214,9 @@ class DeviceService:
             if not ok:
                 return changed
             mount_str = str(mount_path)
+        else:
+            log.debug("  %s not mounted and IPOD_AUTOMOUNT is off — skipping", devnode)
+            return changed
 
         mount = Path(mount_str)
         sentinel = mount / _IPOD_SENTINEL
@@ -312,6 +334,7 @@ class DeviceService:
             return
         log.info("Loading library for %s from %s", devnode, info.mount)
         from app.services.gpod import fetch_library
+        self._loading.add(devnode)
         try:
             lib = await fetch_library(info.mount)
             self._cache[devnode] = lib
@@ -319,6 +342,24 @@ class DeviceService:
                      devnode, lib.get("total_tracks", 0), len(lib.get("artists", [])))
         except Exception as exc:
             log.error("Failed to load library for %s: %s", devnode, exc)
+        finally:
+            self._loading.discard(devnode)
+
+    async def eject(self, devnode: str) -> None:
+        async with self._lock:
+            info = self.devices.get(devnode)
+        if not info:
+            raise KeyError(f"Unknown device: {devnode}")
+        if self.is_busy(devnode):
+            raise RuntimeError("Device has active operations — stop playback or wait for library load")
+        log.info("Ejecting %s (manual=%s)", devnode, info.manual)
+        if not info.manual:
+            proc = await asyncio.create_subprocess_exec(
+                "sync", stderr=asyncio.subprocess.PIPE
+            )
+            await proc.communicate()
+            log.info("sync complete for %s", devnode)
+        await self._remove(devnode)
 
     def subscribe(self) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue(maxsize=8)
