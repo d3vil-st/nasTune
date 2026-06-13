@@ -50,11 +50,12 @@ def _log_mount_contents(mount: Path) -> None:
 class DeviceInfo:
     devnode: str    # "/dev/sdb1" or "manual"
     devname: str    # "sdb1" or "manual"
-    mount: str      # absolute mount path
+    mount: str      # absolute mount path; "" if not yet mounted
     fstype: str     # display label e.g. "FAT32"
     size_bytes: int
     is_ipod: bool
     manual: bool = False
+    mounted: bool = True
 
 
 class DeviceService:
@@ -198,25 +199,42 @@ class DeviceService:
         if known:
             return changed
 
-        log.info("New USB storage device: %s  fstype=%s  size=%.1f GB",
-                 devnode, fstype_raw, (bd.get("size") or 0) / 1024 ** 3)
-
-        # Mount if not already mounted
+        # Decide on mount path before logging — if we can't use this device, skip silently
         existing_mount = bd.get("mountpoint")
         if existing_mount:
-            log.info("  %s already mounted at %s", devnode, existing_mount)
             mount_str = existing_mount
         elif AUTOMOUNT:
             mount_path = MOUNT_BASE / devname
-            log.info("  Mounting %s → %s", devnode, mount_path)
             await asyncio.to_thread(mount_path.mkdir, parents=True, exist_ok=True)
             ok = await self._do_mount(devnode, str(mount_path))
             if not ok:
                 return changed
             mount_str = str(mount_path)
         else:
-            log.debug("  %s not mounted and IPOD_AUTOMOUNT is off — skipping", devnode)
-            return changed
+            # Not mounted and automount is off — register as unmounted so it appears in the UI
+            size_bytes = bd.get("size") or 0
+            info = DeviceInfo(
+                devnode=devnode,
+                devname=devname,
+                mount="",
+                fstype=FS_LABELS.get(fstype_raw, fstype_raw.upper()),
+                size_bytes=size_bytes,
+                is_ipod=False,
+                mounted=False,
+            )
+            log.info("USB device visible (not mounted): %s  fstype=%s  size=%.1f GB",
+                     devnode, fstype_raw, size_bytes / 1024 ** 3)
+            async with self._lock:
+                self.devices[devnode] = info
+            self._broadcast()
+            return True
+
+        log.info("New USB storage device: %s  fstype=%s  size=%.1f GB  mount=%s",
+                 devnode, fstype_raw, (bd.get("size") or 0) / 1024 ** 3, mount_str)
+        if existing_mount:
+            log.info("  %s was already mounted at %s", devnode, existing_mount)
+        else:
+            log.info("  Mounted %s → %s", devnode, mount_str)
 
         mount = Path(mount_str)
         sentinel = mount / _IPOD_SENTINEL
@@ -272,7 +290,7 @@ class DeviceService:
             return
 
         log.info("Device disconnected: %s (mount=%s)", devnode, info.mount)
-        if not info.manual:
+        if not info.manual and info.mounted and info.mount:
             proc = await asyncio.create_subprocess_exec(
                 "umount", info.mount,
                 stderr=asyncio.subprocess.PIPE,
@@ -345,11 +363,47 @@ class DeviceService:
         finally:
             self._loading.discard(devnode)
 
+    async def mount_device(self, devnode: str) -> None:
+        async with self._lock:
+            info = self.devices.get(devnode)
+        if not info:
+            raise KeyError(f"Unknown device: {devnode}")
+        if info.mounted:
+            return
+        mount_path = MOUNT_BASE / info.devname
+        await asyncio.to_thread(mount_path.mkdir, parents=True, exist_ok=True)
+        ok = await self._do_mount(devnode, str(mount_path))
+        if not ok:
+            raise RuntimeError(f"Failed to mount {devnode}")
+        mount = mount_path
+        sentinel = mount / _IPOD_SENTINEL
+        is_ipod = sentinel.exists()
+        total, _ = await asyncio.to_thread(fs_usage, mount)
+        updated = DeviceInfo(
+            devnode=devnode,
+            devname=info.devname,
+            mount=str(mount_path),
+            fstype=info.fstype,
+            size_bytes=total,
+            is_ipod=is_ipod,
+            mounted=True,
+        )
+        log.info("Mounted %s at %s (is_ipod=%s)", devnode, mount_path, is_ipod)
+        async with self._lock:
+            self.devices[devnode] = updated
+            if is_ipod and self.selected is None:
+                self.selected = devnode
+        if is_ipod:
+            await self._load_library(devnode)
+        self._broadcast()
+
     async def eject(self, devnode: str) -> None:
         async with self._lock:
             info = self.devices.get(devnode)
         if not info:
             raise KeyError(f"Unknown device: {devnode}")
+        if not info.mounted:
+            raise RuntimeError("Device is not mounted")
         if self.is_busy(devnode):
             raise RuntimeError("Device has active operations — stop playback or wait for library load")
         log.info("Ejecting %s (manual=%s)", devnode, info.manual)

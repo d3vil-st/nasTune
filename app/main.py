@@ -144,7 +144,8 @@ def _is_alac(path: Path) -> bool:
         return False
 
 
-async def _ffmpeg_stream(path: str):
+async def _ffmpeg_stream(path: str, devnode: str):
+    device_service.stream_start(devnode)
     proc = await asyncio.create_subprocess_exec(
         "ffmpeg", "-hide_banner", "-loglevel", "error",
         "-i", path, "-f", "flac", "-",
@@ -158,6 +159,7 @@ async def _ffmpeg_stream(path: str):
                 break
             yield chunk
     finally:
+        device_service.stream_end(devnode)
         try:
             proc.kill()
         except ProcessLookupError:
@@ -188,10 +190,32 @@ async def get_audio(path: str, devnode: str = ""):
     if ext in ("m4a", "aac") and await asyncio.to_thread(_is_alac, full):
         log.info("Transcoding ALAC → FLAC: %s", full)
         return StreamingResponse(
-            _ffmpeg_stream(str(full)),
+            _ffmpeg_stream(str(full), target),
             media_type="audio/flac",
             headers={"Cache-Control": "no-store"},
         )
 
     mime = _AUDIO_MIMES.get(ext, "application/octet-stream")
     return FileResponse(str(full), media_type=mime)
+
+
+@app.post("/devices/mount")
+async def mount_device(body: SelectBody):
+    try:
+        await device_service.mount_device(body.devnode)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return {"ok": True}
+
+
+@app.post("/devices/eject")
+async def eject_device(body: SelectBody):
+    try:
+        await device_service.eject(body.devnode)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return {"ok": True}
