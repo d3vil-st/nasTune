@@ -23,6 +23,8 @@ RUN curl -fsSL \
 
 WORKDIR /app
 
+RUN mkdir -p /data
+
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 

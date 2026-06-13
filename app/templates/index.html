@@ -136,15 +136,16 @@
     }
 
     .storage-bar {
-      height: 5px;
+      display: flex;
+      height: 22px;
       background: #48484a;
-      border-radius: 3px;
+      border-radius: 10px;
       overflow: hidden;
     }
 
     .storage-fill {
       height: 100%;
-      border-radius: 3px;
+      flex-shrink: 0;
       background: linear-gradient(90deg, #0a84ff, #32ade6);
     }
 
@@ -223,6 +224,7 @@
     }
     .eject-btn:hover { color: #e06c6c; border-color: #e06c6c; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes scan-pulse { 0%,100% { opacity:1; } 50% { opacity:.3; } }
 
     /* ── Player ─────────────────────────────────────────────────── */
     .t-play-cell {
@@ -439,7 +441,7 @@
     /* ── Track table ──────────────────────────────────────────────── */
     .tracks-head {
       display: grid;
-      grid-template-columns: 36px 1fr 54px 50px 66px 72px;
+      grid-template-columns: 16px 36px 1fr 54px 50px 66px 72px;
       gap: 8px;
       padding: 7px 16px;
       border-bottom: 1px solid var(--border);
@@ -766,6 +768,215 @@
       gap: 20px;
       align-items: center;
     }
+
+    /* ── Tab bar ─────────────────────────────────────────────────── */
+    .tabbar {
+      display: flex;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      padding: 0 16px;
+      gap: 2px;
+      flex-shrink: 0;
+    }
+    .tab {
+      padding: 7px 16px;
+      font-size: 12px;
+      font-weight: 500;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--muted);
+      cursor: pointer;
+      transition: color .15s;
+      letter-spacing: .1px;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--text); border-bottom-color: var(--blue); }
+
+    /* ── Sources bar ─────────────────────────────────────────────── */
+    .sources-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 16px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .source-select-btn {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--bg3); border: 1px solid var(--border);
+      color: var(--text); border-radius: 7px; padding: 5px 12px;
+      font-size: 12px; font-weight: 500; cursor: pointer;
+      transition: background .1s;
+    }
+    .source-select-btn:hover { background: #48484a; }
+    .source-select-btn .src-name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .source-status-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+    }
+    .src-dot-done     { background: #34c759; }
+    .src-dot-scanning { background: #ffd60a; }
+    .src-dot-error    { background: #ff453a; }
+    .src-dot-pending  { background: var(--dim); }
+    .manage-btn {
+      background: none; border: 1px solid var(--border); color: var(--muted);
+      border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer;
+      transition: color .15s, border-color .15s;
+    }
+    .manage-btn:hover { color: var(--text); border-color: var(--dim); }
+    .sources-picker {
+      position: absolute;
+      top: 36px; left: 0;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      box-shadow: 0 8px 28px rgba(0,0,0,.6);
+      z-index: 100;
+      min-width: 260px;
+      padding: 5px;
+    }
+    .sp-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; border-radius: 5px;
+      cursor: pointer; user-select: none; transition: background .07s;
+    }
+    .sp-row:hover { background: var(--bg3); }
+    .sp-row.active { background: var(--blue); }
+    .sp-row.active .sp-meta { color: rgba(255,255,255,.7); }
+    .sp-name { font-size: 13px; font-weight: 500; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sp-meta { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+    /* ── Manage sources modal ────────────────────────────────────── */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.7);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 300;
+    }
+    .modal {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 24px 60px rgba(0,0,0,.7);
+      width: 560px; max-width: 95vw;
+      max-height: 85vh;
+      display: flex; flex-direction: column;
+    }
+    .modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 20px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .modal-header h2 { font-size: 15px; font-weight: 600; }
+    .modal-close {
+      background: none; border: none; color: var(--muted);
+      font-size: 18px; cursor: pointer; padding: 0 4px;
+      transition: color .15s;
+    }
+    .modal-close:hover { color: var(--text); }
+    .modal-body { overflow-y: auto; flex: 1; padding: 14px 20px; }
+    .modal-body::-webkit-scrollbar { width: 5px; }
+    .modal-body::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 3px; }
+    .modal-footer {
+      padding: 12px 20px;
+      border-top: 1px solid var(--border);
+    }
+    .src-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 0; border-bottom: 1px solid var(--border2);
+    }
+    .src-row:last-child { border-bottom: none; }
+    .src-info { flex: 1; min-width: 0; }
+    .src-row-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .src-row-path { font-size: 10px; color: var(--dim); font-family: ui-monospace, monospace;
+                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+    .src-row-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .src-action-btn {
+      background: none; border: 1px solid var(--border); color: var(--muted);
+      border-radius: 5px; padding: 3px 8px; font-size: 11px; cursor: pointer;
+      white-space: nowrap; flex-shrink: 0; transition: color .15s, border-color .15s;
+    }
+    .src-action-btn:hover { color: var(--text); border-color: var(--dim); }
+    .src-action-btn.danger:hover { color: #ff453a; border-color: #ff453a; }
+
+    /* ── Add source / folder browser ────────────────────────────── */
+    .add-source-form { display: flex; flex-direction: column; gap: 12px; }
+    .form-group { display: flex; flex-direction: column; gap: 5px; }
+    .form-label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+    .form-input {
+      background: var(--bg3); border: 1px solid var(--border);
+      color: var(--text); border-radius: 7px; padding: 7px 10px;
+      font-size: 13px; outline: none; transition: border-color .15s;
+    }
+    .form-input:focus { border-color: var(--blue); }
+    .dir-browser {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 7px;
+      overflow: hidden; max-height: 200px;
+    }
+    .dir-browser-path {
+      padding: 6px 10px; font-size: 10px; color: var(--dim);
+      font-family: ui-monospace, monospace; background: var(--bg2);
+      border-bottom: 1px solid var(--border); user-select: none;
+    }
+    .dir-browser-scroll { overflow-y: auto; max-height: 160px; }
+    .dir-browser-scroll::-webkit-scrollbar { width: 4px; }
+    .dir-browser-scroll::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 2px; }
+    .dir-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 10px; cursor: pointer; font-size: 12px;
+      transition: background .07s; user-select: none;
+      border-bottom: 1px solid var(--border2);
+    }
+    .dir-row:last-child { border-bottom: none; }
+    .dir-row:hover { background: var(--bg2); }
+    .dir-row.up { color: var(--muted); }
+    .btn-primary {
+      background: var(--blue); border: none; color: #fff;
+      border-radius: 10px; padding: 3px 10px; font-size: 11px; font-weight: 600;
+      cursor: pointer; transition: opacity .15s; white-space: nowrap;
+      display: inline-flex; align-items: center;
+    }
+    .btn-primary:hover { opacity: .85; }
+    .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-secondary {
+      background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+      border-radius: 7px; padding: 8px 18px; font-size: 13px; cursor: pointer;
+      transition: background .15s;
+    }
+    .btn-secondary:hover { background: #48484a; }
+
+    /* ── Sync status ─────────────────────────────────────────────── */
+    .sync-check { color: #34c759; font-size: 11px; font-weight: 700; }
+    .sync-dash  { color: var(--bg3); font-size: 11px; }
+
+    /* ── Checkboxes ──────────────────────────────────────────────── */
+    .row-cb {
+      width: 13px; height: 13px; flex-shrink: 0; cursor: pointer;
+      accent-color: var(--blue); border-radius: 2px;
+    }
+    .artist-row, .album-row { user-select: none; }
+
+    /* ── Delete / danger button ──────────────────────────────────── */
+    .btn-danger {
+      background: #ff453a; border: none; color: #fff;
+      border-radius: 10px; padding: 3px 10px; font-size: 11px; font-weight: 600;
+      cursor: pointer; transition: opacity .15s; white-space: nowrap;
+      display: inline-flex; align-items: center;
+    }
+    .btn-danger:hover { opacity: .85; }
+    .btn-danger:disabled { opacity: .4; cursor: not-allowed; }
+
+    .storage-fill-remove {
+      height: 100%; flex-shrink: 0;
+      background: rgba(255,69,58,.75);
+    }
+    .storage-fill-add {
+      height: 100%; flex-shrink: 0;
+      background: rgba(48,209,88,.7);
+    }
   </style>
 </head>
 
@@ -828,19 +1039,39 @@
     <div class="divider" x-show="library"></div>
     <div class="storage-wrap" x-show="library">
       <div class="storage-labels">
-        <span x-text="(library?.fs_used_gb || 0) + ' GB used'"></span>
-        <span x-text="((library?.fs_total_gb || 0) - (library?.fs_used_gb || 0)).toFixed(2) + ' GB free'"></span>
+        <span x-text="(library?.fs_used_gb || 0).toFixed(2) + ' GB used'"></span>
+        <template x-if="storageRemoveBytes > 0 && storageAddBytes > 0">
+          <span style="display:contents">
+            <span style="color:#ff453a" x-text="'\u2212 ' + fmtSize(storageRemoveBytes)"></span>
+            <span style="color:#30d158" x-text="'+ ' + fmtSize(storageAddBytes)"></span>
+          </span>
+        </template>
+        <template x-if="storageRemoveBytes > 0 && !storageAddBytes">
+          <span style="color:#ff453a" x-text="'\u2212 ' + fmtSize(storageRemoveBytes)"></span>
+        </template>
+        <template x-if="storageAddBytes > 0 && !storageRemoveBytes">
+          <span style="color:#30d158" x-text="'+ ' + fmtSize(storageAddBytes)"></span>
+        </template>
+        <span x-text="storageFreePct.toFixed(2) + ' GB free'"></span>
       </div>
       <div class="storage-bar">
-        <div class="storage-fill" :style="'width:' + (library?.used_pct || 0) + '%'"></div>
+        <div class="storage-fill" :style="'width:' + storageBasePct + '%'"></div>
+        <div class="storage-fill-remove" :style="'width:' + storageRemovePct + '%'"></div>
+        <div class="storage-fill-add" :style="'width:' + storageAddPct + '%'"></div>
       </div>
     </div>
 
-    <!-- Badges (only when library loaded) -->
-    <div class="badges" x-show="library">
-      <span class="badge" x-text="(library?.total_tracks || 0).toLocaleString() + ' songs'"></span>
-      <span class="badge" x-text="(library?.total_albums || 0) + ' albums'"></span>
-      <span class="badge" x-text="(library?.artists?.length || 0) + ' artists'"></span>
+    <!-- Badges + action button -->
+    <div style="display:flex;flex-direction:row;align-items:center;flex-wrap:nowrap;gap:8px" x-show="library">
+      <div class="badges">
+        <span class="badge" x-text="(library?.total_tracks || 0).toLocaleString() + ' songs'"></span>
+        <span class="badge" x-text="(library?.total_albums || 0) + ' albums'"></span>
+        <span class="badge" x-text="(library?.artists?.length || 0) + ' artists'"></span>
+      </div>
+      <button class="btn-danger" x-show="viewMode === 'library' && ipodSelection.size > 0"
+              @click="showDeleteConfirm = true">Delete</button>
+      <button class="btn-primary" x-show="viewMode === 'sources' && hasSyncChanges"
+              @click="showSyncConfirm = true">Sync</button>
     </div>
 
     <!-- Search -->
@@ -851,6 +1082,55 @@
       <input type="text" placeholder="Search artists, albums, tracks…" x-model="search" @input="onSearch">
     </div>
   </header>
+
+
+  <!-- ── Tab bar ── -->
+  <div class="tabbar">
+    <button class="tab" :class="{ active: viewMode === 'library' }"
+            @click="viewMode = 'library'">Library</button>
+    <button class="tab" :class="{ active: viewMode === 'sources' }"
+            @click="viewMode = 'sources'; loadSources()">Sources</button>
+  </div>
+
+  <!-- ── Sources bar (sources mode) ── -->
+  <div class="sources-bar" x-show="viewMode === 'sources'" style="display:none">
+    <div style="position:relative">
+      <button class="source-select-btn"
+              @click="showSourcePicker = !showSourcePicker"
+              @keydown.escape.window="showSourcePicker = false">
+        <span class="source-status-dot" :class="sourceDotClass(selectedSourceObj)"></span>
+        <span class="src-name" x-text="selectedSourceObj ? selectedSourceObj.name : 'No source selected'"></span>
+        <span style="color:var(--dim);font-size:10px">&#x25BE;</span>
+      </button>
+      <div class="sources-picker"
+           x-show="showSourcePicker"
+           @click.outside="showSourcePicker = false"
+           style="display:none">
+        <template x-for="s in sources" :key="s.id">
+          <div class="sp-row"
+               :class="{ active: s.id === selectedSourceId }"
+               @click.stop="pickSource(s.id)">
+            <span class="source-status-dot" :class="sourceDotClass(s)"></span>
+            <span class="sp-name" x-text="s.name"></span>
+            <span class="sp-meta" x-text="s.track_count + ' tracks'"></span>
+          </div>
+        </template>
+        <div x-show="sources.length === 0"
+             style="padding:12px;text-align:center;color:var(--dim);font-size:12px">
+          No sources yet
+        </div>
+      </div>
+    </div>
+    <span x-show="selectedSourceObj && selectedSourceObj.scan_status === 'scanning'"
+          style="font-size:11px;color:#ffd60a">Scanning&hellip;</span>
+    <span x-show="selectedSourceObj && selectedSourceObj.scan_status === 'error'"
+          style="font-size:11px;color:#ff453a"
+          :title="selectedSourceObj?.scan_error">Scan error</span>
+    <span x-show="selectedSourceObj && selectedSourceObj.scan_status === 'done'"
+          style="font-size:11px;color:var(--muted)"
+          x-text="selectedSourceObj ? selectedSourceObj.track_count + ' tracks' : ''"></span>
+    <button class="manage-btn" @click="showManageSources = true">Manage Sources</button>
+  </div>
 
   <!-- ── Error banner ── -->
   <div x-show="libraryError && !library" style="flex-shrink:0; overflow:auto;">
@@ -864,7 +1144,7 @@
   <div style="flex:1; overflow:hidden; display:flex; flex-direction:column;">
 
     <!-- No iPods connected -->
-    <div x-show="!libraryLoading && !library && devices.length === 0"
+    <div x-show="viewMode === 'library' && !libraryLoading && !library && devices.length === 0"
          style="flex:1; display:flex; align-items:center; justify-content:center;">
       <div class="empty">
         <span class="empty-icon">&#x1F3B5;</span>
@@ -874,15 +1154,15 @@
     </div>
 
     <!-- Loading -->
-    <div x-show="libraryLoading && !library"
+    <div x-show="viewMode === 'library' && libraryLoading && !library"
          style="flex:1; display:flex; align-items:center; justify-content:center;">
       <div class="empty">
         <span class="empty-label">Loading library&hellip;</span>
       </div>
     </div>
 
-    <!-- Three-column browser -->
-    <div class="content" x-show="library" style="flex:1;">
+    <!-- Three-column browser (library mode) -->
+    <div class="content" x-show="viewMode === 'library' && library" style="flex:1;">
 
       <!-- Artists -->
       <div class="col col-artists">
@@ -892,6 +1172,10 @@
             <div class="artist-row"
                  :class="{ selected: selectedArtist === a.name }"
                  @click="pickArtist(a.name)">
+              <input type="checkbox" class="row-cb" @click.stop
+                     :checked="isArtistSelected(a.name)"
+                     x-effect="$el.indeterminate = isArtistIndeterminate(a.name)"
+                     @change="toggleArtist(a.name, $event.target.checked)">
               <span class="artist-name" x-text="a.name"></span>
               <span class="artist-count" x-text="a.track_count"></span>
             </div>
@@ -915,6 +1199,10 @@
                 <div class="album-row"
                      :class="{ selected: selectedAlbum === al.name }"
                      @click="pickAlbum(al.name)">
+                  <input type="checkbox" class="row-cb" @click.stop
+                         :checked="isAlbumSelected(selectedArtist, al.name)"
+                         x-effect="$el.indeterminate = isAlbumIndeterminate(selectedArtist, al.name)"
+                         @change="toggleAlbum(selectedArtist, al.name, $event.target.checked)">
                   <div class="album-thumb" :style="gradientFor(al.name)">
                     <img :src="artUrl(al)" @error="$el.style.display='none'" loading="lazy" alt="">
                     <div class="album-play-overlay" @click.stop="pickAlbum(al.name); playAlbum(al)">&#x25B6;</div>
@@ -935,6 +1223,7 @@
       <!-- Tracks -->
       <div class="col col-tracks">
         <div class="tracks-head">
+          <span></span>
           <span style="text-align:right">#</span>
           <span>Title</span>
           <span style="text-align:right">Rating</span>
@@ -973,8 +1262,12 @@
             <div>
               <template x-for="t in currentTracks" :key="t.id">
                 <div class="track-row"
+                     style="grid-template-columns: 16px 36px 1fr 54px 50px 66px 72px;"
                      :class="{ active: selectedTrack?.id === t.id, missing: t.missing, 'now-playing': isCurrentTrack(t) }"
                      @click="openDetail(t)">
+                  <input type="checkbox" class="row-cb" @click.stop
+                         :checked="isTrackSelected(t)"
+                         @change="toggleTrack(t, $event.target.checked)">
                   <span class="t-play-cell" @click.stop="!t.missing && playTrack(t)">
                     <span class="t-nr-text" x-show="!isCurrentTrack(t)" x-text="t.track_nr || '·'"></span>
                     <span class="t-nr-play">&#x25B6;</span>
@@ -1035,18 +1328,390 @@
       </div>
 
     </div><!-- .content -->
+    <!-- Sources mode 3-pane browser -->
+    <div class="content" x-show="viewMode === 'sources'" style="flex:1;display:none">
+
+      <!-- Left: Source artist list -->
+      <div class="col col-artists">
+        <div class="col-heading">
+          Artists&ensp;<template x-if="sourceLibrary">(<span x-text="sourceLibrary.artists.length"></span>)</template>
+        </div>
+        <div class="col-scroll">
+          <template x-if="!selectedSourceId">
+            <div class="empty">
+              <span class="empty-icon">&#x1F4C1;</span>
+              <span class="empty-label">No source selected</span>
+              <span class="empty-sub">Add a source via Manage Sources</span>
+            </div>
+          </template>
+          <template x-if="selectedSourceId && sourceLibraryLoading">
+            <div class="empty"><span class="empty-label">Loading&hellip;</span></div>
+          </template>
+          <template x-if="selectedSourceId && !sourceLibraryLoading">
+            <div>
+              <template x-for="a in (sourceLibrary?.artists || [])" :key="a.name">
+                <div class="artist-row"
+                     :class="{ selected: srcArtist === a.name }"
+                     @click="pickSrcArtist(a.name)">
+                  <input type="checkbox" class="row-cb" @click.stop
+                         :checked="isSrcArtistChecked(a.name)"
+                         x-effect="$el.indeterminate = isSrcArtistIndeterminate(a.name)"
+                         @change="toggleSrcArtist(a.name, $event.target.checked)">
+                  <span class="artist-name" x-text="a.name"></span>
+                  <span class="artist-count" x-text="a.track_count"></span>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Middle: Albums of selected artist -->
+      <div class="col col-albums">
+        <div class="col-heading" x-text="srcArtist || 'Albums'"></div>
+        <div class="col-scroll">
+          <template x-if="!srcArtist">
+            <div class="empty">
+              <span class="empty-icon">&#x266B;</span>
+              <span class="empty-label">Select an artist</span>
+            </div>
+          </template>
+          <template x-if="srcArtist">
+            <div>
+              <template x-for="al in srcCurrentAlbums" :key="al.name">
+                <div class="album-row"
+                     :class="{ selected: srcAlbum === al.name }"
+                     @click="pickSrcAlbum(al.name)">
+                  <input type="checkbox" class="row-cb" @click.stop
+                         :checked="isSrcAlbumChecked(srcArtist, al.name)"
+                         x-effect="$el.indeterminate = isSrcAlbumIndeterminate(srcArtist, al.name)"
+                         @change="toggleSrcAlbum(srcArtist, al.name, $event.target.checked)">
+                  <div class="album-thumb" :style="gradientFor(al.name)">
+                    <img :src="sourceArtUrl(al)" @error="$el.style.display='none'" loading="lazy" alt="">
+                  </div>
+                  <div class="album-text">
+                    <div class="album-name" x-text="al.name"></div>
+                    <div class="album-meta">
+                      <span x-text="al.year > 0 ? al.year + ' · ' : ''"></span>
+                      <span x-text="al.tracks.length + (al.tracks.length === 1 ? ' track' : ' tracks')"></span>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Right: Tracks with sync status -->
+      <div class="col col-tracks">
+        <div class="tracks-head" style="grid-template-columns: 16px 36px 1fr 50px 66px 72px;">
+          <span></span><span style="text-align:right">#</span>
+          <span>Title</span>
+          <span style="text-align:right">Time</span>
+          <span style="text-align:center">Format</span>
+          <span style="text-align:right">Quality</span>
+        </div>
+
+        <template x-if="srcAlbum">
+          <div class="album-bar">
+            <div class="abar-art"
+                 :style="(srcAlbumArtUrl ? 'cursor:zoom-in;' : '') + (srcAlbumArtUrl ? '' : gradientFor(srcAlbum))"
+                 @click="srcAlbumArtUrl && (coverPopupUrl = srcAlbumArtUrl)">
+              <img x-show="srcAlbumArtUrl" :src="srcAlbumArtUrl" @error="srcAlbumArtUrl = null" alt="">
+              <span x-show="!srcAlbumArtUrl">&#x266B;</span>
+            </div>
+            <div class="abar-info">
+              <div class="abar-title" x-text="srcAlbum"></div>
+              <div class="abar-artist" x-text="srcArtist"></div>
+              <div class="abar-stats" x-text="srcCurrentTracks.length + ' tracks · ' + fmtTotalDur(srcCurrentTracks)"></div>
+            </div>
+          </div>
+        </template>
+
+        <div class="col-scroll">
+          <template x-if="!srcAlbum">
+            <div class="empty">
+              <span class="empty-icon">&#x266A;</span>
+              <span class="empty-label">Select an album</span>
+            </div>
+          </template>
+          <template x-if="srcAlbum">
+            <div>
+              <template x-for="t in srcCurrentTracks" :key="t.id">
+                <div class="track-row"
+                     style="grid-template-columns: 16px 36px 1fr 50px 66px 72px;"
+                     :class="{ active: srcSelectedTrack?.id === t.id, 'now-playing': isSrcCurrentTrack(t) }"
+                     @click="openSrcDetail(t)">
+                  <input type="checkbox" class="row-cb" @click.stop
+                         :checked="isSrcTrackChecked(t)"
+                         @change="toggleSrcTrack(t, $event.target.checked)">
+                  <span class="t-play-cell" @click.stop="playSrcTrack(t)">
+                    <span class="t-nr-text" x-show="!isSrcCurrentTrack(t)" x-text="t.track_nr || '·'"></span>
+                    <span class="t-nr-play">&#x25B6;</span>
+                    <span class="t-nr-playing" x-show="isSrcCurrentTrack(t)"
+                          x-text="playing ? '⏸' : '▶'"></span>
+                  </span>
+                  <span class="t-title" x-text="t.title"></span>
+                  <span class="t-dur" x-text="fmtDur(t.duration_ms)"></span>
+                  <span class="t-fmt-cell">
+                    <span class="t-fmt" :class="srcFmtClass(t)" x-text="srcFmtShort(t)"></span>
+                  </span>
+                  <span class="t-quality" x-text="srcQuality(t)"></span>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
+
+        <!-- Source detail panel -->
+        <div class="detail-panel" :class="{ open: !!srcSelectedTrack }">
+          <div class="detail-art"
+               :style="(srcAlbumArtUrl ? 'cursor:zoom-in;' : '') + (srcAlbumArtUrl ? '' : gradientFor(srcAlbum))"
+               @click="srcAlbumArtUrl && (coverPopupUrl = srcAlbumArtUrl)">
+            <img x-show="srcAlbumArtUrl" :src="srcAlbumArtUrl" @error="srcAlbumArtUrl = null" alt="">
+            <span class="detail-art-note" x-show="!srcAlbumArtUrl">&#x266A;</span>
+            <button class="detail-close" @click.stop="srcSelectedTrack = null">&#x2715;</button>
+          </div>
+          <div class="detail-body">
+            <div class="detail-track-info">
+              <div class="d-title" x-text="srcSelectedTrack?.title"></div>
+              <div class="d-artist" x-text="srcArtist"></div>
+              <div class="d-album" x-text="srcAlbum + (srcSelectedTrack?.year > 0 ? ' · ' + srcSelectedTrack.year : '')"></div>
+            </div>
+            <div class="detail-sep">Audio</div>
+            <div class="detail-row"><span class="dr-l">Format</span>     <span class="dr-v" x-text="srcSelectedTrack ? srcFmtShort(srcSelectedTrack) : ''"></span></div>
+            <div class="detail-row"><span class="dr-l">Bit Rate</span>   <span class="dr-v" x-text="srcSelectedTrack?.bitrate ? srcSelectedTrack.bitrate + ' kbps' : '—'"></span></div>
+            <div class="detail-row"><span class="dr-l">Sample Rate</span><span class="dr-v" x-text="srcSelectedTrack?.samplerate ? (srcSelectedTrack.samplerate / 1000).toFixed(1) + ' kHz' : '—'"></span></div>
+            <div class="detail-row"><span class="dr-l">Duration</span>   <span class="dr-v" x-text="fmtDur(srcSelectedTrack?.duration_ms)"></span></div>
+            <div class="detail-row"><span class="dr-l">File Size</span>  <span class="dr-v" x-text="srcSelectedTrack ? (srcSelectedTrack.size / 1048576).toFixed(1) + ' MB' : ''"></span></div>
+            <div class="detail-sep">File</div>
+            <div class="detail-row"><span class="dr-l">Track #</span>    <span class="dr-v" x-text="srcSelectedTrack?.track_nr || '—'"></span></div>
+            <div class="detail-path" x-text="srcSelectedTrack?.path"></div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- sources .content -->
+
   </div><!-- flex wrapper -->
+
+
+    <!-- ── Manage Sources modal ── -->
+    <div class="modal-overlay"
+         x-show="showManageSources"
+         x-transition.opacity
+         @click.self="showManageSources = false"
+         @keydown.escape.window="showManageSources = false; showAddSource = false"
+         style="display:none">
+      <div class="modal">
+        <div class="modal-header">
+          <h2 x-text="showAddSource ? 'Add Folder Source' : 'Manage Sources'"></h2>
+          <button class="modal-close" @click="showManageSources = false; showAddSource = false">&#x2715;</button>
+        </div>
+
+        <!-- Source list view -->
+        <div class="modal-body" x-show="!showAddSource">
+          <div x-show="sources.length === 0"
+               style="text-align:center;color:var(--dim);padding:24px;font-size:13px">
+            No sources configured yet
+          </div>
+          <template x-for="s in sources" :key="s.id">
+            <div class="src-row">
+              <span class="source-status-dot" :class="sourceDotClass(s)" style="flex-shrink:0"></span>
+              <div class="src-info">
+                <div class="src-row-name" x-text="s.name"></div>
+                <div class="src-row-path" x-text="s.path"></div>
+                <div class="src-row-meta">
+                  <span x-text="s.track_count + ' tracks'"></span>
+                  <span x-show="s.scan_status === 'scanning'" style="color:#ffd60a"> &middot; Scanning&hellip;</span>
+                  <span x-show="s.scan_status === 'error'" style="color:#ff453a" :title="s.scan_error"> &middot; Error</span>
+                  <span x-show="s.last_scanned_at" style="color:var(--dim)"
+                        x-text="' · Scanned ' + fmtDate(s.last_scanned_at)"></span>
+                </div>
+              </div>
+              <button class="src-action-btn"
+                      @click="rescanSource(s.id)"
+                      :disabled="s.scan_status === 'scanning'"
+                      title="Rescan">&#x21BB;</button>
+              <button class="src-action-btn danger"
+                      @click="deleteSource(s.id)"
+                      title="Remove source">&#x2715;</button>
+            </div>
+          </template>
+        </div>
+
+        <!-- Add source view -->
+        <div class="modal-body" x-show="showAddSource">
+          <div class="add-source-form">
+            <div class="form-group">
+              <label class="form-label">Name</label>
+              <input class="form-input" type="text" placeholder="My Music"
+                     x-model="addSourceName" @input="if (!addSourceNameEdited) addSourceName = $event.target.value">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Folder</label>
+              <div class="dir-browser">
+                <div class="dir-browser-path" x-text="browsePath"></div>
+                <div class="dir-browser-scroll">
+                  <div x-show="browseParent !== null" class="dir-row up"
+                       @click="browseDir(browseParent)">
+                    &#x2B06; ..
+                  </div>
+                  <template x-for="d in browseDirs" :key="d.path">
+                    <div class="dir-row" @click="browseDir(d.path)">
+                      &#x1F4C1; <span x-text="d.name"></span>
+                    </div>
+                  </template>
+                  <div x-show="browseDirs.length === 0 && browseParent !== null"
+                       style="padding:10px 14px;color:var(--dim);font-size:11px">
+                    Empty directory
+                  </div>
+                </div>
+              </div>
+              <div style="font-size:11px;color:var(--muted);margin-top:4px">
+                Selected: <span style="color:var(--text);font-family:ui-monospace,monospace" x-text="browsePath"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
+          <template x-if="!showAddSource">
+            <div style="display:flex;gap:8px;width:100%;justify-content:flex-end">
+              <button class="btn-secondary" @click="showManageSources = false">Close</button>
+              <button class="btn-primary" @click="showAddSource = true; browseDir('/music')">+ Add Folder</button>
+            </div>
+          </template>
+          <template x-if="showAddSource">
+            <div style="display:flex;gap:8px;width:100%;justify-content:flex-end">
+              <button class="btn-secondary" @click="showAddSource = false">Back</button>
+              <button class="btn-primary"
+                      :disabled="!addSourceName.trim()"
+                      @click="addSource()">Add Source</button>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Delete confirmation modal ── -->
+    <div class="modal-overlay"
+         x-show="showDeleteConfirm"
+         x-transition.opacity
+         @click.self="showDeleteConfirm = false"
+         @keydown.escape.window="showDeleteConfirm = false"
+         style="display:none">
+      <div class="modal" style="max-width:400px">
+        <div class="modal-header">
+          <span class="modal-title">Delete tracks from iPod?</span>
+          <button class="modal-close" @click="showDeleteConfirm = false">&#x2715;</button>
+        </div>
+        <div style="padding:16px 20px;color:var(--fg2);font-size:13px;line-height:1.6">
+          <p style="margin:0 0 8px">
+            <strong x-text="ipodSelectedTracks.length + ' track' + (ipodSelectedTracks.length !== 1 ? 's' : '')"></strong>
+            will be permanently deleted from the iPod.
+          </p>
+          <p style="margin:0;color:var(--muted)" x-text="'Space freed: ' + fmtSize(ipodSelectedBytes)"></p>
+        </div>
+        <div style="padding:12px 20px;display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn-secondary" @click="showDeleteConfirm = false">Cancel</button>
+          <button class="btn-danger" @click="deleteSelectedTracks()">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Sync confirmation modal ── -->
+    <div class="modal-overlay"
+         x-show="showSyncConfirm"
+         x-transition.opacity
+         @click.self="showSyncConfirm = false"
+         @keydown.escape.window="showSyncConfirm = false"
+         style="display:none">
+      <div class="modal" style="max-width:420px">
+        <div class="modal-header">
+          <span class="modal-title">Sync to iPod?</span>
+          <button class="modal-close" @click="showSyncConfirm = false">&#x2715;</button>
+        </div>
+        <div style="padding:16px 20px;color:var(--fg2);font-size:13px;line-height:1.8">
+          <template x-if="syncDeleteTracks.length > 0">
+            <p style="margin:0 0 6px">
+              <span style="color:#ff453a">&#x2212;</span>
+              <strong x-text="syncDeleteTracks.length + ' track' + (syncDeleteTracks.length !== 1 ? 's' : '')"></strong>
+              will be deleted
+              <span style="color:var(--muted)" x-text="'(' + fmtSize(syncDeleteBytes) + ')'"></span>
+            </p>
+          </template>
+          <template x-if="syncCopyTracks.length > 0">
+            <p style="margin:0">
+              <span style="color:#30d158">&#x2B;</span>
+              <strong x-text="syncCopyTracks.length + ' track' + (syncCopyTracks.length !== 1 ? 's' : '')"></strong>
+              will be copied
+              <span style="color:var(--muted)" x-text="'(' + fmtSize(syncCopyBytes) + ')'"></span>
+            </p>
+          </template>
+        </div>
+        <div style="padding:12px 20px;display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn-secondary" @click="showSyncConfirm = false">Cancel</button>
+          <button class="btn-primary" @click="confirmSync()">Sync</button>
+        </div>
+      </div>
+    </div>
 
   <!-- ── Status bar ── -->
   <div class="statusbar">
-    <template x-if="library && selectedAlbum">
+    <!-- Library mode -->
+    <template x-if="viewMode === 'library' && library && selectedAlbum">
       <span x-text="currentTracks.length + ' tracks'"></span>
     </template>
-    <template x-if="library && selectedArtist && !selectedAlbum">
+    <template x-if="viewMode === 'library' && library && selectedArtist && !selectedAlbum">
       <span x-text="currentAlbums.length + ' albums · ' + currentAlbums.reduce((s,a)=>s+a.tracks.length,0) + ' tracks'"></span>
     </template>
-    <template x-if="library && !selectedArtist">
-      <span x-text="(library.total_tracks).toLocaleString() + ' songs · ' + library.total_albums + ' albums · ' + library.artists.length + ' artists'"></span>
+    <template x-if="viewMode === 'library' && library && !selectedArtist">
+      <span x-text="(library.total_tracks).toLocaleString() + ' songs · ' + library.total_albums + ' albums · ' + library.artists.length + ' artists'"></span>
+    </template>
+    <!-- Sources mode -->
+    <template x-if="viewMode === 'sources' && srcAlbum">
+      <span x-text="srcCurrentTracks.length + ' tracks'"></span>
+    </template>
+    <template x-if="viewMode === 'sources' && srcArtist && !srcAlbum">
+      <span x-text="srcCurrentAlbums.length + ' albums · ' + srcCurrentAlbums.reduce((s,a)=>s+a.tracks.length,0) + ' tracks'"></span>
+    </template>
+    <template x-if="viewMode === 'sources' && !srcArtist && sourceLibrary">
+      <span x-text="(sourceLibrary.total_tracks || 0).toLocaleString() + ' songs · ' + (sourceLibrary.artists?.length || 0) + ' artists'"></span>
+    </template>
+    <!-- Scan progress (visible any time a source is scanning) -->
+    <template x-if="sources.some(s => s.scan_status === 'scanning')">
+      <span style="margin-left:auto;display:flex;align-items:center;gap:6px">
+        <span style="width:7px;height:7px;border-radius:50%;background:#ffd60a;flex-shrink:0;animation:scan-pulse 1s ease-in-out infinite"></span>
+        <span style="color:#ffd60a;font-weight:500" x-text="'Scanning “' + (scanningSource?.name || '') + '”'"></span>
+        <template x-if="scanningSource && scanningSource.scan_total > 0">
+          <span style="color:var(--muted)" x-text="(scanningSource.scan_processed || 0).toLocaleString() + ' / ' + scanningSource.scan_total.toLocaleString() + ' files'"></span>
+        </template>
+        <template x-if="scanningSource && !scanningSource.scan_total">
+          <span style="color:var(--muted)">Finding files…</span>
+        </template>
+        <template x-if="scanningSource?.scan_current_file">
+          <span style="color:var(--dim);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" x-text="scanningSource.scan_current_file"></span>
+        </template>
+      </span>
+    <!-- Operation progress (delete / sync) -->
+    <template x-if="currentOp && currentOp.status === 'running'">
+      <span style="margin-left:auto;display:flex;align-items:center;gap:6px">
+        <span style="width:7px;height:7px;border-radius:50%;flex-shrink:0;animation:scan-pulse 1s ease-in-out infinite"
+              :style="currentOp.kind === 'delete' ? 'background:#ff453a' : 'background:#30d158'"></span>
+        <span style="font-weight:500"
+              :style="currentOp.kind === 'delete' ? 'color:#ff453a' : 'color:#30d158'"
+              x-text="currentOp.kind === 'delete' ? 'Deleting…' : 'Syncing…'"></span>
+        <span style="color:var(--muted)" x-text="currentOp.processed + ' / ' + currentOp.total"></span>
+        <template x-if="currentOp.current">
+          <span style="color:var(--dim);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" x-text="currentOp.current"></span>
+        </template>
+      </span>
+    </template>
+    <template x-if="currentOp && currentOp.status === 'error'">
+      <span style="margin-left:auto;color:#ff453a;font-size:12px" x-text="'Error: ' + (currentOp.error || 'unknown')"></span>
+    </template>
     </template>
   </div>
 
@@ -1145,9 +1810,46 @@
       playerArtUrl: null,
       playerContext: { artist: '', album: '' },
 
+      // Sources state
+      viewMode: 'library',
+      sources: [],
+      selectedSourceId: null,
+      sourceLibrary: null,
+      sourceLibraryLoading: false,
+      srcArtist: null,
+      srcAlbum: null,
+      srcAlbumArtUrl: null,
+      srcSelectedTrack: null,
+      playerSource: 'ipod',
+      showManageSources: false,
+      showAddSource: false,
+      showSourcePicker: false,
+      addSourceName: '',
+      browsePath: '/',
+      browseDirs: [],
+      browseParent: null,
+      _ipodIndex: null,
+      _ipodMap: null,
+      _srcPollTimer: null,
+
+      // Selection & operations
+      ipodSelection: new Set(),
+      srcChecked: new Set(),
+      srcInitialOnIpod: new Set(),
+      showDeleteConfirm: false,
+      showSyncConfirm: false,
+      currentOp: null,
+      opPollTimer: null,
+
       async init() {
         await this.loadDevices();
         this.startSSE();
+        await this.loadSources();
+        const saved = localStorage.getItem('nasTune_selectedSourceId');
+        if (saved) {
+          const id = parseInt(saved, 10);
+          if (this.sources.find(s => s.id === id)) await this.pickSource(id);
+        }
       },
 
       async loadDevices() {
@@ -1188,6 +1890,8 @@
         }
         this.selectedDevnode = devnode;
         this.library = null;
+        this._ipodMap = null;
+        this.ipodSelection = new Set();
         this.selectedArtist = null;
         this.selectedAlbum = null;
         this.selectedTrack = null;
@@ -1231,6 +1935,8 @@
           const r = await fetch('/library/refresh', { method: 'POST' });
           if (!r.ok) { this.libraryError = await r.text(); return; }
           this.library = await r.json();
+          this._ipodMap = null;
+          this.ipodSelection = new Set();
           this.selectedArtist = null;
           this.selectedAlbum = null;
           this.selectedTrack = null;
@@ -1415,6 +2121,7 @@
         this.queue = playable;
         this.queueIndex = this.queue.findIndex(t => t.id === track.id);
         if (this.queueIndex < 0) this.queueIndex = 0;
+        this.playerSource = 'ipod';
         this.playerContext = { artist: this.selectedArtist || '', album: this.selectedAlbum || '' };
         const artAlbum = album || (this.currentAlbums[0] || null);
         this.playerArtUrl = artAlbum ? this.artUrl(artAlbum) : null;
@@ -1425,8 +2132,12 @@
         const track = this.queue[this.queueIndex];
         if (!track) return;
         const audio = this.$refs.audio;
-        audio.src = '/audio?devnode=' + encodeURIComponent(this.selectedDevnode || '')
-                    + '&path=' + encodeURIComponent(track.ipod_path);
+        if (this.playerSource === 'sources') {
+          audio.src = '/sources/audio?path=' + encodeURIComponent(track.path);
+        } else {
+          audio.src = '/audio?devnode=' + encodeURIComponent(this.selectedDevnode || '')
+                      + '&path=' + encodeURIComponent(track.ipod_path);
+        }
         audio.play().catch(() => {});
         this.playerVisible = true;
       },
@@ -1526,7 +2237,27 @@
       },
 
       isCurrentTrack(t) {
-        return this.queue.length > 0 && this.queue[this.queueIndex]?.id === t.id;
+        return this.playerSource === 'ipod' && this.queue.length > 0 && this.queue[this.queueIndex]?.id === t.id;
+      },
+
+      isSrcCurrentTrack(t) {
+        return this.playerSource === 'sources' && this.queue.length > 0 && this.queue[this.queueIndex]?.id === t.id;
+      },
+
+      openSrcDetail(t) {
+        this.srcSelectedTrack = this.srcSelectedTrack?.id === t.id ? null : t;
+      },
+
+      playSrcTrack(track) {
+        const al = this.srcCurrentAlbums.find(a => a.name === this.srcAlbum);
+        const playable = al ? al.tracks : [track];
+        this.queue = playable;
+        this.queueIndex = this.queue.findIndex(t => t.id === track.id);
+        if (this.queueIndex < 0) this.queueIndex = 0;
+        this.playerSource = 'sources';
+        this.playerContext = { artist: this.srcArtist || '', album: this.srcAlbum || '' };
+        this.playerArtUrl = this.srcAlbumArtUrl;
+        this._loadAndPlay();
       },
 
       get playerTrack() {
@@ -1542,6 +2273,484 @@
         if (!s || isNaN(s) || !isFinite(s)) return '—';
         s = Math.floor(s);
         return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+      },
+
+      // ── Sources ─────────────────────────────────────────────────
+
+      async loadSources() {
+        try {
+          const r = await fetch('/sources');
+          this.sources = await r.json();
+          // If a source was previously selected, reload its library
+          if (this.selectedSourceId) {
+            const still = this.sources.find(s => s.id === this.selectedSourceId);
+            if (!still) { this.selectedSourceId = null; this.sourceLibrary = null; }
+          }
+        } catch (e) { console.error('loadSources:', e); }
+      },
+
+      async pickSource(id) {
+        this.showSourcePicker = false;
+        if (this.selectedSourceId === id) return;
+        this.selectedSourceId = id;
+        localStorage.setItem('nasTune_selectedSourceId', String(id));
+        this.srcArtist = null;
+        this.srcAlbum = null;
+        this.srcAlbumArtUrl = null;
+        this.sourceLibrary = null;
+        this._ipodIndex = null;
+        this._ipodMap = null;
+        await this._loadSourceLibrary(id);
+        this._startSrcPoll();
+      },
+
+      async _loadSourceLibrary(id) {
+        this.sourceLibraryLoading = true;
+        try {
+          const r = await fetch('/sources/' + id + '/library');
+          if (r.ok) {
+            this.sourceLibrary = await r.json();
+            this._initSrcChecked();
+          }
+        } catch (e) { console.error('loadSourceLibrary:', e); }
+        finally { this.sourceLibraryLoading = false; }
+      },
+
+      _startSrcPoll() {
+        // Poll sources list every 2s while any source is scanning
+        if (this._srcPollTimer) return;
+        this._srcPollTimer = setInterval(async () => {
+          await this.loadSources();
+          const scanning = this.sources.some(s => s.scan_status === 'scanning');
+          if (!scanning) {
+            clearInterval(this._srcPollTimer);
+            this._srcPollTimer = null;
+            // Reload library if the selected source just finished
+            if (this.selectedSourceId) await this._loadSourceLibrary(this.selectedSourceId);
+          }
+        }, 2000);
+      },
+
+      async addSource() {
+        const name = this.addSourceName.trim();
+        if (!name) return;
+        try {
+          const r = await fetch('/sources', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, path: this.browsePath }),
+          });
+          if (!r.ok) { const d = await r.json().catch(()=>({})); alert(d.detail || 'Failed to add source'); return; }
+          const data = await r.json();
+          this.showAddSource = false;
+          this.addSourceName = '';
+          await this.loadSources();
+          this._startSrcPoll();
+          this.pickSource(data.id);
+        } catch (e) { alert('Add source failed: ' + e.message); }
+      },
+
+      async deleteSource(id) {
+        if (!confirm('Remove this source? Track data will be deleted.')) return;
+        try {
+          await fetch('/sources/' + id, { method: 'DELETE' });
+          if (this.selectedSourceId === id) {
+            this.selectedSourceId = null;
+            this.sourceLibrary = null;
+            this.srcArtist = null;
+            this.srcAlbum = null;
+          }
+          await this.loadSources();
+        } catch (e) { alert('Delete failed: ' + e.message); }
+      },
+
+      async rescanSource(id) {
+        try {
+          await fetch('/sources/' + id + '/scan', { method: 'POST' });
+          await this.loadSources();
+          this._startSrcPoll();
+        } catch (e) { alert('Rescan failed: ' + e.message); }
+      },
+
+      async browseDir(path) {
+        try {
+          const r = await fetch('/sources/browse?path=' + encodeURIComponent(path));
+          if (!r.ok) { alert('Cannot browse: ' + path); return; }
+          const data = await r.json();
+          this.browsePath = data.path;
+          this.browseParent = data.parent;
+          this.browseDirs = data.dirs;
+          if (!this.addSourceName) this.addSourceName = data.path.split('/').filter(Boolean).pop() || data.path;
+        } catch (e) { console.error('browseDir:', e); }
+      },
+
+      pickSrcArtist(name) {
+        this.srcArtist = name;
+        this.srcAlbum = null;
+        this.srcAlbumArtUrl = null;
+      },
+
+      pickSrcAlbum(name) {
+        this.srcAlbum = name;
+        this.srcAlbumArtUrl = null;
+        const al = this.srcCurrentAlbums.find(a => a.name === name);
+        const url = this.sourceArtUrl(al);
+        if (url) this.srcAlbumArtUrl = url;
+      },
+
+      get selectedSourceObj() {
+        return this.sources.find(s => s.id === this.selectedSourceId) || null;
+      },
+
+      get scanningSource() {
+        // Prefer the selected source if it's scanning; otherwise any scanning source
+        const sel = this.selectedSourceObj;
+        if (sel && sel.scan_status === 'scanning') return sel;
+        return this.sources.find(s => s.scan_status === 'scanning') || null;
+      },
+
+      get srcCurrentAlbums() {
+        if (!this.srcArtist || !this.sourceLibrary) return [];
+        const a = this.sourceLibrary.artists.find(a => a.name === this.srcArtist);
+        return a ? a.albums : [];
+      },
+
+      get srcCurrentTracks() {
+        if (!this.srcAlbum) return [];
+        const al = this.srcCurrentAlbums.find(a => a.name === this.srcAlbum);
+        return al ? al.tracks : [];
+      },
+
+      sourceArtUrl(album) {
+        if (!album) return null;
+        const t = album.tracks && album.tracks[0];
+        if (!t) return null;
+        return '/sources/artwork?path=' + encodeURIComponent(t.path);
+      },
+
+      _buildIpodMap() {
+        this._ipodMap = new Map();
+        for (const artist of (this.library?.artists || [])) {
+          for (const album of artist.albums) {
+            for (const t of album.tracks) {
+              this._ipodMap.set(this._trackKey(t.artist || artist.name, t.album || album.name, t.track_nr, t.title), t);
+            }
+          }
+        }
+        // Keep old index for backward compat
+        this._ipodIndex = new Set(this._ipodMap.keys());
+      },
+
+      _trackKey(artist, album, track_nr, title) {
+        const a  = (artist   || '').toLowerCase().trim();
+        const al = (album    || '').toLowerCase().trim();
+        const nr = track_nr != null && track_nr > 0 ? String(track_nr) : '';
+        const t  = (title    || '').toLowerCase().trim();
+        return a + '|||' + al + '|||' + (nr || t);
+      },
+
+      isOnIpod(track) {
+        if (!this.library) return false;
+        if (!this._ipodMap) this._buildIpodMap();
+        return this._ipodMap.has(this._trackKey(track.artist || track.albumartist, track.album, track.track_nr, track.title));
+      },
+
+      // ── iPod selection ───────────────────────────────────────────────
+
+      get ipodSelectedTracks() {
+        const out = [];
+        for (const artist of (this.library?.artists || [])) {
+          for (const album of artist.albums) {
+            for (const t of album.tracks) {
+              if (this.ipodSelection.has(t.id)) out.push(t);
+            }
+          }
+        }
+        return out;
+      },
+
+      get ipodSelectedBytes() {
+        return this.ipodSelectedTracks.reduce((s, t) => s + (t.size || 0), 0);
+      },
+
+      // Storage bar unified computed
+      get storageRemoveBytes() {
+        if (this.viewMode === 'library') return this.ipodSelectedBytes;
+        if (this.viewMode === 'sources') return this.syncDeleteBytes;
+        return 0;
+      },
+
+      get storageAddBytes() {
+        if (this.viewMode === 'sources') return this.syncCopyBytes;
+        return 0;
+      },
+
+      get storageBasePct() {
+        const total = this.library?.fs_total_gb || 0;
+        if (!total) return 0;
+        const usedAfter = (this.library?.fs_used_gb || 0) - this.storageRemoveBytes / 1073741824;
+        return Math.max(0, Math.min(100, (usedAfter / total) * 100));
+      },
+
+      get storageRemovePct() {
+        const total = this.library?.fs_total_gb || 0;
+        if (!total) return 0;
+        return Math.min(100, (this.storageRemoveBytes / 1073741824 / total) * 100);
+      },
+
+      get storageAddPct() {
+        const total = this.library?.fs_total_gb || 0;
+        if (!total) return 0;
+        return Math.min(100, (this.storageAddBytes / 1073741824 / total) * 100);
+      },
+
+      get storageFreePct() {
+        const total = this.library?.fs_total_gb || 0;
+        if (!total) return 0;
+        const freeGb = total - (this.library?.fs_used_gb || 0)
+          + this.storageRemoveBytes / 1073741824
+          - this.storageAddBytes / 1073741824;
+        return Math.max(0, freeGb);
+      },
+
+      fmtSize(bytes) {
+        if (!bytes) return '0 B';
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+        if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+        return (bytes / 1073741824).toFixed(2) + ' GB';
+      },
+
+      isTrackSelected(t) { return this.ipodSelection.has(t.id); },
+
+      isAlbumSelected(artistName, albumName) {
+        const artist = this.library?.artists.find(a => a.name === artistName);
+        const album = artist?.albums.find(al => al.name === albumName);
+        if (!album) return false;
+        return album.tracks.length > 0 && album.tracks.every(t => this.ipodSelection.has(t.id));
+      },
+
+      isAlbumIndeterminate(artistName, albumName) {
+        const artist = this.library?.artists.find(a => a.name === artistName);
+        const album = artist?.albums.find(al => al.name === albumName);
+        if (!album) return false;
+        const n = album.tracks.filter(t => this.ipodSelection.has(t.id)).length;
+        return n > 0 && n < album.tracks.length;
+      },
+
+      isArtistSelected(name) {
+        const artist = this.library?.artists.find(a => a.name === name);
+        if (!artist) return false;
+        const all = artist.albums.flatMap(al => al.tracks);
+        return all.length > 0 && all.every(t => this.ipodSelection.has(t.id));
+      },
+
+      isArtistIndeterminate(name) {
+        const artist = this.library?.artists.find(a => a.name === name);
+        if (!artist) return false;
+        const all = artist.albums.flatMap(al => al.tracks);
+        const n = all.filter(t => this.ipodSelection.has(t.id)).length;
+        return n > 0 && n < all.length;
+      },
+
+      toggleTrack(t, checked) {
+        const s = new Set(this.ipodSelection);
+        checked ? s.add(t.id) : s.delete(t.id);
+        this.ipodSelection = s;
+      },
+
+      toggleAlbum(artistName, albumName, checked) {
+        const artist = this.library?.artists.find(a => a.name === artistName);
+        const album = artist?.albums.find(al => al.name === albumName);
+        if (!album) return;
+        const s = new Set(this.ipodSelection);
+        album.tracks.forEach(t => checked ? s.add(t.id) : s.delete(t.id));
+        this.ipodSelection = s;
+      },
+
+      toggleArtist(name, checked) {
+        const artist = this.library?.artists.find(a => a.name === name);
+        if (!artist) return;
+        const s = new Set(this.ipodSelection);
+        artist.albums.flatMap(al => al.tracks).forEach(t => checked ? s.add(t.id) : s.delete(t.id));
+        this.ipodSelection = s;
+      },
+
+      async deleteSelectedTracks() {
+        this.showDeleteConfirm = false;
+        const ids = this.ipodSelectedTracks.map(t => t.id);
+        if (!ids.length || !this.selectedDevnode) return;
+        const r = await fetch('/library/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ devnode: this.selectedDevnode, track_ids: ids }),
+        });
+        if (!r.ok) { const d = await r.json().catch(()=>({})); alert(d.detail || 'Delete failed'); return; }
+        this.ipodSelection = new Set();
+        this._startOpPoll();
+      },
+
+      // ── Sources selection ─────────────────────────────────────────────
+
+      _initSrcChecked() {
+        if (!this._ipodMap) this._buildIpodMap();
+        const checked = new Set();
+        for (const artist of (this.sourceLibrary?.artists || [])) {
+          for (const album of artist.albums) {
+            for (const t of album.tracks) {
+              if (this._ipodMap.has(this._trackKey(t.artist || artist.name, t.album || al.name || "", t.track_nr, t.title))) {
+                checked.add(t.id);
+              }
+            }
+          }
+        }
+        this.srcChecked = checked;
+        this.srcInitialOnIpod = new Set(checked);
+      },
+
+      isSrcTrackChecked(t) { return this.srcChecked.has(t.id); },
+
+      isSrcAlbumChecked(artistName, albumName) {
+        const al = this._srcAlbum(artistName, albumName);
+        if (!al) return false;
+        return al.tracks.length > 0 && al.tracks.every(t => this.srcChecked.has(t.id));
+      },
+
+      isSrcAlbumIndeterminate(artistName, albumName) {
+        const al = this._srcAlbum(artistName, albumName);
+        if (!al) return false;
+        const n = al.tracks.filter(t => this.srcChecked.has(t.id)).length;
+        return n > 0 && n < al.tracks.length;
+      },
+
+      isSrcArtistChecked(name) {
+        const all = this._srcArtistTracks(name);
+        return all.length > 0 && all.every(t => this.srcChecked.has(t.id));
+      },
+
+      isSrcArtistIndeterminate(name) {
+        const all = this._srcArtistTracks(name);
+        const n = all.filter(t => this.srcChecked.has(t.id)).length;
+        return n > 0 && n < all.length;
+      },
+
+      toggleSrcTrack(t, checked) {
+        const s = new Set(this.srcChecked);
+        checked ? s.add(t.id) : s.delete(t.id);
+        this.srcChecked = s;
+      },
+
+      toggleSrcAlbum(artistName, albumName, checked) {
+        const al = this._srcAlbum(artistName, albumName);
+        if (!al) return;
+        const s = new Set(this.srcChecked);
+        al.tracks.forEach(t => checked ? s.add(t.id) : s.delete(t.id));
+        this.srcChecked = s;
+      },
+
+      toggleSrcArtist(name, checked) {
+        const all = this._srcArtistTracks(name);
+        const s = new Set(this.srcChecked);
+        all.forEach(t => checked ? s.add(t.id) : s.delete(t.id));
+        this.srcChecked = s;
+      },
+
+      _srcAlbum(artistName, albumName) {
+        const artist = this.sourceLibrary?.artists.find(a => a.name === artistName);
+        return artist?.albums.find(al => al.name === albumName) || null;
+      },
+
+      _srcArtistTracks(name) {
+        const artist = this.sourceLibrary?.artists.find(a => a.name === name);
+        return artist ? artist.albums.flatMap(al => al.tracks) : [];
+      },
+
+      get syncToDelete() {
+        // IDs that were on iPod initially but are now unchecked
+        return [...this.srcInitialOnIpod].filter(id => !this.srcChecked.has(id));
+      },
+
+      get syncToCopy() {
+        // IDs that are now checked but weren't on iPod initially
+        return [...this.srcChecked].filter(id => !this.srcInitialOnIpod.has(id));
+      },
+
+      _srcTrackById(id) {
+        for (const artist of (this.sourceLibrary?.artists || []))
+          for (const album of artist.albums)
+            for (const t of album.tracks)
+              if (t.id === id) return t;
+        return null;
+      },
+
+      get syncDeleteTracks() { return this.syncToDelete.map(id => this._srcTrackById(id)).filter(Boolean); },
+      get syncCopyTracks()   { return this.syncToCopy.map(id => this._srcTrackById(id)).filter(Boolean); },
+      get syncDeleteBytes()  { return this.syncDeleteTracks.reduce((s, t) => s + (t.size || 0), 0); },
+      get syncCopyBytes()    { return this.syncCopyTracks.reduce((s, t) => s + (t.size || 0), 0); },
+      get hasSyncChanges()   { return this.syncToDelete.length > 0 || this.syncToCopy.length > 0; },
+
+      async confirmSync() {
+        this.showSyncConfirm = false;
+        if (!this.selectedDevnode) return;
+        // Resolve delete IDs → iPod track IDs via _ipodMap
+        if (!this._ipodMap) this._buildIpodMap();
+        const deleteIds = this.syncDeleteTracks
+          .map(t => { const k = this._trackKey(t.artist, t.album, t.track_nr, t.title); const ipodT = this._ipodMap.get(k); return ipodT?.id; })
+          .filter(id => id !== undefined);
+        const copyPaths = this.syncCopyTracks.map(t => t.path);
+        const r = await fetch('/library/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ devnode: this.selectedDevnode, copy_paths: copyPaths, delete_ids: deleteIds }),
+        });
+        if (!r.ok) { const d = await r.json().catch(()=>({})); alert(d.detail || 'Sync failed'); return; }
+        this._startOpPoll();
+      },
+
+      // ── Operation progress ──────────────────────────────────────────
+
+      _startOpPoll() {
+        if (this.opPollTimer) return;
+        this.opPollTimer = setInterval(async () => {
+          try {
+            const r = await fetch('/operations');
+            this.currentOp = r.ok ? await r.json() : null;
+            if (!this.currentOp || this.currentOp.status !== 'running') {
+              clearInterval(this.opPollTimer);
+              this.opPollTimer = null;
+              if (this.currentOp?.status === 'done') {
+                // Refresh library so new/removed tracks are reflected
+                this._ipodMap = null;
+                await this._fetchLibrary();
+                if (this.selectedSourceId) this._initSrcChecked();
+              }
+            }
+          } catch (e) { /* ignore */ }
+        }, 1000);
+      },
+
+      sourceDotClass(s) {
+        if (!s) return 'src-dot-pending';
+        return { done: 'src-dot-done', scanning: 'src-dot-scanning', error: 'src-dot-error' }[s.scan_status] || 'src-dot-pending';
+      },
+
+      srcFmtShort(t) {
+        if (t.codec && t.codec === 'alac') return 'ALAC';
+        const ext = (t.path || '').split('.').pop().toLowerCase();
+        const map = { mp3: 'MP3', m4a: 'AAC', aac: 'AAC', flac: 'FLAC', aiff: 'AIFF', aif: 'AIFF', wav: 'WAV', ogg: 'OGG' };
+        return map[ext] || ext.toUpperCase().slice(0, 5) || '?';
+      },
+
+      srcFmtClass(t) {
+        const s = this.srcFmtShort(t);
+        return { ALAC: 'fmt-alac', FLAC: 'fmt-alac', AAC: 'fmt-aac', MP3: 'fmt-mp3', WAV: 'fmt-wav' }[s] || 'fmt-other';
+      },
+
+      srcQuality(t) {
+        const fmt = this.srcFmtShort(t);
+        if (['FLAC', 'WAV', 'AIFF'].includes(fmt))
+          return t.samplerate ? (t.samplerate / 1000).toFixed(1) + ' kHz' : '—';
+        return t.bitrate ? t.bitrate + ' kbps' : '—';
       },
     };
   }

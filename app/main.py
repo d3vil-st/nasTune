@@ -17,16 +17,22 @@ from markupsafe import Markup
 from pydantic import BaseModel
 
 from app.services.artwork import extract_artwork
+from app.services.db import init_db
 from app.services.devices import device_service
+from app.routers.sources import router as sources_router
+from app.routers.ipod import router as ipod_router
 
 
 @asynccontextmanager
 async def lifespan(_app):
+    await init_db()
     await device_service.start()
     yield
 
 
 app = FastAPI(lifespan=lifespan)
+app.include_router(sources_router)
+app.include_router(ipod_router)
 templates = Jinja2Templates(directory="app/templates")
 templates.env.filters["tojson"] = lambda v: Markup(json.dumps(v, ensure_ascii=False))
 
