@@ -31,9 +31,24 @@ def _read_track(file_path: Path) -> dict | None:
 
         info = audio.info
         stat = file_path.stat()
+
+        # codec and bit depth: easy=True gives us EasyMP4 whose info is MP4Info,
+        # but older mutagen may not expose .codec. Re-open as MP4 for M4A to be sure.
         codec = getattr(info, 'codec', None)
+        bits_per_sample = getattr(info, 'bits_per_sample', None)
+        if file_path.suffix.lower() in ('.m4a', '.aac'):
+            try:
+                from mutagen.mp4 import MP4 as _MP4
+                _mp4info = _MP4(str(file_path)).info
+                if not codec:
+                    codec = getattr(_mp4info, 'codec', None)
+                if not bits_per_sample:
+                    bits_per_sample = getattr(_mp4info, 'bits_per_sample', None)
+            except Exception:
+                pass
         if codec:
             codec = codec.lower()
+
         return {
             'path': str(file_path),
             'artist': g('artist'),
@@ -44,6 +59,7 @@ def _read_track(file_path: Path) -> dict | None:
             'duration_ms': int(info.length * 1000) if hasattr(info, 'length') else None,
             'bitrate': int(getattr(info, 'bitrate', 0) / 1000) or None,
             'samplerate': getattr(info, 'sample_rate', None),
+            'bits_per_sample': bits_per_sample,
             'year': gi('date'),
             'size': stat.st_size,
             'file_mtime': int(stat.st_mtime),
@@ -59,17 +75,18 @@ async def _flush_batch(batch: list[dict]) -> None:
         await db.executemany(
             """INSERT INTO source_tracks
                    (source_id, path, artist, albumartist, album, title, track_nr,
-                    duration_ms, bitrate, samplerate, year, size, file_mtime, codec, scanned_at)
+                    duration_ms, bitrate, samplerate, year, size, file_mtime, codec, bits_per_sample, scanned_at)
                VALUES
                    (:source_id, :path, :artist, :albumartist, :album, :title, :track_nr,
-                    :duration_ms, :bitrate, :samplerate, :year, :size, :file_mtime, :codec, :scanned_at)
+                    :duration_ms, :bitrate, :samplerate, :year, :size, :file_mtime, :codec, :bits_per_sample, :scanned_at)
                ON CONFLICT(source_id, path) DO UPDATE SET
                    artist=excluded.artist, albumartist=excluded.albumartist,
                    album=excluded.album, title=excluded.title, track_nr=excluded.track_nr,
                    duration_ms=excluded.duration_ms, bitrate=excluded.bitrate,
                    samplerate=excluded.samplerate, year=excluded.year,
                    size=excluded.size, file_mtime=excluded.file_mtime,
-                   codec=excluded.codec, scanned_at=excluded.scanned_at""",
+                   codec=excluded.codec, bits_per_sample=excluded.bits_per_sample,
+                   scanned_at=excluded.scanned_at""",
             batch,
         )
         await db.commit()

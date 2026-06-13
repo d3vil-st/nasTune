@@ -37,10 +37,11 @@ CREATE TABLE IF NOT EXISTS source_tracks (
     bitrate     INTEGER,
     samplerate  INTEGER,
     year        INTEGER,
-    size        INTEGER,
-    file_mtime  INTEGER,
-    codec       TEXT,
-    scanned_at  INTEGER NOT NULL,
+    size            INTEGER,
+    file_mtime      INTEGER,
+    codec           TEXT,
+    bits_per_sample INTEGER,
+    scanned_at      INTEGER NOT NULL,
     UNIQUE(source_id, path)
 );
 
@@ -59,7 +60,8 @@ async def init_db() -> None:
         async with db.execute("PRAGMA table_info(source_tracks)") as cur:
             st_cols = {row[1] for row in await cur.fetchall()}
         for col, ddl in [
-            ("codec", "ALTER TABLE source_tracks ADD COLUMN codec TEXT"),
+            ("codec",           "ALTER TABLE source_tracks ADD COLUMN codec           TEXT"),
+            ("bits_per_sample", "ALTER TABLE source_tracks ADD COLUMN bits_per_sample INTEGER"),
         ]:
             if col not in st_cols:
                 await db.execute(ddl)
