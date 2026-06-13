@@ -4,28 +4,30 @@ import os
 from pathlib import Path
 from typing import Any
 
+from app.services.fs_utils import fs_usage, fs_type
 
-async def fetch_library() -> dict[str, Any]:
+
+async def fetch_library(mount: str) -> dict[str, Any]:
+    env = {**os.environ, "IPOD_MOUNT_POINT": mount}
     process = await asyncio.create_subprocess_exec(
         "gpod-ls",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        env=env,
     )
     stdout, stderr = await process.communicate()
 
     if process.returncode != 0:
         raise RuntimeError(stderr.decode().strip() or "gpod-ls exited with code " + str(process.returncode))
 
-    return _parse(json.loads(stdout.decode()))
+    return _parse(json.loads(stdout.decode()), Path(mount))
 
 
-def _parse(raw: dict) -> dict[str, Any]:
+def _parse(raw: dict, mount: Path) -> dict[str, Any]:
     ipod = raw["ipod_data"]
     device = ipod["device"]
 
     master = next(p for p in ipod["playlists"]["items"] if p["type"] == "master")
-
-    mount = Path(os.environ.get("IPOD_MOUNT_POINT", ""))
 
     library: dict[str, dict] = {}
     total_bytes = 0
@@ -77,7 +79,7 @@ def _parse(raw: dict) -> dict[str, Any]:
         track_count = sum(len(a["tracks"]) for a in albums)
         result_artists.append({"name": artist, "albums": albums, "track_count": track_count})
 
-    fs_total_bytes, fs_used_bytes = _fs_usage(mount)
+    fs_total_bytes, fs_used_bytes = fs_usage(mount)
     used_pct = round(min(fs_used_bytes / fs_total_bytes * 100, 100), 1) if fs_total_bytes else 0
 
     return {
@@ -89,52 +91,10 @@ def _parse(raw: dict) -> dict[str, Any]:
         "total_size_gb": round(total_bytes / 1024 ** 3, 2),
         "fs_total_gb": round(fs_total_bytes / 1024 ** 3, 2) if fs_total_bytes else 0,
         "fs_used_gb": round(fs_used_bytes / 1024 ** 3, 2) if fs_total_bytes else 0,
-        "fs_type": _fs_type(mount),
+        "fs_type": fs_type(mount),
         "used_pct": used_pct,
         "artists": result_artists,
     }
-
-
-def _fs_usage(mount: Path) -> tuple[int, int]:
-    """Returns (total_bytes, used_bytes) from the actual filesystem — correct for flash mods."""
-    if not mount.parts:
-        return 0, 0
-    try:
-        st = os.statvfs(mount)
-        total = st.f_frsize * st.f_blocks
-        free = st.f_frsize * st.f_bavail
-        return total, total - free
-    except OSError:
-        return 0, 0
-
-
-_FS_LABELS: dict[str, str] = {
-    "vfat": "FAT32",
-    "msdos": "FAT16",
-    "exfat": "exFAT",
-    "hfsplus": "HFS+",
-    "hfs": "HFS",
-    "ntfs": "NTFS",
-    "ext4": "ext4",
-    "ext3": "ext3",
-}
-
-
-def _fs_type(mount: Path) -> str:
-    """Reads /proc/mounts to find the filesystem type for the given mount point."""
-    if not mount.parts:
-        return ""
-    mount_str = str(mount).rstrip("/")
-    try:
-        with open("/proc/mounts") as f:
-            for line in f:
-                parts = line.split()
-                if len(parts) >= 3 and parts[1].rstrip("/") == mount_str:
-                    raw = parts[2].lower()
-                    return _FS_LABELS.get(raw, raw.upper())
-    except OSError:
-        pass
-    return ""
 
 
 def _is_missing(mount: Path, ipod_path: str) -> bool:
