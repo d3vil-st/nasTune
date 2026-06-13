@@ -217,6 +217,71 @@
     .refresh-btn.spinning { animation: spin .7s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* ── Player ─────────────────────────────────────────────────── */
+    .t-play-cell {
+      display: flex; align-items: center; justify-content: flex-end;
+      cursor: default; height: 100%;
+    }
+    .t-nr-text  { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+    .t-nr-play  { display: none; color: var(--blue); font-size: 11px; }
+    .t-nr-playing { color: var(--blue); font-size: 11px; }
+    .track-row:not(.missing):not(.now-playing):hover .t-play-cell { cursor: pointer; }
+    .track-row:not(.missing):not(.now-playing):hover .t-nr-text   { display: none; }
+    .track-row:not(.missing):not(.now-playing):hover .t-nr-play   { display: inline; }
+
+    .player-bar {
+      flex-shrink: 0;
+      background: #1e1e22;
+      border-top: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .player-info {
+      display: flex; align-items: center; gap: 10px;
+      min-width: 200px; flex-shrink: 0;
+    }
+    .player-art {
+      width: 40px; height: 40px; border-radius: 4px; overflow: hidden;
+      flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+    .player-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .player-title  { font-size: 13px; font-weight: 500; white-space: nowrap;
+                     overflow: hidden; text-overflow: ellipsis; max-width: 190px; }
+    .player-artist { font-size: 11px; color: var(--muted); margin-top: 2px;
+                     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px; }
+    .player-controls {
+      display: flex; align-items: center; gap: 4px; flex-shrink: 0;
+    }
+    .ctrl-btn {
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      font-size: 16px; padding: 4px 8px; border-radius: 5px;
+      transition: color .15s; line-height: 1;
+    }
+    .ctrl-btn:hover           { color: var(--text); }
+    .ctrl-btn.active          { color: var(--blue); }
+    .ctrl-btn.play-btn        { font-size: 22px; color: var(--text); }
+    .ctrl-btn.play-btn:hover  { color: var(--blue); }
+    .player-progress {
+      display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;
+    }
+    .player-time { font-size: 11px; color: var(--muted);
+                   font-variant-numeric: tabular-nums; flex-shrink: 0; }
+    .player-seek {
+      -webkit-appearance: none; flex: 1; height: 4px;
+      background: var(--bg3); border-radius: 2px; outline: none; cursor: pointer;
+    }
+    .player-seek::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 12px; height: 12px;
+      border-radius: 50%; background: var(--blue); cursor: pointer;
+    }
+    .player-seek::-moz-range-thumb {
+      width: 12px; height: 12px; border-radius: 50%;
+      background: var(--blue); border: none; cursor: pointer;
+    }
+
     /* ── Columns ──────────────────────────────────────────────────── */
     .content {
       display: flex;
@@ -323,6 +388,7 @@
       justify-content: center;
       font-size: 18px;
       opacity: .45;
+      position: relative;
     }
     .album-thumb img {
       width: 100%;
@@ -332,6 +398,20 @@
       opacity: 1;
     }
     .album-row.selected .album-thumb { opacity: 1; }
+    .album-play-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity .15s;
+      color: #fff;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .album-row:hover .album-play-overlay { opacity: 1; }
 
     .album-text { overflow: hidden; flex: 1; min-width: 0; }
 
@@ -828,6 +908,7 @@
                      @click="pickAlbum(al.name)">
                   <div class="album-thumb" :style="gradientFor(al.name)">
                     <img :src="artUrl(al)" @error="$el.style.display='none'" loading="lazy" alt="">
+                    <div class="album-play-overlay" @click.stop="pickAlbum(al.name); playAlbum(al)">&#x25B6;</div>
                   </div>
                   <div class="album-text">
                     <div class="album-name" x-text="al.name"></div>
@@ -883,9 +964,14 @@
             <div>
               <template x-for="t in currentTracks" :key="t.id">
                 <div class="track-row"
-                     :class="{ active: selectedTrack?.id === t.id, missing: t.missing }"
+                     :class="{ active: selectedTrack?.id === t.id, missing: t.missing, 'now-playing': isCurrentTrack(t) }"
                      @click="openDetail(t)">
-                  <span class="t-nr" x-text="t.track_nr || '·'"></span>
+                  <span class="t-play-cell" @click.stop="!t.missing && playTrack(t)">
+                    <span class="t-nr-text" x-show="!isCurrentTrack(t)" x-text="t.track_nr || '·'"></span>
+                    <span class="t-nr-play">&#x25B6;</span>
+                    <span class="t-nr-playing" x-show="isCurrentTrack(t)"
+                          x-text="playing ? '⏸' : '▶'"></span>
+                  </span>
                   <span class="t-title" x-text="t.title"></span>
                   <span class="t-rating" :class="{ unrated: !t.rating }" x-text="fmtRating(t.rating)"></span>
                   <span class="t-dur" x-text="fmtDur(t.duration_ms)"></span>
@@ -965,6 +1051,56 @@
     <img :src="coverPopupUrl" alt="Album cover">
   </div>
 
+  <!-- ── Hidden audio element ── -->
+  <audio x-ref="audio"
+         @timeupdate="!seeking && (currentTime = $refs.audio.currentTime)"
+         @loadedmetadata="duration = $refs.audio.duration"
+         @ended="onTrackEnded"
+         @play="playing = true"
+         @pause="playing = false"
+         @error="playing = false"
+         preload="auto">
+  </audio>
+
+  <!-- ── Player bar ── -->
+  <div class="player-bar" x-show="playerVisible" style="display:none">
+    <div class="player-info">
+      <div class="player-art" :style="playerArtUrl ? '' : gradientFor(playerTrack ? playerTrack.title + playerTrack.id : '')">
+        <img x-show="playerArtUrl" :src="playerArtUrl" @error="playerArtUrl = null" alt="">
+        <span x-show="!playerArtUrl" style="opacity:.4">&#x266A;</span>
+      </div>
+      <div style="min-width:0">
+        <div class="player-title" x-text="playerTrack ? playerTrack.title : '—'"></div>
+        <div class="player-artist" x-text="playerContext.artist + (playerContext.album ? ' — ' + playerContext.album : '')"></div>
+      </div>
+    </div>
+
+    <div class="player-controls">
+      <button class="ctrl-btn" :class="{ active: shuffle }" @click="toggleShuffle" title="Shuffle">&#x21C4;</button>
+      <button class="ctrl-btn" @click="prevTrack" title="Previous">&#x23EE;</button>
+      <button class="ctrl-btn play-btn" @click="togglePlay"
+              x-text="playing ? '⏸' : '▶'" title="Play/Pause"></button>
+      <button class="ctrl-btn" @click="nextTrack" title="Next">&#x23ED;</button>
+      <button class="ctrl-btn" :class="{ active: repeat !== 'none' }" @click="toggleRepeat"
+              :title="repeat === 'one' ? 'Repeat one' : repeat === 'all' ? 'Repeat all' : 'Repeat off'">
+        &#x21BB;<sup x-show="repeat === 'one'" style="font-size:8px;line-height:1">1</sup>
+      </button>
+      <button class="ctrl-btn" @click="stopPlayback" title="Stop" style="margin-left:8px">&#x25A0;</button>
+    </div>
+
+    <div class="player-progress">
+      <span class="player-time" x-text="fmtTime(currentTime)"></span>
+      <input class="player-seek" type="range" min="0" :max="effectiveDuration" step="1"
+             :disabled="!isFinite(duration)"
+             :value="currentTime"
+             @mousedown="seeking = true" @touchstart="seeking = true"
+             @mouseup="seeking = false; seek($event.target.value)"
+             @touchend="seeking = false; seek($event.target.value)"
+             @change="seek($event.target.value)">
+      <span class="player-time" x-text="fmtTime(effectiveDuration)"></span>
+    </div>
+  </div>
+
   <script>
   function app() {
     return {
@@ -986,6 +1122,19 @@
       selectedTrack: null,
       albumArtUrl: null,
       coverPopupUrl: null,
+
+      // Player state
+      queue: [],
+      queueIndex: -1,
+      playing: false,
+      shuffle: false,
+      repeat: 'none',
+      currentTime: 0,
+      duration: 0,
+      seeking: false,
+      playerVisible: false,
+      playerArtUrl: null,
+      playerContext: { artist: '', album: '' },
 
       async init() {
         await this.loadDevices();
@@ -1227,6 +1376,118 @@
         const h = Math.floor(s / 3600);
         const m = Math.floor((s % 3600) / 60);
         return h > 0 ? `${h} hr ${m} min` : `${m} min`;
+      },
+
+      // ── Player ──────────────────────────────────────────────────────
+
+      playTrack(track) {
+        const album = this.currentAlbums.find(a => a.name === this.selectedAlbum);
+        const playable = album ? album.tracks.filter(t => !t.missing) : (!track.missing ? [track] : []);
+        if (!playable.length) return;
+        this.queue = playable;
+        this.queueIndex = this.queue.findIndex(t => t.id === track.id);
+        if (this.queueIndex < 0) this.queueIndex = 0;
+        this.playerContext = { artist: this.selectedArtist || '', album: this.selectedAlbum || '' };
+        const artAlbum = album || (this.currentAlbums[0] || null);
+        this.playerArtUrl = artAlbum ? this.artUrl(artAlbum) : null;
+        this._loadAndPlay();
+      },
+
+      _loadAndPlay() {
+        const track = this.queue[this.queueIndex];
+        if (!track) return;
+        const audio = this.$refs.audio;
+        audio.src = '/audio?devnode=' + encodeURIComponent(this.selectedDevnode || '')
+                    + '&path=' + encodeURIComponent(track.ipod_path);
+        audio.play().catch(() => {});
+        this.playerVisible = true;
+      },
+
+      togglePlay() {
+        const a = this.$refs.audio;
+        if (a.paused) a.play().catch(() => {}); else a.pause();
+      },
+
+      prevTrack() {
+        if (this.$refs.audio.currentTime > 3) {
+          this.$refs.audio.currentTime = 0;
+          return;
+        }
+        let idx = this.shuffle
+          ? Math.floor(Math.random() * this.queue.length)
+          : this.queueIndex - 1;
+        if (idx < 0) idx = this.repeat !== 'none' ? this.queue.length - 1 : 0;
+        this.queueIndex = idx;
+        this._loadAndPlay();
+      },
+
+      nextTrack() {
+        if (this.repeat === 'one') {
+          this.$refs.audio.currentTime = 0;
+          this.$refs.audio.play().catch(() => {});
+          return;
+        }
+        let idx = this.shuffle
+          ? Math.floor(Math.random() * this.queue.length)
+          : this.queueIndex + 1;
+        if (idx >= this.queue.length) {
+          if (this.repeat === 'all') idx = 0;
+          else { this.playing = false; return; }
+        }
+        this.queueIndex = idx;
+        this._loadAndPlay();
+      },
+
+      onTrackEnded() { this.nextTrack(); },
+
+      seek(val) { this.$refs.audio.currentTime = parseFloat(val); },
+
+      toggleShuffle() { this.shuffle = !this.shuffle; },
+
+      toggleRepeat() {
+        const modes = ['none', 'all', 'one'];
+        this.repeat = modes[(modes.indexOf(this.repeat) + 1) % modes.length];
+      },
+
+      playAlbum(al) {
+        const playable = al.tracks.filter(t => !t.missing);
+        if (!playable.length) return;
+        this.queue = playable;
+        this.queueIndex = 0;
+        this.playerContext = { artist: this.selectedArtist || '', album: al.name };
+        this.playerArtUrl = this.artUrl(al);
+        this._loadAndPlay();
+      },
+
+      stopPlayback() {
+        const a = this.$refs.audio;
+        a.pause();
+        a.src = '';
+        this.playing = false;
+        this.queue = [];
+        this.queueIndex = -1;
+        this.currentTime = 0;
+        this.duration = 0;
+        this.playerVisible = false;
+      },
+
+      isCurrentTrack(t) {
+        return this.queue.length > 0 && this.queue[this.queueIndex]?.id === t.id;
+      },
+
+      get playerTrack() {
+        return this.queue[this.queueIndex] || null;
+      },
+
+      get effectiveDuration() {
+        if (isFinite(this.duration) && this.duration > 0) return this.duration;
+        return this.playerTrack ? this.playerTrack.duration_ms / 1000 : 0;
+      },
+
+      fmtTime(s) {
+        if (!s || isNaN(s) || !isFinite(s)) return '—';
+        s = Math.floor(s);
+        return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
       },
     };
   }

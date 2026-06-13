@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     udev \
     util-linux \
     mount \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Install pre-built gpod-utils deb (apt resolves libgpod and glib deps automatically)
