@@ -296,7 +296,7 @@
     /* ── Track table ──────────────────────────────────────────────── */
     .tracks-head {
       display: grid;
-      grid-template-columns: 36px 1fr 56px 62px 76px 60px;
+      grid-template-columns: 36px 1fr 54px 50px 66px 72px;
       gap: 8px;
       padding: 7px 16px;
       border-bottom: 1px solid var(--border);
@@ -312,7 +312,7 @@
 
     .track-row {
       display: grid;
-      grid-template-columns: 36px 1fr 56px 62px 76px 60px;
+      grid-template-columns: 36px 1fr 54px 50px 66px 72px;
       gap: 8px;
       padding: 5px 16px;
       border-bottom: 1px solid var(--border2);
@@ -336,8 +336,13 @@
       background: rgba(255,69,58,.18);
       color: #ff453a;
       letter-spacing: .4px;
-      margin-left: 6px;
-      vertical-align: middle;
+    }
+
+    .t-fmt-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
     }
 
     .t-rating {
@@ -348,6 +353,14 @@
       white-space: nowrap;
     }
     .t-rating.unrated { color: var(--dim); letter-spacing: 0; }
+
+    .t-quality {
+      font-size: 11px;
+      color: var(--dim);
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
 
     /* ── Album info bar ──────────────────────────────────────────────── */
     .album-bar {
@@ -665,7 +678,7 @@
       <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
         <path d="M5.5 1a4.5 4.5 0 1 0 2.8 8.02l2.84 2.84a.75.75 0 1 0 1.06-1.06L9.36 7.96A4.5 4.5 0 0 0 5.5 1Zm-3 4.5a3 3 0 1 1 6 0 3 3 0 0 1-6 0Z"/>
       </svg>
-      <input type="text" placeholder="Search artists…" x-model="search" @input="onSearch">
+      <input type="text" placeholder="Search artists, albums, tracks…" x-model="search" @input="onSearch">
     </div>
   </header>
 
@@ -737,10 +750,10 @@
       <div class="tracks-head">
         <span style="text-align:right">#</span>
         <span>Title</span>
+        <span style="text-align:right">Rating</span>
         <span style="text-align:right">Time</span>
         <span style="text-align:center">Format</span>
-        <span style="text-align:right">Bitrate</span>
-        <span style="text-align:right">Rating</span>
+        <span style="text-align:right">Quality</span>
       </div>
 
       <!-- Album info bar — visible when an album is selected -->
@@ -776,11 +789,14 @@
                    :class="{ active: selectedTrack?.id === t.id, missing: t.missing }"
                    @click="openDetail(t)">
                 <span class="t-nr" x-text="t.track_nr || '·'"></span>
-                <span class="t-title"><span x-text="t.title"></span><span class="missing-tag" x-show="t.missing">MISSING</span></span>
-                <span class="t-dur" x-text="fmtDur(t.duration_ms)"></span>
-                <span class="t-fmt" :class="fmtClass(t.filetype)" x-text="fmtShort(t.filetype)"></span>
-                <span class="t-kbps" x-text="t.bitrate ? t.bitrate + ' kbps' : '—'"></span>
+                <span class="t-title" x-text="t.title"></span>
                 <span class="t-rating" :class="{ unrated: !t.rating }" x-text="fmtRating(t.rating)"></span>
+                <span class="t-dur" x-text="fmtDur(t.duration_ms)"></span>
+                <span class="t-fmt-cell">
+                  <span class="t-fmt" :class="fmtClass(t.filetype)" x-text="fmtShort(t.filetype)"></span>
+                  <span class="missing-tag" x-show="t.missing">MISSING</span>
+                </span>
+                <span class="t-quality" x-text="fmtQuality(t)"></span>
               </div>
             </template>
           </div>
@@ -876,19 +892,37 @@
       get filteredArtists() {
         if (!this.search) return LIBRARY;
         const q = this.search.toLowerCase();
-        return LIBRARY.filter(a => a.name.toLowerCase().includes(q));
+        return LIBRARY.filter(a =>
+          a.name.toLowerCase().includes(q) ||
+          a.albums.some(al =>
+            al.name.toLowerCase().includes(q) ||
+            al.tracks.some(t => t.title.toLowerCase().includes(q))
+          )
+        );
       },
 
       get currentAlbums() {
         if (!this.selectedArtist) return [];
         const a = LIBRARY.find(a => a.name === this.selectedArtist);
-        return a ? a.albums : [];
+        if (!a) return [];
+        if (!this.search) return a.albums;
+        const q = this.search.toLowerCase();
+        return a.albums.filter(al =>
+          al.name.toLowerCase().includes(q) ||
+          al.tracks.some(t => t.title.toLowerCase().includes(q))
+        );
       },
 
       get currentTracks() {
         if (!this.selectedAlbum) return [];
         const al = this.currentAlbums.find(al => al.name === this.selectedAlbum);
-        return al ? al.tracks : [];
+        if (!al) return [];
+        if (!this.search) return al.tracks;
+        const q = this.search.toLowerCase();
+        return al.tracks.filter(t =>
+          t.title.toLowerCase().includes(q) ||
+          al.name.toLowerCase().includes(q)
+        );
       },
 
       onSearch() {
@@ -944,6 +978,13 @@
         if (!r) return '—';
         const stars = Math.round(r / 20);
         return '★'.repeat(stars) + '☆'.repeat(5 - stars);
+      },
+
+      fmtQuality(t) {
+        const fmt = this.fmtShort(t.filetype);
+        if (['ALAC', 'WAV', 'AIFF', 'FLAC'].includes(fmt))
+          return t.samplerate ? (t.samplerate / 1000).toFixed(1) + ' kHz' : '—';
+        return t.bitrate ? t.bitrate + ' kbps' : '—';
       },
 
       fmtDate(ts) {
