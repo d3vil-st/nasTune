@@ -1,1 +1,8 @@
 .venv
+gpod-ls.example.json
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.tar.gz
+ipod/

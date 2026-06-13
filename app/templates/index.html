@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>nasTune{% if data %} — {{ data.device.model_name }}{% endif %}</title>
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #1c1c1e;
+      --bg2:       #2c2c2e;
+      --bg3:       #3a3a3c;
+      --border:    #38383a;
+      --border2:   #2c2c2e;
+      --text:      #f2f2f7;
+      --text2:     #ebebf5cc;
+      --muted:     #98989d;
+      --dim:       #636366;
+      --blue:      #0a84ff;
+      --blue-bg:   #0a84ff;
+    }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+      font-size: 13px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ───────────────────────────────────────────────────── */
+    .header {
+      background: linear-gradient(180deg, #3a3a3c 0%, #2c2c2e 100%);
+      border-bottom: 1px solid #000;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 12px rgba(0,0,0,.5);
+      min-height: 76px;
+    }
+
+    .ipod-icon {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(145deg, #5a5a5c, #28282a);
+      border-radius: 11px;
+      border: 1px solid #555;
+      box-shadow: 0 2px 6px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .ipod-icon svg { width: 28px; height: 28px; }
+
+    .device-info { flex-shrink: 0; }
+
+    .device-info h1 {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -.2px;
+      line-height: 1.2;
+    }
+
+    .device-info .sub {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 3px;
+      letter-spacing: .1px;
+    }
+
+    .divider {
+      width: 1px;
+      height: 36px;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+
+    .storage-wrap { flex-shrink: 0; min-width: 200px; }
+
+    .storage-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 5px;
+    }
+
+    .storage-bar {
+      height: 5px;
+      background: #48484a;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .storage-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: linear-gradient(90deg, #0a84ff, #32ade6);
+    }
+
+    .badges {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      flex-shrink: 0;
+    }
+
+    .badge {
+      padding: 3px 9px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 500;
+      background: #48484a;
+      color: var(--text2);
+      white-space: nowrap;
+    }
+
+    .search-wrap {
+      margin-left: auto;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .search-wrap svg {
+      position: absolute;
+      left: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--dim);
+      pointer-events: none;
+    }
+
+    .search-wrap input {
+      background: #48484a;
+      border: 1px solid var(--bg3);
+      color: var(--text);
+      padding: 6px 10px 6px 28px;
+      border-radius: 7px;
+      font-size: 12px;
+      width: 190px;
+      outline: none;
+      transition: border-color .15s, background .15s;
+    }
+
+    .search-wrap input:focus {
+      border-color: var(--blue);
+      background: var(--bg3);
+    }
+
+    .search-wrap input::placeholder { color: var(--dim); }
+
+    /* ── Columns ──────────────────────────────────────────────────── */
+    .content {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .col {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .col-artists { width: 230px; flex-shrink: 0; border-right: 1px solid var(--border); }
+    .col-albums  { width: 290px; flex-shrink: 0; border-right: 1px solid var(--border); }
+    .col-tracks  { flex: 1; position: relative; }
+
+    .col-heading {
+      padding: 7px 14px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .7px;
+      text-transform: uppercase;
+      color: var(--dim);
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      user-select: none;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .col-scroll {
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .col-scroll::-webkit-scrollbar { width: 6px; }
+    .col-scroll::-webkit-scrollbar-track { background: transparent; }
+    .col-scroll::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 3px; }
+
+    /* ── Artist rows ──────────────────────────────────────────────── */
+    .artist-row {
+      padding: 6px 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid var(--border2);
+      transition: background .07s;
+      user-select: none;
+    }
+
+    .artist-row:hover:not(.selected) { background: var(--bg2); }
+
+    .artist-row.selected {
+      background: var(--blue-bg);
+    }
+
+    .artist-row.selected .artist-count { color: rgba(255,255,255,.65); }
+
+    .artist-name {
+      flex: 1;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .artist-count {
+      font-size: 11px;
+      color: var(--dim);
+      flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Album rows ───────────────────────────────────────────────── */
+    .album-row {
+      padding: 8px 14px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border2);
+      transition: background .07s;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .album-row:hover:not(.selected) { background: var(--bg2); }
+
+    .album-row.selected { background: var(--blue-bg); }
+    .album-row.selected .album-name,
+    .album-row.selected .album-meta { color: #fff; }
+
+    .album-thumb {
+      width: 38px;
+      height: 38px;
+      border-radius: 4px;
+      overflow: hidden;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      opacity: .45;
+    }
+    .album-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      opacity: 1;
+    }
+    .album-row.selected .album-thumb { opacity: 1; }
+
+    .album-text { overflow: hidden; flex: 1; min-width: 0; }
+
+    .album-name {
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .album-meta {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* ── Track table ──────────────────────────────────────────────── */
+    .tracks-head {
+      display: grid;
+      grid-template-columns: 36px 1fr 56px 62px 76px 60px;
+      gap: 8px;
+      padding: 7px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .6px;
+      text-transform: uppercase;
+      color: var(--dim);
+      background: var(--bg2);
+      flex-shrink: 0;
+      user-select: none;
+    }
+
+    .track-row {
+      display: grid;
+      grid-template-columns: 36px 1fr 56px 62px 76px 60px;
+      gap: 8px;
+      padding: 5px 16px;
+      border-bottom: 1px solid var(--border2);
+      align-items: center;
+      transition: background .07s;
+      cursor: pointer;
+    }
+
+    .track-row:hover { background: var(--bg2); }
+    .track-row:nth-child(even) { background: #1f1f21; }
+    .track-row:nth-child(even):hover { background: var(--bg2); }
+    .track-row.active  { background: rgba(10,132,255,.12) !important; border-left: 2px solid var(--blue); padding-left: 14px; }
+    .track-row.missing { opacity: .45; }
+
+    .missing-tag {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: rgba(255,69,58,.18);
+      color: #ff453a;
+      letter-spacing: .4px;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+
+    .t-rating {
+      font-size: 11px;
+      color: #ffd60a;
+      text-align: right;
+      letter-spacing: -1px;
+      white-space: nowrap;
+    }
+    .t-rating.unrated { color: var(--dim); letter-spacing: 0; }
+
+    /* ── Album info bar ──────────────────────────────────────────────── */
+    .album-bar {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 12px 16px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .abar-art {
+      width: 64px;
+      height: 64px;
+      border-radius: 6px;
+      overflow: hidden;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 30px;
+      opacity: .35;
+    }
+
+    .abar-art img { width: 100%; height: 100%; object-fit: cover; opacity: 1; display: block; }
+
+    .abar-info { overflow: hidden; }
+    .abar-title { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .abar-artist { font-size: 12px; color: var(--muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .abar-stats  { font-size: 11px; color: var(--dim);   margin-top: 2px; }
+
+    /* ── Detail panel ─────────────────────────────────────────────── */
+    .detail-panel {
+      position: absolute;
+      top: 0; right: 0;
+      width: 300px;
+      height: 100%;
+      background: #242426;
+      border-left: 1px solid var(--border);
+      transform: translateX(100%);
+      transition: transform .25s cubic-bezier(.4,0,.2,1);
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .detail-panel.open { transform: translateX(0); }
+
+    .detail-art {
+      height: 168px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .detail-art img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .detail-art-note {
+      font-size: 80px;
+      opacity: .15;
+      user-select: none;
+      line-height: 1;
+    }
+
+    .detail-art-tag {
+      position: absolute;
+      bottom: 10px; right: 10px;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 8px;
+      background: rgba(10,132,255,.2);
+      color: #64d2ff;
+    }
+
+    .detail-close {
+      position: absolute;
+      top: 10px; right: 10px;
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(0,0,0,.45);
+      color: #fff;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .15s;
+    }
+    .detail-close:hover { background: rgba(255,255,255,.15); }
+
+    .detail-body {
+      overflow-y: auto;
+      flex: 1;
+    }
+    .detail-body::-webkit-scrollbar { width: 4px; }
+    .detail-body::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 2px; }
+
+    .detail-track-info {
+      padding: 12px 16px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .detail-track-info .d-title { font-size: 14px; font-weight: 600; line-height: 1.3; }
+    .detail-track-info .d-artist { font-size: 12px; color: var(--muted); margin-top: 3px; }
+    .detail-track-info .d-album  { font-size: 11px; color: var(--dim);   margin-top: 1px; }
+
+    .detail-sep {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .7px;
+      text-transform: uppercase;
+      color: var(--dim);
+      padding: 12px 16px 4px;
+    }
+
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 5px 16px;
+      font-size: 12px;
+      border-bottom: 1px solid var(--border2);
+    }
+    .detail-row:last-child { border-bottom: none; }
+    .dr-l { color: var(--muted); flex-shrink: 0; }
+    .dr-v { color: var(--text); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
+
+    .detail-path {
+      font-size: 10px;
+      color: var(--dim);
+      padding: 4px 16px 12px;
+      word-break: break-all;
+      line-height: 1.6;
+      font-family: ui-monospace, "SF Mono", monospace;
+    }
+
+    .t-nr {
+      color: var(--dim);
+      font-size: 12px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .t-title {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 13px;
+    }
+
+    .t-dur {
+      color: var(--muted);
+      font-size: 12px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .t-fmt {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 0;
+      border-radius: 4px;
+      text-align: center;
+      letter-spacing: .4px;
+    }
+
+    .fmt-alac { background: #0c2d4a; color: #4cc2ff; }
+    .fmt-aac  { background: #2d1a42; color: #bf8bff; }
+    .fmt-mp3  { background: #3d2600; color: #ff9f0a; }
+    .fmt-wav  { background: #0d2d18; color: #34c759; }
+    .fmt-other{ background: var(--bg3); color: var(--muted); }
+
+    .t-kbps {
+      color: var(--dim);
+      font-size: 11px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Empty / error states ─────────────────────────────────────── */
+    .empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      gap: 8px;
+      color: var(--bg3);
+      user-select: none;
+      padding: 40px;
+    }
+
+    .empty-icon { font-size: 52px; line-height: 1; }
+    .empty-label { font-size: 14px; font-weight: 600; color: var(--dim); }
+    .empty-sub   { font-size: 12px; color: var(--bg3); text-align: center; }
+
+    .error-box {
+      background: #2d1212;
+      border: 1px solid #5a2020;
+      color: #ff6b6b;
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin: 24px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .error-box strong { display: block; font-size: 14px; margin-bottom: 6px; }
+    .error-box code {
+      background: #1c1c1e;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    /* ── Cover popup ─────────────────────────────────────────────── */
+    .cover-popup {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.88);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      cursor: zoom-out;
+    }
+
+    .cover-popup img {
+      max-width: min(90vw, 800px);
+      max-height: 90vh;
+      width: auto;
+      height: auto;
+      border-radius: 8px;
+      box-shadow: 0 32px 80px rgba(0,0,0,.8);
+      display: block;
+    }
+
+    /* ── Status bar ───────────────────────────────────────────────── */
+    .statusbar {
+      background: var(--bg2);
+      border-top: 1px solid var(--border);
+      padding: 4px 16px;
+      font-size: 11px;
+      color: var(--dim);
+      flex-shrink: 0;
+      display: flex;
+      gap: 20px;
+      align-items: center;
+    }
+  </style>
+</head>
+
+<body x-data="app()">
+
+  <!-- ── Header ── -->
+  <header class="header">
+    <div class="ipod-icon">
+      <!-- Classic iPod silhouette -->
+      <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="5" y="2" width="18" height="24" rx="3.5" stroke="#aaa" stroke-width="1.5" fill="none"/>
+        <rect x="8" y="4.5" width="12" height="8" rx="1" fill="#444"/>
+        <circle cx="14" cy="19" r="4" stroke="#888" stroke-width="1.2" fill="none"/>
+        <circle cx="14" cy="19" r="1.2" fill="#888"/>
+        <line x1="14" y1="15.5" x2="14" y2="14.5" stroke="#888" stroke-width="1.2" stroke-linecap="round"/>
+        <line x1="14" y1="23.5" x2="14" y2="22.5" stroke="#888" stroke-width="1.2" stroke-linecap="round"/>
+        <line x1="10.5" y1="19" x2="11.5" y2="19" stroke="#888" stroke-width="1.2" stroke-linecap="round"/>
+        <line x1="16.5" y1="19" x2="17.5" y2="19" stroke="#888" stroke-width="1.2" stroke-linecap="round"/>
+      </svg>
+    </div>
+
+    {% if data %}
+    <div class="device-info">
+      <h1>{{ data.ipod_name }}</h1>
+      <div class="sub">{{ data.device.model_name }}&thinsp;·&thinsp;{{ data.device.capacity }}&thinsp;GB&ensp;·&ensp;UUID {{ data.device.uuid }}</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="storage-wrap">
+      <div class="storage-labels">
+        <span>{{ data.total_size_gb }}&thinsp;GB used</span>
+        <span>{{ data.device.capacity }}&thinsp;GB</span>
+      </div>
+      <div class="storage-bar">
+        <div class="storage-fill" style="width: {{ data.used_pct }}%"></div>
+      </div>
+    </div>
+
+    <div class="badges">
+      <span class="badge">{{ "{:,}".format(data.total_tracks) }} songs</span>
+      <span class="badge">{{ data.total_albums }} albums</span>
+      <span class="badge">{{ data.artists | length }} artists</span>
+    </div>
+    {% else %}
+    <div class="device-info">
+      <h1>nasTune</h1>
+      <div class="sub">iPod Library Browser</div>
+    </div>
+    {% endif %}
+
+    <div class="search-wrap">
+      <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
+        <path d="M5.5 1a4.5 4.5 0 1 0 2.8 8.02l2.84 2.84a.75.75 0 1 0 1.06-1.06L9.36 7.96A4.5 4.5 0 0 0 5.5 1Zm-3 4.5a3 3 0 1 1 6 0 3 3 0 0 1-6 0Z"/>
+      </svg>
+      <input type="text" placeholder="Search artists…" x-model="search" @input="onSearch">
+    </div>
+  </header>
+
+  {% if error %}
+  <div style="flex:1; overflow:auto;">
+    <div class="error-box">
+      <strong>Could not read iPod library</strong>
+      {{ error }}<br>
+      <span style="color:#98989d; font-size:12px;">
+        Mount point: <code>{{ mount_point }}</code>&ensp;—&ensp;
+        set <code>IPOD_MOUNT_POINT</code> and make sure the iPod is mounted.
+      </span>
+    </div>
+  </div>
+
+  {% elif data %}
+  <!-- ── Three-column browser ── -->
+  <div class="content">
+
+    <!-- Artists -->
+    <div class="col col-artists">
+      <div class="col-heading">Artists&ensp;(<span x-text="filteredArtists.length"></span>)</div>
+      <div class="col-scroll">
+        <template x-for="a in filteredArtists" :key="a.name">
+          <div class="artist-row"
+               :class="{ selected: selectedArtist === a.name }"
+               @click="pickArtist(a.name)">
+            <span class="artist-name" x-text="a.name"></span>
+            <span class="artist-count" x-text="a.track_count"></span>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Albums -->
+    <div class="col col-albums">
+      <div class="col-heading" x-text="selectedArtist || 'Albums'"></div>
+      <div class="col-scroll">
+        <template x-if="!selectedArtist">
+          <div class="empty">
+            <span class="empty-icon">♫</span>
+            <span class="empty-label">Select an artist</span>
+          </div>
+        </template>
+        <template x-if="selectedArtist">
+          <div>
+            <template x-for="al in currentAlbums" :key="al.name">
+              <div class="album-row"
+                   :class="{ selected: selectedAlbum === al.name }"
+                   @click="pickAlbum(al.name)">
+                <div class="album-thumb" :style="gradientFor(al.name)">
+                  <img :src="artUrl(al)" @error="$el.style.display='none'" loading="lazy" alt="">
+                </div>
+                <div class="album-text">
+                  <div class="album-name" x-text="al.name"></div>
+                  <div class="album-meta">
+                    <span x-text="al.year > 0 ? al.year + ' · ' : ''"></span><span x-text="al.tracks.length + (al.tracks.length === 1 ? ' track' : ' tracks')"></span>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Tracks -->
+    <div class="col col-tracks">
+      <div class="tracks-head">
+        <span style="text-align:right">#</span>
+        <span>Title</span>
+        <span style="text-align:right">Time</span>
+        <span style="text-align:center">Format</span>
+        <span style="text-align:right">Bitrate</span>
+        <span style="text-align:right">Rating</span>
+      </div>
+
+      <!-- Album info bar — visible when an album is selected -->
+      <template x-if="selectedAlbum">
+        <div class="album-bar">
+          <div class="abar-art"
+               :style="(albumArtUrl ? 'cursor:zoom-in;' : '') + (albumArtUrl ? '' : gradientFor(selectedAlbum))"
+               @click="albumArtUrl && (coverPopupUrl = albumArtUrl)">
+            <img x-show="albumArtUrl" :src="albumArtUrl" @error="albumArtUrl = null" alt="">
+            <span x-show="!albumArtUrl">♫</span>
+          </div>
+          <div class="abar-info">
+            <div class="abar-title" x-text="selectedAlbum"></div>
+            <div class="abar-artist" x-text="selectedArtist"></div>
+            <div class="abar-stats" x-text="currentTracks.length + ' tracks · ' + fmtTotalDur(currentTracks)"></div>
+          </div>
+        </div>
+      </template>
+
+      <div class="col-scroll">
+        <template x-if="!selectedAlbum">
+          <div class="empty">
+            <span class="empty-icon">♪</span>
+            <span class="empty-label">Select an album</span>
+            <span class="empty-sub" x-show="selectedArtist"
+                  x-text="currentAlbums.length + ' albums by ' + selectedArtist"></span>
+          </div>
+        </template>
+        <template x-if="selectedAlbum">
+          <div>
+            <template x-for="t in currentTracks" :key="t.id">
+              <div class="track-row"
+                   :class="{ active: selectedTrack?.id === t.id, missing: t.missing }"
+                   @click="openDetail(t)">
+                <span class="t-nr" x-text="t.track_nr || '·'"></span>
+                <span class="t-title"><span x-text="t.title"></span><span class="missing-tag" x-show="t.missing">MISSING</span></span>
+                <span class="t-dur" x-text="fmtDur(t.duration_ms)"></span>
+                <span class="t-fmt" :class="fmtClass(t.filetype)" x-text="fmtShort(t.filetype)"></span>
+                <span class="t-kbps" x-text="t.bitrate ? t.bitrate + ' kbps' : '—'"></span>
+                <span class="t-rating" :class="{ unrated: !t.rating }" x-text="fmtRating(t.rating)"></span>
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
+
+      <!-- ── Detail panel ── -->
+      <div class="detail-panel" :class="{ open: !!selectedTrack }">
+        <div class="detail-art"
+             :style="(albumArtUrl ? 'cursor:zoom-in;' : '') + (albumArtUrl ? '' : artStyle(selectedTrack))"
+             @click="albumArtUrl && (coverPopupUrl = albumArtUrl)">
+          <img x-show="albumArtUrl" :src="albumArtUrl" @error="albumArtUrl = null" alt="">
+          <span class="detail-art-note" x-show="!albumArtUrl">♪</span>
+          <button class="detail-close" @click.stop="selectedTrack = null">✕</button>
+        </div>
+
+        <div class="detail-body">
+          <div class="detail-track-info">
+            <div class="d-title" x-text="selectedTrack?.title"></div>
+            <div class="d-artist" x-text="selectedArtist"></div>
+            <div class="d-album" x-text="selectedAlbum + (selectedTrack?.year > 0 ? ' · ' + selectedTrack.year : '')"></div>
+          </div>
+
+          <div class="detail-sep">Audio</div>
+          <div class="detail-row"><span class="dr-l">Format</span>    <span class="dr-v" x-text="selectedTrack ? fmtShort(selectedTrack.filetype) : ''"></span></div>
+          <div class="detail-row"><span class="dr-l">Bit Rate</span>  <span class="dr-v" x-text="selectedTrack?.bitrate ? selectedTrack.bitrate + ' kbps' : '—'"></span></div>
+          <div class="detail-row"><span class="dr-l">Sample Rate</span><span class="dr-v" x-text="selectedTrack?.samplerate ? (selectedTrack.samplerate / 1000).toFixed(1) + ' kHz' : '—'"></span></div>
+          <div class="detail-row"><span class="dr-l">Duration</span>  <span class="dr-v" x-text="fmtDur(selectedTrack?.duration_ms)"></span></div>
+          <div class="detail-row"><span class="dr-l">File Size</span> <span class="dr-v" x-text="selectedTrack ? (selectedTrack.size / 1048576).toFixed(1) + ' MB' : ''"></span></div>
+
+          <div class="detail-sep">Library</div>
+          <div class="detail-row"><span class="dr-l">Track #</span>   <span class="dr-v" x-text="selectedTrack?.track_nr || '—'"></span></div>
+          <div class="detail-row" x-show="selectedTrack?.genre">    <span class="dr-l">Genre</span>    <span class="dr-v" x-text="selectedTrack?.genre"></span></div>
+          <div class="detail-row" x-show="selectedTrack?.composer"> <span class="dr-l">Composer</span><span class="dr-v" x-text="selectedTrack?.composer"></span></div>
+          <div class="detail-row"><span class="dr-l">Play Count</span><span class="dr-v" x-text="selectedTrack?.playcount ?? 0"></span></div>
+          <div class="detail-row"><span class="dr-l">Rating</span>   <span class="dr-v" x-text="fmtRating(selectedTrack?.rating)"></span></div>
+          <div class="detail-row" x-show="selectedTrack?.time_added"><span class="dr-l">Added</span>      <span class="dr-v" x-text="fmtDate(selectedTrack?.time_added)"></span></div>
+          <div class="detail-row" x-show="selectedTrack?.time_played"><span class="dr-l">Last Played</span><span class="dr-v" x-text="fmtDate(selectedTrack?.time_played)"></span></div>
+
+          <div class="detail-sep">File</div>
+          <div class="detail-path" x-text="selectedTrack?.ipod_path"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Status bar ── -->
+  <div class="statusbar">
+    <template x-if="selectedAlbum">
+      <span x-text="currentTracks.length + ' tracks'"></span>
+    </template>
+    <template x-if="selectedArtist && !selectedAlbum">
+      <span x-text="currentAlbums.length + ' albums · ' + currentAlbums.reduce((s,a)=>s+a.tracks.length,0) + ' tracks'"></span>
+    </template>
+    <template x-if="!selectedArtist">
+      <span>{{ "{:,}".format(data.total_tracks) }} songs &ensp;·&ensp; {{ data.total_albums }} albums &ensp;·&ensp; {{ data.artists | length }} artists</span>
+    </template>
+  </div>
+
+  <!-- ── Full-size cover popup ── -->
+  <div class="cover-popup"
+       x-show="coverPopupUrl"
+       x-transition.opacity
+       @click="coverPopupUrl = null"
+       @keydown.escape.window="coverPopupUrl = null"
+       style="display:none">
+    <img :src="coverPopupUrl" alt="Album cover">
+  </div>
+
+  {% else %}
+  <div style="flex:1; display:flex; align-items:center; justify-content:center;">
+    <div class="empty">
+      <span class="empty-icon">🎵</span>
+      <span class="empty-label">No iPod data</span>
+      <span class="empty-sub">Set <code style="color:#ebebf5;background:#3a3a3c;padding:1px 5px;border-radius:4px">IPOD_MOUNT_POINT</code> and reload</span>
+    </div>
+  </div>
+  {% endif %}
+
+  <script>
+  const LIBRARY = {{ data.artists | tojson if data else '[]' }};
+
+  function app() {
+    return {
+      search: '',
+      selectedArtist: null,
+      selectedAlbum: null,
+      selectedTrack: null,
+      albumArtUrl: null,
+      coverPopupUrl: null,
+
+      get filteredArtists() {
+        if (!this.search) return LIBRARY;
+        const q = this.search.toLowerCase();
+        return LIBRARY.filter(a => a.name.toLowerCase().includes(q));
+      },
+
+      get currentAlbums() {
+        if (!this.selectedArtist) return [];
+        const a = LIBRARY.find(a => a.name === this.selectedArtist);
+        return a ? a.albums : [];
+      },
+
+      get currentTracks() {
+        if (!this.selectedAlbum) return [];
+        const al = this.currentAlbums.find(al => al.name === this.selectedAlbum);
+        return al ? al.tracks : [];
+      },
+
+      onSearch() {
+        this.selectedArtist = null;
+        this.selectedAlbum = null;
+        this.selectedTrack = null;
+        this.albumArtUrl = null;
+      },
+
+      pickArtist(name) {
+        this.selectedArtist = name;
+        this.selectedAlbum = null;
+        this.selectedTrack = null;
+        this.albumArtUrl = null;
+      },
+
+      pickAlbum(name) {
+        this.selectedAlbum = name;
+        this.selectedTrack = null;
+        this.albumArtUrl = null;
+        // Find first track on this album that has embedded artwork
+        const al = this.currentAlbums.find(a => a.name === name);
+        const track = al?.tracks.find(t => t.artwork);
+        if (track) this.albumArtUrl = '/artwork?path=' + encodeURIComponent(track.ipod_path);
+      },
+
+      openDetail(t) {
+        this.selectedTrack = this.selectedTrack?.id === t.id ? null : t;
+      },
+
+      fmtDur(ms) {
+        if (!ms) return '—';
+        const s = Math.round(ms / 1000);
+        return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+      },
+
+      fmtShort(ft) {
+        if (!ft) return '?';
+        if (ft.includes('Apple Lossless') || ft.includes('ALAC')) return 'ALAC';
+        if (ft.includes('AAC'))  return 'AAC';
+        if (ft.includes('MP3') || ft.includes('MPEG')) return 'MP3';
+        if (ft.includes('WAV'))  return 'WAV';
+        if (ft.includes('AIFF')) return 'AIFF';
+        return ft.split(' ')[0].slice(0, 5).toUpperCase();
+      },
+
+      fmtClass(ft) {
+        const s = this.fmtShort(ft);
+        return { ALAC: 'fmt-alac', AAC: 'fmt-aac', MP3: 'fmt-mp3', WAV: 'fmt-wav' }[s] || 'fmt-other';
+      },
+
+      fmtRating(r) {
+        if (!r) return '—';
+        const stars = Math.round(r / 20);
+        return '★'.repeat(stars) + '☆'.repeat(5 - stars);
+      },
+
+      fmtDate(ts) {
+        if (!ts) return '—';
+        return new Date(ts * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+      },
+
+      artStyle(t) {
+        return this.gradientFor(t ? t.title + t.id : '');
+      },
+
+      gradientFor(seed) {
+        const palettes = [
+          '#1a2a4a,#0c1220', '#2a1a40,#160c28', '#1a3828,#0c2018',
+          '#3a281a,#28180c', '#1a1a3a,#0c0c20', '#381a1c,#200c0e',
+          '#1a3838,#0c2020', '#2a2818,#1c1c0c',
+        ];
+        let h = 0;
+        for (const c of String(seed)) h = ((h << 5) - h + c.charCodeAt(0)) | 0;
+        const [c1, c2] = palettes[Math.abs(h) % palettes.length].split(',');
+        return `background:linear-gradient(145deg,${c1} 0%,${c2} 100%)`;
+      },
+
+      artUrl(album) {
+        const t = album.tracks.find(t => t.artwork && t.ipod_path);
+        return t ? '/artwork?path=' + encodeURIComponent(t.ipod_path) : null;
+      },
+
+      fmtTotalDur(tracks) {
+        const ms = (tracks || []).reduce((s, t) => s + t.duration_ms, 0);
+        const s = Math.round(ms / 1000);
+        const h = Math.floor(s / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        return h > 0 ? `${h} hr ${m} min` : `${m} min`;
+      },
+    };
+  }
+  </script>
+</body>
+</html>

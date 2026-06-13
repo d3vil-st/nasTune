@@ -1,0 +1,16 @@
+services:
+  nastune:
+    build: .
+    privileged: true          # required for mount syscalls inside the container
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - /dev:/dev
+      - /run/udev:/run/udev:ro
+      - /mnt/music:/music:ro  # NAS music share — read-only
+      - ./ipod:/mnt/ipod   # iPod mount point shared with host
+    devices:
+      - /dev/bus/usb
+    environment:
+      IPOD_MOUNT_POINT: /mnt/ipod
+    restart: unless-stopped
