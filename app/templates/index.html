@@ -199,6 +199,24 @@
 
     .search-wrap input::placeholder { color: var(--dim); }
 
+    .refresh-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      width: 30px;
+      height: 30px;
+      border-radius: 7px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: color .15s, border-color .15s, transform .3s;
+    }
+    .refresh-btn:hover { color: var(--text); border-color: var(--dim); }
+    .refresh-btn.spinning { animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
     /* ── Columns ──────────────────────────────────────────────────── */
     .content {
       display: flex;
@@ -702,8 +720,9 @@
       </div>
     </div>
 
-    <!-- Device name + subtitle -->
-    <div class="device-info">
+    <!-- Device name + subtitle + refresh -->
+    <div style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
+      <div class="device-info">
       <h1 x-text="library ? library.ipod_name : (ipodDevices.length ? (selectedDevice?.devname || 'nasTune') : 'nasTune')"></h1>
       <div class="sub" x-show="library"
            x-text="library ? library.device.model_name + ' · ' + library.fs_total_gb + ' GB ' + library.fs_type + ' · UUID ' + library.device.uuid : ''">
@@ -711,6 +730,9 @@
       <div class="sub" x-show="!library"
            x-text="libraryLoading ? 'Loading library…' : (libraryError ? 'Error loading library' : (ipodDevices.length ? 'Select a device above' : 'No iPods connected'))">
       </div>
+    </div>
+      <button class="refresh-btn" x-show="library" :class="{ spinning: libraryRefreshing }"
+              @click="refreshLibrary" :disabled="libraryRefreshing" title="Reload library from iPod">&#x21BB;</button>
     </div>
 
     <!-- Storage bar (only when library loaded) -->
@@ -733,7 +755,7 @@
     </div>
 
     <!-- Search -->
-    <div class="search-wrap" x-show="library" style="margin-left:auto">
+    <div class="search-wrap" x-show="library" style="margin-left:auto;">
       <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
         <path d="M5.5 1a4.5 4.5 0 1 0 2.8 8.02l2.84 2.84a.75.75 0 1 0 1.06-1.06L9.36 7.96A4.5 4.5 0 0 0 5.5 1Zm-3 4.5a3 3 0 1 1 6 0 3 3 0 0 1-6 0Z"/>
       </svg>
@@ -954,6 +976,7 @@
       // Library state
       library: null,
       libraryLoading: false,
+      libraryRefreshing: false,
       libraryError: null,
 
       // Browser state
@@ -976,7 +999,7 @@
           this.devices = data.devices;
           if (data.selected) {
             this.selectedDevnode = data.selected;
-            await this._fetchLibrary();
+            await this._fetchLibrary(true);
           }
         } catch (e) {
           this.libraryError = e.message;
@@ -1009,16 +1032,36 @@
         }
       },
 
-      async _fetchLibrary() {
+      async _fetchLibrary(refresh = false) {
         this.libraryLoading = true;
         try {
-          const r = await fetch('/library');
+          const r = refresh
+            ? await fetch('/library/refresh', { method: 'POST' })
+            : await fetch('/library');
           if (!r.ok) { this.libraryError = await r.text(); return; }
           this.library = await r.json();
         } catch (e) {
           this.libraryError = e.message;
         } finally {
           this.libraryLoading = false;
+        }
+      },
+
+      async refreshLibrary() {
+        if (this.libraryRefreshing) return;
+        this.libraryRefreshing = true;
+        try {
+          const r = await fetch('/library/refresh', { method: 'POST' });
+          if (!r.ok) { this.libraryError = await r.text(); return; }
+          this.library = await r.json();
+          this.selectedArtist = null;
+          this.selectedAlbum = null;
+          this.selectedTrack = null;
+          this.albumArtUrl = null;
+        } catch (e) {
+          this.libraryError = e.message;
+        } finally {
+          this.libraryRefreshing = false;
         }
       },
 

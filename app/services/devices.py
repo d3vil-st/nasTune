@@ -294,6 +294,14 @@ class DeviceService:
             await self._load_library(devnode)
         return self._cache.get(devnode)
 
+    async def refresh_library(self) -> dict | None:
+        devnode = self.selected
+        if not devnode:
+            return None
+        self._cache.pop(devnode, None)
+        await self._load_library(devnode)
+        return self._cache.get(devnode)
+
     async def _load_library(self, devnode: str) -> None:
         info = self.devices.get(devnode)
         if not info:
