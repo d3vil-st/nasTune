@@ -8,8 +8,10 @@ logging.basicConfig(
     format="%(levelname)-8s %(name)s: %(message)s",
 )
 
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 from pydantic import BaseModel
@@ -118,3 +120,78 @@ async def get_artwork(path: str, devnode: str = ""):
         media_type=mime,
         headers={"Cache-Control": "public, max-age=86400"},
     )
+
+
+_AUDIO_MIMES = {
+    "mp3": "audio/mpeg",
+    "m4a": "audio/mp4",
+    "aac": "audio/mp4",
+    "aiff": "audio/aiff",
+    "aif": "audio/aiff",
+    "wav": "audio/wav",
+    "flac": "audio/flac",
+}
+
+log = logging.getLogger(__name__)
+
+
+def _is_alac(path: Path) -> bool:
+    try:
+        from mutagen.mp4 import MP4
+        info = MP4(str(path)).info
+        return getattr(info, "codec", "").lower() == "alac"
+    except Exception:
+        return False
+
+
+async def _ffmpeg_stream(path: str):
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg", "-hide_banner", "-loglevel", "error",
+        "-i", path, "-f", "flac", "-",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        while True:
+            chunk = await proc.stdout.read(65536)
+            if not chunk:
+                break
+            yield chunk
+    finally:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        await proc.wait()
+
+
+@app.get("/audio")
+async def get_audio(path: str, devnode: str = ""):
+    target = devnode or device_service.selected
+    if not target:
+        raise HTTPException(status_code=400, detail="No device selected")
+
+    info = device_service.get_device_info(target)
+    if not info:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    mount = Path(info.mount).resolve()
+    full = (mount / path.lstrip("/")).resolve()
+    if not str(full).startswith(str(mount)):
+        raise HTTPException(status_code=400, detail="Path outside mount point")
+    if not full.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    ext = full.suffix.lower().lstrip(".")
+
+    # ALAC in M4A is not supported by Firefox on Linux — transcode to FLAC on the fly
+    if ext in ("m4a", "aac") and await asyncio.to_thread(_is_alac, full):
+        log.info("Transcoding ALAC → FLAC: %s", full)
+        return StreamingResponse(
+            _ffmpeg_stream(str(full)),
+            media_type="audio/flac",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    mime = _AUDIO_MIMES.get(ext, "application/octet-stream")
+    return FileResponse(str(full), media_type=mime)
