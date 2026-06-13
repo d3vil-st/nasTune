@@ -647,15 +647,15 @@
     {% if data %}
     <div class="device-info">
       <h1>{{ data.ipod_name }}</h1>
-      <div class="sub">{{ data.device.model_name }}&thinsp;·&thinsp;{{ data.device.capacity }}&thinsp;GB&ensp;·&ensp;UUID {{ data.device.uuid }}</div>
+      <div class="sub">{{ data.device.model_name }}&thinsp;·&thinsp;{{ data.fs_total_gb }}&thinsp;GB&thinsp;{{ data.fs_type }}&ensp;·&ensp;UUID {{ data.device.uuid }}</div>
     </div>
 
     <div class="divider"></div>
 
     <div class="storage-wrap">
       <div class="storage-labels">
-        <span>{{ data.total_size_gb }}&thinsp;GB used</span>
-        <span>{{ data.device.capacity }}&thinsp;GB</span>
+        <span>{{ data.fs_used_gb }}&thinsp;GB used</span>
+        <span>{{ data.fs_total_gb }}&thinsp;GB</span>
       </div>
       <div class="storage-bar">
         <div class="storage-fill" style="width: {{ data.used_pct }}%"></div>
