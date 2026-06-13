@@ -2460,11 +2460,19 @@
         this._ipodIndex = new Set(this._ipodMap.keys());
       },
 
+      _normStr(s) {
+        // Collapse Unicode punctuation variants to ASCII so cross-source matching works.
+        // Handles: Unicode hyphens/dashes → hyphen-minus, curly/smart quotes → straight apostrophe.
+        return (s || '').toLowerCase().trim()
+          .replace(/[‐‑‒–—―−﹘﹣－]/g, '-')
+          .replace(/[‘’ʼ`´]/g, "'")
+          .replace(/[“”]/g, '"');
+      },
       _trackKey(artist, album, track_nr, title) {
-        const a  = (artist   || '').toLowerCase().trim();
-        const al = (album    || '').toLowerCase().trim();
+        const a  = this._normStr(artist);
+        const al = this._normStr(album);
         const nr = track_nr != null && track_nr > 0 ? String(track_nr) : '';
-        const t  = (title    || '').toLowerCase().trim();
+        const t  = this._normStr(title);
         return a + '|||' + al + '|||' + (nr || t);
       },
 
