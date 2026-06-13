@@ -154,7 +154,7 @@ async def get_source_library(source_id: int):
 
         async with db.execute(
             """SELECT id, path, artist, albumartist, album, title, track_nr,
-                      duration_ms, bitrate, samplerate, year, size, codec
+                      duration_ms, bitrate, samplerate, year, size, codec, bits_per_sample
                FROM source_tracks WHERE source_id=?
                ORDER BY albumartist, artist, album, track_nr, title""",
             (source_id,),
@@ -242,6 +242,7 @@ def _build_library(tracks: list[dict]) -> dict:
             "year": t.get("year") or 0,
             "size": t.get("size") or 0,
             "codec": t.get("codec") or "",
+            "bits_per_sample": t.get("bits_per_sample") or 0,
         })
 
     result_artists = []

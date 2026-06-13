@@ -149,6 +149,13 @@
       background: linear-gradient(90deg, #0a84ff, #32ade6);
     }
 
+    .badges-row {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      flex-wrap: nowrap;
+      gap: 8px;
+    }
     .badges {
       display: flex;
       gap: 6px;
@@ -1062,7 +1069,7 @@
     </div>
 
     <!-- Badges + action button -->
-    <div style="display:flex;flex-direction:row;align-items:center;flex-wrap:nowrap;gap:8px" x-show="library">
+    <div class="badges-row" x-show="library">
       <div class="badges">
         <span class="badge" x-text="(library?.total_tracks || 0).toLocaleString() + ' songs'"></span>
         <span class="badge" x-text="(library?.total_albums || 0) + ' albums'"></span>
@@ -1386,8 +1393,10 @@
                          :checked="isSrcAlbumChecked(srcArtist, al.name)"
                          x-effect="$el.indeterminate = isSrcAlbumIndeterminate(srcArtist, al.name)"
                          @change="toggleSrcAlbum(srcArtist, al.name, $event.target.checked)">
-                  <div class="album-thumb" :style="gradientFor(al.name)">
+                  <div class="album-thumb" :style="gradientFor(al.name)"
+                       @click.stop="pickSrcAlbum(al.name); playSrcAlbum(al)">
                     <img :src="sourceArtUrl(al)" @error="$el.style.display='none'" loading="lazy" alt="">
+                    <div class="album-play-overlay">&#x25B6;</div>
                   </div>
                   <div class="album-text">
                     <div class="album-name" x-text="al.name"></div>
@@ -2260,6 +2269,16 @@
         this._loadAndPlay();
       },
 
+      playSrcAlbum(al) {
+        if (!al || !al.tracks.length) return;
+        this.queue = al.tracks;
+        this.queueIndex = 0;
+        this.playerSource = 'sources';
+        this.playerContext = { artist: this.srcArtist || '', album: al.name };
+        this.playerArtUrl = this.sourceArtUrl(al);
+        this._loadAndPlay();
+      },
+
       get playerTrack() {
         return this.queue[this.queueIndex] || null;
       },
@@ -2735,7 +2754,10 @@
       },
 
       srcFmtShort(t) {
-        if (t.codec && t.codec === 'alac') return 'ALAC';
+        if (t.codec) {
+          if (t.codec === 'alac') return 'ALAC';
+          if (t.codec.startsWith('mp4a') || t.codec === 'aac') return 'AAC';
+        }
         const ext = (t.path || '').split('.').pop().toLowerCase();
         const map = { mp3: 'MP3', m4a: 'AAC', aac: 'AAC', flac: 'FLAC', aiff: 'AIFF', aif: 'AIFF', wav: 'WAV', ogg: 'OGG' };
         return map[ext] || ext.toUpperCase().slice(0, 5) || '?';
@@ -2748,8 +2770,11 @@
 
       srcQuality(t) {
         const fmt = this.srcFmtShort(t);
-        if (['FLAC', 'WAV', 'AIFF'].includes(fmt))
-          return t.samplerate ? (t.samplerate / 1000).toFixed(1) + ' kHz' : '—';
+        if (['ALAC', 'FLAC', 'WAV', 'AIFF'].includes(fmt)) {
+          const khz = t.samplerate ? (t.samplerate / 1000).toFixed(1) + ' kHz' : '';
+          const bit = t.bits_per_sample ? t.bits_per_sample + '-bit' : '';
+          return [bit, khz].filter(Boolean).join(' / ') || '—';
+        }
         return t.bitrate ? t.bitrate + ' kbps' : '—';
       },
     };
