@@ -77,8 +77,8 @@ def _parse(raw: dict) -> dict[str, Any]:
         track_count = sum(len(a["tracks"]) for a in albums)
         result_artists.append({"name": artist, "albums": albums, "track_count": track_count})
 
-    capacity_bytes = (device.get("capacity") or 0) * 1024 ** 3
-    used_pct = round(min(total_bytes / capacity_bytes * 100, 100), 1) if capacity_bytes else 0
+    fs_total_bytes, fs_used_bytes = _fs_usage(mount)
+    used_pct = round(min(fs_used_bytes / fs_total_bytes * 100, 100), 1) if fs_total_bytes else 0
 
     return {
         "device": device,
@@ -87,9 +87,54 @@ def _parse(raw: dict) -> dict[str, Any]:
         "total_albums": sum(len(a["albums"]) for a in result_artists),
         "total_bytes": total_bytes,
         "total_size_gb": round(total_bytes / 1024 ** 3, 2),
+        "fs_total_gb": round(fs_total_bytes / 1024 ** 3, 2) if fs_total_bytes else 0,
+        "fs_used_gb": round(fs_used_bytes / 1024 ** 3, 2) if fs_total_bytes else 0,
+        "fs_type": _fs_type(mount),
         "used_pct": used_pct,
         "artists": result_artists,
     }
+
+
+def _fs_usage(mount: Path) -> tuple[int, int]:
+    """Returns (total_bytes, used_bytes) from the actual filesystem — correct for flash mods."""
+    if not mount.parts:
+        return 0, 0
+    try:
+        st = os.statvfs(mount)
+        total = st.f_frsize * st.f_blocks
+        free = st.f_frsize * st.f_bavail
+        return total, total - free
+    except OSError:
+        return 0, 0
+
+
+_FS_LABELS: dict[str, str] = {
+    "vfat": "FAT32",
+    "msdos": "FAT16",
+    "exfat": "exFAT",
+    "hfsplus": "HFS+",
+    "hfs": "HFS",
+    "ntfs": "NTFS",
+    "ext4": "ext4",
+    "ext3": "ext3",
+}
+
+
+def _fs_type(mount: Path) -> str:
+    """Reads /proc/mounts to find the filesystem type for the given mount point."""
+    if not mount.parts:
+        return ""
+    mount_str = str(mount).rstrip("/")
+    try:
+        with open("/proc/mounts") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 3 and parts[1].rstrip("/") == mount_str:
+                    raw = parts[2].lower()
+                    return _FS_LABELS.get(raw, raw.upper())
+    except OSError:
+        pass
+    return ""
 
 
 def _is_missing(mount: Path, ipod_path: str) -> bool:
