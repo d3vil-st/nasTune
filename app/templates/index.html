@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>nasTune{% if data %} — {{ data.device.model_name }}{% endif %}</title>
+  <title>nasTune</title>
   <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -49,6 +49,11 @@
       min-height: 76px;
     }
 
+    .ipod-icon-wrap {
+      position: relative;
+      flex-shrink: 0;
+    }
+
     .ipod-icon {
       width: 48px;
       height: 48px;
@@ -59,10 +64,43 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      flex-shrink: 0;
     }
 
     .ipod-icon svg { width: 28px; height: 28px; }
+    .ipod-icon-wrap.has-picker .ipod-icon { cursor: pointer; }
+    .ipod-icon-wrap.has-picker .ipod-icon:hover { background: linear-gradient(145deg, #6a6a6c, #38383a); }
+
+    /* ── Device picker dropdown ───────────────────────────────────── */
+    .device-picker {
+      position: absolute;
+      top: 54px;
+      left: 0;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      box-shadow: 0 8px 28px rgba(0,0,0,.6);
+      z-index: 100;
+      min-width: 240px;
+      padding: 5px;
+    }
+
+    .dp-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: 5px;
+      cursor: pointer;
+      user-select: none;
+      transition: background .07s;
+    }
+
+    .dp-row:hover { background: var(--bg3); }
+    .dp-row.active { background: var(--blue); }
+    .dp-name { font-size: 13px; font-weight: 500; }
+    .dp-meta { font-size: 11px; color: var(--muted); white-space: nowrap; }
+    .dp-row.active .dp-meta { color: rgba(255,255,255,.7); }
 
     .device-info { flex-shrink: 0; }
 
@@ -630,51 +668,72 @@
 
   <!-- ── Header ── -->
   <header class="header">
-    <div class="ipod-icon">
-      <!-- Classic iPod silhouette -->
-      <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect x="5" y="2" width="18" height="24" rx="3.5" stroke="#aaa" stroke-width="1.5" fill="none"/>
-        <rect x="8" y="4.5" width="12" height="8" rx="1" fill="#444"/>
-        <circle cx="14" cy="19" r="4" stroke="#888" stroke-width="1.2" fill="none"/>
-        <circle cx="14" cy="19" r="1.2" fill="#888"/>
-        <line x1="14" y1="15.5" x2="14" y2="14.5" stroke="#888" stroke-width="1.2" stroke-linecap="round"/>
-        <line x1="14" y1="23.5" x2="14" y2="22.5" stroke="#888" stroke-width="1.2" stroke-linecap="round"/>
-        <line x1="10.5" y1="19" x2="11.5" y2="19" stroke="#888" stroke-width="1.2" stroke-linecap="round"/>
-        <line x1="16.5" y1="19" x2="17.5" y2="19" stroke="#888" stroke-width="1.2" stroke-linecap="round"/>
-      </svg>
+
+    <!-- iPod icon; becomes a clickable picker when multiple iPods are connected -->
+    <div class="ipod-icon-wrap" :class="{ 'has-picker': ipodDevices.length > 0 }">
+      <div class="ipod-icon"
+           @click="ipodDevices.length > 0 && (showDevicePicker = !showDevicePicker)"
+           @keydown.escape.window="showDevicePicker = false">
+        <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="5" y="2" width="18" height="24" rx="3.5" stroke="#aaa" stroke-width="1.5" fill="none"/>
+          <rect x="8" y="4.5" width="12" height="8" rx="1" fill="#444"/>
+          <circle cx="14" cy="19" r="4" stroke="#888" stroke-width="1.2" fill="none"/>
+          <circle cx="14" cy="19" r="1.2" fill="#888"/>
+          <line x1="14" y1="15.5" x2="14" y2="14.5" stroke="#888" stroke-width="1.2" stroke-linecap="round"/>
+          <line x1="14" y1="23.5" x2="14" y2="22.5" stroke="#888" stroke-width="1.2" stroke-linecap="round"/>
+          <line x1="10.5" y1="19" x2="11.5" y2="19" stroke="#888" stroke-width="1.2" stroke-linecap="round"/>
+          <line x1="16.5" y1="19" x2="17.5" y2="19" stroke="#888" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+      </div>
+
+      <!-- Multi-device dropdown -->
+      <div class="device-picker"
+           x-show="showDevicePicker"
+           @click.outside="showDevicePicker = false"
+           style="display:none">
+        <template x-for="d in ipodDevices" :key="d.devnode">
+          <div class="dp-row"
+               :class="{ active: d.devnode === selectedDevnode }"
+               @click.stop="selectDevice(d.devnode)">
+            <span class="dp-name" x-text="d.devname"></span>
+            <span class="dp-meta" x-text="(d.size_bytes / 1073741824).toFixed(0) + ' GB ' + d.fstype"></span>
+          </div>
+        </template>
+      </div>
     </div>
 
-    {% if data %}
+    <!-- Device name + subtitle -->
     <div class="device-info">
-      <h1>{{ data.ipod_name }}</h1>
-      <div class="sub">{{ data.device.model_name }}&thinsp;·&thinsp;{{ data.fs_total_gb }}&thinsp;GB&thinsp;{{ data.fs_type }}&ensp;·&ensp;UUID {{ data.device.uuid }}</div>
+      <h1 x-text="library ? library.ipod_name : (ipodDevices.length ? (selectedDevice?.devname || 'nasTune') : 'nasTune')"></h1>
+      <div class="sub" x-show="library"
+           x-text="library ? library.device.model_name + ' · ' + library.fs_total_gb + ' GB ' + library.fs_type + ' · UUID ' + library.device.uuid : ''">
+      </div>
+      <div class="sub" x-show="!library"
+           x-text="libraryLoading ? 'Loading library…' : (libraryError ? 'Error loading library' : (ipodDevices.length ? 'Select a device above' : 'No iPods connected'))">
+      </div>
     </div>
 
-    <div class="divider"></div>
-
-    <div class="storage-wrap">
+    <!-- Storage bar (only when library loaded) -->
+    <div class="divider" x-show="library"></div>
+    <div class="storage-wrap" x-show="library">
       <div class="storage-labels">
-        <span>{{ data.fs_used_gb }}&thinsp;GB used</span>
-        <span>{{ data.fs_total_gb }}&thinsp;GB</span>
+        <span x-text="(library?.fs_used_gb || 0) + ' GB used'"></span>
+        <span x-text="(library?.fs_total_gb || 0) + ' GB'"></span>
       </div>
       <div class="storage-bar">
-        <div class="storage-fill" style="width: {{ data.used_pct }}%"></div>
+        <div class="storage-fill" :style="'width:' + (library?.used_pct || 0) + '%'"></div>
       </div>
     </div>
 
-    <div class="badges">
-      <span class="badge">{{ "{:,}".format(data.total_tracks) }} songs</span>
-      <span class="badge">{{ data.total_albums }} albums</span>
-      <span class="badge">{{ data.artists | length }} artists</span>
+    <!-- Badges (only when library loaded) -->
+    <div class="badges" x-show="library">
+      <span class="badge" x-text="(library?.total_tracks || 0).toLocaleString() + ' songs'"></span>
+      <span class="badge" x-text="(library?.total_albums || 0) + ' albums'"></span>
+      <span class="badge" x-text="(library?.artists?.length || 0) + ' artists'"></span>
     </div>
-    {% else %}
-    <div class="device-info">
-      <h1>nasTune</h1>
-      <div class="sub">iPod Library Browser</div>
-    </div>
-    {% endif %}
 
-    <div class="search-wrap">
+    <!-- Search -->
+    <div class="search-wrap" x-show="library" style="margin-left:auto">
       <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
         <path d="M5.5 1a4.5 4.5 0 1 0 2.8 8.02l2.84 2.84a.75.75 0 1 0 1.06-1.06L9.36 7.96A4.5 4.5 0 0 0 5.5 1Zm-3 4.5a3 3 0 1 1 6 0 3 3 0 0 1-6 0Z"/>
       </svg>
@@ -682,178 +741,195 @@
     </div>
   </header>
 
-  {% if error %}
-  <div style="flex:1; overflow:auto;">
+  <!-- ── Error banner ── -->
+  <div x-show="libraryError && !library" style="flex-shrink:0; overflow:auto;">
     <div class="error-box">
       <strong>Could not read iPod library</strong>
-      {{ error }}<br>
-      <span style="color:#98989d; font-size:12px;">
-        Mount point: <code>{{ mount_point }}</code>&ensp;—&ensp;
-        set <code>IPOD_MOUNT_POINT</code> and make sure the iPod is mounted.
-      </span>
+      <span x-text="libraryError"></span>
     </div>
   </div>
 
-  {% elif data %}
-  <!-- ── Three-column browser ── -->
-  <div class="content">
+  <!-- ── No devices / loading / browser ── -->
+  <div style="flex:1; overflow:hidden; display:flex; flex-direction:column;">
 
-    <!-- Artists -->
-    <div class="col col-artists">
-      <div class="col-heading">Artists&ensp;(<span x-text="filteredArtists.length"></span>)</div>
-      <div class="col-scroll">
-        <template x-for="a in filteredArtists" :key="a.name">
-          <div class="artist-row"
-               :class="{ selected: selectedArtist === a.name }"
-               @click="pickArtist(a.name)">
-            <span class="artist-name" x-text="a.name"></span>
-            <span class="artist-count" x-text="a.track_count"></span>
-          </div>
-        </template>
+    <!-- No iPods connected -->
+    <div x-show="!libraryLoading && !library && ipodDevices.length === 0"
+         style="flex:1; display:flex; align-items:center; justify-content:center;">
+      <div class="empty">
+        <span class="empty-icon">&#x1F3B5;</span>
+        <span class="empty-label">No iPods connected</span>
+        <span class="empty-sub">Connect an iPod or set <code style="color:#ebebf5;background:#3a3a3c;padding:1px 5px;border-radius:4px">IPOD_MOUNT_POINT</code></span>
       </div>
     </div>
 
-    <!-- Albums -->
-    <div class="col col-albums">
-      <div class="col-heading" x-text="selectedArtist || 'Albums'"></div>
-      <div class="col-scroll">
-        <template x-if="!selectedArtist">
-          <div class="empty">
-            <span class="empty-icon">♫</span>
-            <span class="empty-label">Select an artist</span>
-          </div>
-        </template>
-        <template x-if="selectedArtist">
-          <div>
-            <template x-for="al in currentAlbums" :key="al.name">
-              <div class="album-row"
-                   :class="{ selected: selectedAlbum === al.name }"
-                   @click="pickAlbum(al.name)">
-                <div class="album-thumb" :style="gradientFor(al.name)">
-                  <img :src="artUrl(al)" @error="$el.style.display='none'" loading="lazy" alt="">
-                </div>
-                <div class="album-text">
-                  <div class="album-name" x-text="al.name"></div>
-                  <div class="album-meta">
-                    <span x-text="al.year > 0 ? al.year + ' · ' : ''"></span><span x-text="al.tracks.length + (al.tracks.length === 1 ? ' track' : ' tracks')"></span>
+    <!-- Loading -->
+    <div x-show="libraryLoading && !library"
+         style="flex:1; display:flex; align-items:center; justify-content:center;">
+      <div class="empty">
+        <span class="empty-label">Loading library&hellip;</span>
+      </div>
+    </div>
+
+    <!-- Three-column browser -->
+    <div class="content" x-show="library" style="flex:1;">
+
+      <!-- Artists -->
+      <div class="col col-artists">
+        <div class="col-heading">Artists&ensp;(<span x-text="filteredArtists.length"></span>)</div>
+        <div class="col-scroll">
+          <template x-for="a in filteredArtists" :key="a.name">
+            <div class="artist-row"
+                 :class="{ selected: selectedArtist === a.name }"
+                 @click="pickArtist(a.name)">
+              <span class="artist-name" x-text="a.name"></span>
+              <span class="artist-count" x-text="a.track_count"></span>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Albums -->
+      <div class="col col-albums">
+        <div class="col-heading" x-text="selectedArtist || 'Albums'"></div>
+        <div class="col-scroll">
+          <template x-if="!selectedArtist">
+            <div class="empty">
+              <span class="empty-icon">&#x266B;</span>
+              <span class="empty-label">Select an artist</span>
+            </div>
+          </template>
+          <template x-if="selectedArtist">
+            <div>
+              <template x-for="al in currentAlbums" :key="al.name">
+                <div class="album-row"
+                     :class="{ selected: selectedAlbum === al.name }"
+                     @click="pickAlbum(al.name)">
+                  <div class="album-thumb" :style="gradientFor(al.name)">
+                    <img :src="artUrl(al)" @error="$el.style.display='none'" loading="lazy" alt="">
+                  </div>
+                  <div class="album-text">
+                    <div class="album-name" x-text="al.name"></div>
+                    <div class="album-meta">
+                      <span x-text="al.year > 0 ? al.year + ' · ' : ''"></span><span x-text="al.tracks.length + (al.tracks.length === 1 ? ' track' : ' tracks')"></span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </template>
+              </template>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Tracks -->
+      <div class="col col-tracks">
+        <div class="tracks-head">
+          <span style="text-align:right">#</span>
+          <span>Title</span>
+          <span style="text-align:right">Rating</span>
+          <span style="text-align:right">Time</span>
+          <span style="text-align:center">Format</span>
+          <span style="text-align:right">Quality</span>
+        </div>
+
+        <!-- Album info bar -->
+        <template x-if="selectedAlbum">
+          <div class="album-bar">
+            <div class="abar-art"
+                 :style="(albumArtUrl ? 'cursor:zoom-in;' : '') + (albumArtUrl ? '' : gradientFor(selectedAlbum))"
+                 @click="albumArtUrl && (coverPopupUrl = albumArtUrl)">
+              <img x-show="albumArtUrl" :src="albumArtUrl" @error="albumArtUrl = null" alt="">
+              <span x-show="!albumArtUrl">&#x266B;</span>
+            </div>
+            <div class="abar-info">
+              <div class="abar-title" x-text="selectedAlbum"></div>
+              <div class="abar-artist" x-text="selectedArtist"></div>
+              <div class="abar-stats" x-text="currentTracks.length + ' tracks · ' + fmtTotalDur(currentTracks)"></div>
+            </div>
           </div>
         </template>
-      </div>
-    </div>
 
-    <!-- Tracks -->
-    <div class="col col-tracks">
-      <div class="tracks-head">
-        <span style="text-align:right">#</span>
-        <span>Title</span>
-        <span style="text-align:right">Rating</span>
-        <span style="text-align:right">Time</span>
-        <span style="text-align:center">Format</span>
-        <span style="text-align:right">Quality</span>
-      </div>
+        <div class="col-scroll">
+          <template x-if="!selectedAlbum">
+            <div class="empty">
+              <span class="empty-icon">&#x266A;</span>
+              <span class="empty-label">Select an album</span>
+              <span class="empty-sub" x-show="selectedArtist"
+                    x-text="currentAlbums.length + ' albums by ' + selectedArtist"></span>
+            </div>
+          </template>
+          <template x-if="selectedAlbum">
+            <div>
+              <template x-for="t in currentTracks" :key="t.id">
+                <div class="track-row"
+                     :class="{ active: selectedTrack?.id === t.id, missing: t.missing }"
+                     @click="openDetail(t)">
+                  <span class="t-nr" x-text="t.track_nr || '·'"></span>
+                  <span class="t-title" x-text="t.title"></span>
+                  <span class="t-rating" :class="{ unrated: !t.rating }" x-text="fmtRating(t.rating)"></span>
+                  <span class="t-dur" x-text="fmtDur(t.duration_ms)"></span>
+                  <span class="t-fmt-cell">
+                    <span class="t-fmt" :class="fmtClass(t.filetype)" x-text="fmtShort(t.filetype)"></span>
+                    <span class="missing-tag" x-show="t.missing">MISSING</span>
+                  </span>
+                  <span class="t-quality" x-text="fmtQuality(t)"></span>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
 
-      <!-- Album info bar — visible when an album is selected -->
-      <template x-if="selectedAlbum">
-        <div class="album-bar">
-          <div class="abar-art"
-               :style="(albumArtUrl ? 'cursor:zoom-in;' : '') + (albumArtUrl ? '' : gradientFor(selectedAlbum))"
+        <!-- Detail panel -->
+        <div class="detail-panel" :class="{ open: !!selectedTrack }">
+          <div class="detail-art"
+               :style="(albumArtUrl ? 'cursor:zoom-in;' : '') + (albumArtUrl ? '' : artStyle(selectedTrack))"
                @click="albumArtUrl && (coverPopupUrl = albumArtUrl)">
             <img x-show="albumArtUrl" :src="albumArtUrl" @error="albumArtUrl = null" alt="">
-            <span x-show="!albumArtUrl">♫</span>
-          </div>
-          <div class="abar-info">
-            <div class="abar-title" x-text="selectedAlbum"></div>
-            <div class="abar-artist" x-text="selectedArtist"></div>
-            <div class="abar-stats" x-text="currentTracks.length + ' tracks · ' + fmtTotalDur(currentTracks)"></div>
-          </div>
-        </div>
-      </template>
-
-      <div class="col-scroll">
-        <template x-if="!selectedAlbum">
-          <div class="empty">
-            <span class="empty-icon">♪</span>
-            <span class="empty-label">Select an album</span>
-            <span class="empty-sub" x-show="selectedArtist"
-                  x-text="currentAlbums.length + ' albums by ' + selectedArtist"></span>
-          </div>
-        </template>
-        <template x-if="selectedAlbum">
-          <div>
-            <template x-for="t in currentTracks" :key="t.id">
-              <div class="track-row"
-                   :class="{ active: selectedTrack?.id === t.id, missing: t.missing }"
-                   @click="openDetail(t)">
-                <span class="t-nr" x-text="t.track_nr || '·'"></span>
-                <span class="t-title" x-text="t.title"></span>
-                <span class="t-rating" :class="{ unrated: !t.rating }" x-text="fmtRating(t.rating)"></span>
-                <span class="t-dur" x-text="fmtDur(t.duration_ms)"></span>
-                <span class="t-fmt-cell">
-                  <span class="t-fmt" :class="fmtClass(t.filetype)" x-text="fmtShort(t.filetype)"></span>
-                  <span class="missing-tag" x-show="t.missing">MISSING</span>
-                </span>
-                <span class="t-quality" x-text="fmtQuality(t)"></span>
-              </div>
-            </template>
-          </div>
-        </template>
-      </div>
-
-      <!-- ── Detail panel ── -->
-      <div class="detail-panel" :class="{ open: !!selectedTrack }">
-        <div class="detail-art"
-             :style="(albumArtUrl ? 'cursor:zoom-in;' : '') + (albumArtUrl ? '' : artStyle(selectedTrack))"
-             @click="albumArtUrl && (coverPopupUrl = albumArtUrl)">
-          <img x-show="albumArtUrl" :src="albumArtUrl" @error="albumArtUrl = null" alt="">
-          <span class="detail-art-note" x-show="!albumArtUrl">♪</span>
-          <button class="detail-close" @click.stop="selectedTrack = null">✕</button>
-        </div>
-
-        <div class="detail-body">
-          <div class="detail-track-info">
-            <div class="d-title" x-text="selectedTrack?.title"></div>
-            <div class="d-artist" x-text="selectedArtist"></div>
-            <div class="d-album" x-text="selectedAlbum + (selectedTrack?.year > 0 ? ' · ' + selectedTrack.year : '')"></div>
+            <span class="detail-art-note" x-show="!albumArtUrl">&#x266A;</span>
+            <button class="detail-close" @click.stop="selectedTrack = null">&#x2715;</button>
           </div>
 
-          <div class="detail-sep">Audio</div>
-          <div class="detail-row"><span class="dr-l">Format</span>    <span class="dr-v" x-text="selectedTrack ? fmtShort(selectedTrack.filetype) : ''"></span></div>
-          <div class="detail-row"><span class="dr-l">Bit Rate</span>  <span class="dr-v" x-text="selectedTrack?.bitrate ? selectedTrack.bitrate + ' kbps' : '—'"></span></div>
-          <div class="detail-row"><span class="dr-l">Sample Rate</span><span class="dr-v" x-text="selectedTrack?.samplerate ? (selectedTrack.samplerate / 1000).toFixed(1) + ' kHz' : '—'"></span></div>
-          <div class="detail-row"><span class="dr-l">Duration</span>  <span class="dr-v" x-text="fmtDur(selectedTrack?.duration_ms)"></span></div>
-          <div class="detail-row"><span class="dr-l">File Size</span> <span class="dr-v" x-text="selectedTrack ? (selectedTrack.size / 1048576).toFixed(1) + ' MB' : ''"></span></div>
+          <div class="detail-body">
+            <div class="detail-track-info">
+              <div class="d-title" x-text="selectedTrack?.title"></div>
+              <div class="d-artist" x-text="selectedArtist"></div>
+              <div class="d-album" x-text="selectedAlbum + (selectedTrack?.year > 0 ? ' · ' + selectedTrack.year : '')"></div>
+            </div>
 
-          <div class="detail-sep">Library</div>
-          <div class="detail-row"><span class="dr-l">Track #</span>   <span class="dr-v" x-text="selectedTrack?.track_nr || '—'"></span></div>
-          <div class="detail-row" x-show="selectedTrack?.genre">    <span class="dr-l">Genre</span>    <span class="dr-v" x-text="selectedTrack?.genre"></span></div>
-          <div class="detail-row" x-show="selectedTrack?.composer"> <span class="dr-l">Composer</span><span class="dr-v" x-text="selectedTrack?.composer"></span></div>
-          <div class="detail-row"><span class="dr-l">Play Count</span><span class="dr-v" x-text="selectedTrack?.playcount ?? 0"></span></div>
-          <div class="detail-row"><span class="dr-l">Rating</span>   <span class="dr-v" x-text="fmtRating(selectedTrack?.rating)"></span></div>
-          <div class="detail-row" x-show="selectedTrack?.time_added"><span class="dr-l">Added</span>      <span class="dr-v" x-text="fmtDate(selectedTrack?.time_added)"></span></div>
-          <div class="detail-row" x-show="selectedTrack?.time_played"><span class="dr-l">Last Played</span><span class="dr-v" x-text="fmtDate(selectedTrack?.time_played)"></span></div>
+            <div class="detail-sep">Audio</div>
+            <div class="detail-row"><span class="dr-l">Format</span>    <span class="dr-v" x-text="selectedTrack ? fmtShort(selectedTrack.filetype) : ''"></span></div>
+            <div class="detail-row"><span class="dr-l">Bit Rate</span>  <span class="dr-v" x-text="selectedTrack?.bitrate ? selectedTrack.bitrate + ' kbps' : '—'"></span></div>
+            <div class="detail-row"><span class="dr-l">Sample Rate</span><span class="dr-v" x-text="selectedTrack?.samplerate ? (selectedTrack.samplerate / 1000).toFixed(1) + ' kHz' : '—'"></span></div>
+            <div class="detail-row"><span class="dr-l">Duration</span>  <span class="dr-v" x-text="fmtDur(selectedTrack?.duration_ms)"></span></div>
+            <div class="detail-row"><span class="dr-l">File Size</span> <span class="dr-v" x-text="selectedTrack ? (selectedTrack.size / 1048576).toFixed(1) + ' MB' : ''"></span></div>
 
-          <div class="detail-sep">File</div>
-          <div class="detail-path" x-text="selectedTrack?.ipod_path"></div>
+            <div class="detail-sep">Library</div>
+            <div class="detail-row"><span class="dr-l">Track #</span>   <span class="dr-v" x-text="selectedTrack?.track_nr || '—'"></span></div>
+            <div class="detail-row" x-show="selectedTrack?.genre">    <span class="dr-l">Genre</span>    <span class="dr-v" x-text="selectedTrack?.genre"></span></div>
+            <div class="detail-row" x-show="selectedTrack?.composer"> <span class="dr-l">Composer</span><span class="dr-v" x-text="selectedTrack?.composer"></span></div>
+            <div class="detail-row"><span class="dr-l">Play Count</span><span class="dr-v" x-text="selectedTrack?.playcount ?? 0"></span></div>
+            <div class="detail-row"><span class="dr-l">Rating</span>   <span class="dr-v" x-text="fmtRating(selectedTrack?.rating)"></span></div>
+            <div class="detail-row" x-show="selectedTrack?.time_added"><span class="dr-l">Added</span>      <span class="dr-v" x-text="fmtDate(selectedTrack?.time_added)"></span></div>
+            <div class="detail-row" x-show="selectedTrack?.time_played"><span class="dr-l">Last Played</span><span class="dr-v" x-text="fmtDate(selectedTrack?.time_played)"></span></div>
+
+            <div class="detail-sep">File</div>
+            <div class="detail-path" x-text="selectedTrack?.ipod_path"></div>
+          </div>
         </div>
       </div>
-    </div>
 
-  </div>
+    </div><!-- .content -->
+  </div><!-- flex wrapper -->
 
   <!-- ── Status bar ── -->
   <div class="statusbar">
-    <template x-if="selectedAlbum">
+    <template x-if="library && selectedAlbum">
       <span x-text="currentTracks.length + ' tracks'"></span>
     </template>
-    <template x-if="selectedArtist && !selectedAlbum">
+    <template x-if="library && selectedArtist && !selectedAlbum">
       <span x-text="currentAlbums.length + ' albums · ' + currentAlbums.reduce((s,a)=>s+a.tracks.length,0) + ' tracks'"></span>
     </template>
-    <template x-if="!selectedArtist">
-      <span>{{ "{:,}".format(data.total_tracks) }} songs &ensp;·&ensp; {{ data.total_albums }} albums &ensp;·&ensp; {{ data.artists | length }} artists</span>
+    <template x-if="library && !selectedArtist">
+      <span x-text="(library.total_tracks).toLocaleString() + ' songs · ' + library.total_albums + ' albums · ' + library.artists.length + ' artists'"></span>
     </template>
   </div>
 
@@ -867,21 +943,20 @@
     <img :src="coverPopupUrl" alt="Album cover">
   </div>
 
-  {% else %}
-  <div style="flex:1; display:flex; align-items:center; justify-content:center;">
-    <div class="empty">
-      <span class="empty-icon">🎵</span>
-      <span class="empty-label">No iPod data</span>
-      <span class="empty-sub">Set <code style="color:#ebebf5;background:#3a3a3c;padding:1px 5px;border-radius:4px">IPOD_MOUNT_POINT</code> and reload</span>
-    </div>
-  </div>
-  {% endif %}
-
   <script>
-  const LIBRARY = {{ data.artists | tojson if data else '[]' }};
-
   function app() {
     return {
+      // Device state
+      devices: [],
+      selectedDevnode: null,
+      showDevicePicker: false,
+
+      // Library state
+      library: null,
+      libraryLoading: false,
+      libraryError: null,
+
+      // Browser state
       search: '',
       selectedArtist: null,
       selectedAlbum: null,
@@ -889,10 +964,97 @@
       albumArtUrl: null,
       coverPopupUrl: null,
 
+      async init() {
+        await this.loadDevices();
+        this.startSSE();
+      },
+
+      async loadDevices() {
+        try {
+          const r = await fetch('/devices');
+          const data = await r.json();
+          this.devices = data.devices;
+          if (data.selected) {
+            this.selectedDevnode = data.selected;
+            await this._fetchLibrary();
+          }
+        } catch (e) {
+          this.libraryError = e.message;
+        }
+      },
+
+      async selectDevice(devnode) {
+        if (this.selectedDevnode === devnode) { this.showDevicePicker = false; return; }
+        this.showDevicePicker = false;
+        this.selectedDevnode = devnode;
+        this.library = null;
+        this.selectedArtist = null;
+        this.selectedAlbum = null;
+        this.selectedTrack = null;
+        this.albumArtUrl = null;
+        this.libraryError = null;
+        this.libraryLoading = true;
+        try {
+          const r = await fetch('/devices/select', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ devnode }),
+          });
+          if (!r.ok) { this.libraryError = await r.text(); return; }
+          await this._fetchLibrary();
+        } catch (e) {
+          this.libraryError = e.message;
+        } finally {
+          this.libraryLoading = false;
+        }
+      },
+
+      async _fetchLibrary() {
+        this.libraryLoading = true;
+        try {
+          const r = await fetch('/library');
+          if (!r.ok) { this.libraryError = await r.text(); return; }
+          this.library = await r.json();
+        } catch (e) {
+          this.libraryError = e.message;
+        } finally {
+          this.libraryLoading = false;
+        }
+      },
+
+      startSSE() {
+        const es = new EventSource('/devices/events');
+        es.onmessage = (e) => {
+          const data = JSON.parse(e.data);
+          this.devices = data.devices;
+          // Handle device disappearing while selected
+          if (this.selectedDevnode && !data.devices.find(d => d.devnode === this.selectedDevnode)) {
+            this.library = null;
+            this.selectedDevnode = null;
+            this.selectedArtist = null;
+            this.selectedAlbum = null;
+            this.selectedTrack = null;
+          }
+          // Auto-select if nothing selected yet
+          if (!this.selectedDevnode && data.selected) {
+            this.selectDevice(data.selected);
+          }
+        };
+      },
+
+      get ipodDevices() {
+        return this.devices.filter(d => d.is_ipod);
+      },
+
+      get selectedDevice() {
+        return this.devices.find(d => d.devnode === this.selectedDevnode) || null;
+      },
+
       get filteredArtists() {
-        if (!this.search) return LIBRARY;
+        const artists = this.library?.artists || [];
+        if (!this.search) return artists;
         const q = this.search.toLowerCase();
-        return LIBRARY.filter(a =>
+        return artists.filter(a =>
           a.name.toLowerCase().includes(q) ||
           a.albums.some(al =>
             al.name.toLowerCase().includes(q) ||
@@ -903,7 +1065,8 @@
 
       get currentAlbums() {
         if (!this.selectedArtist) return [];
-        const a = LIBRARY.find(a => a.name === this.selectedArtist);
+        const artists = this.library?.artists || [];
+        const a = artists.find(a => a.name === this.selectedArtist);
         if (!a) return [];
         if (!this.search) return a.albums;
         const q = this.search.toLowerCase();
@@ -943,14 +1106,21 @@
         this.selectedAlbum = name;
         this.selectedTrack = null;
         this.albumArtUrl = null;
-        // Find first track on this album that has embedded artwork
         const al = this.currentAlbums.find(a => a.name === name);
-        const track = al?.tracks.find(t => t.artwork);
-        if (track) this.albumArtUrl = '/artwork?path=' + encodeURIComponent(track.ipod_path);
+        const url = this.artUrl(al);
+        if (url) this.albumArtUrl = url;
       },
 
       openDetail(t) {
         this.selectedTrack = this.selectedTrack?.id === t.id ? null : t;
+      },
+
+      artUrl(album) {
+        if (!album) return null;
+        const t = album.tracks.find(t => t.artwork && t.ipod_path);
+        if (!t) return null;
+        return '/artwork?devnode=' + encodeURIComponent(this.selectedDevnode || '') +
+               '&path=' + encodeURIComponent(t.ipod_path);
       },
 
       fmtDur(ms) {
@@ -1006,11 +1176,6 @@
         for (const c of String(seed)) h = ((h << 5) - h + c.charCodeAt(0)) | 0;
         const [c1, c2] = palettes[Math.abs(h) % palettes.length].split(',');
         return `background:linear-gradient(145deg,${c1} 0%,${c2} 100%)`;
-      },
-
-      artUrl(album) {
-        const t = album.tracks.find(t => t.artwork && t.ipod_path);
-        return t ? '/artwork?path=' + encodeURIComponent(t.ipod_path) : null;
       },
 
       fmtTotalDur(tracks) {

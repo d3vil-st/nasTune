@@ -1,18 +1,17 @@
 import base64
-import os
 from pathlib import Path
 
 
-def extract_artwork(ipod_path: str) -> tuple[bytes, str] | None:
+def extract_artwork(ipod_path: str, mount: str) -> tuple[bytes, str] | None:
     """
     Extract embedded album art from an audio file on the iPod.
     Returns (image_bytes, mime_type) or None.
     Raises ValueError on path-traversal attempts.
     """
-    mount = Path(os.environ.get("IPOD_MOUNT_POINT", "")).resolve()
-    full = (mount / ipod_path.lstrip("/")).resolve()
+    mount_path = Path(mount).resolve()
+    full = (mount_path / ipod_path.lstrip("/")).resolve()
 
-    if not str(full).startswith(str(mount)):
+    if not str(full).startswith(str(mount_path)):
         raise ValueError("Path outside mount point")
 
     if not full.exists():
@@ -35,7 +34,6 @@ def _mp4(tags) -> tuple[bytes, str] | None:
     if not covers:
         return None
     cover = covers[0]
-    # MP4Cover.FORMAT_PNG == 14
     mime = "image/png" if getattr(cover, "imageformat", None) == 14 else "image/jpeg"
     return bytes(cover), mime
 
@@ -48,7 +46,6 @@ def _id3(tags) -> tuple[bytes, str] | None:
 
 
 def _vorbis(tags) -> tuple[bytes, str] | None:
-    # FLAC / Ogg: base64-encoded Picture block
     raw = tags.get("metadata_block_picture") or tags.get("METADATA_BLOCK_PICTURE")
     if not raw:
         return None
