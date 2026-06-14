@@ -117,6 +117,8 @@
         <span class="badge" x-text="(library?.total_albums || 0) + ' albums'"></span>
         <span class="badge" x-text="(library?.artists?.length || 0) + ' artists'"></span>
       </div>
+      <button class="btn-secondary" x-show="viewMode === 'library' && ipodSelection.size > 0"
+              @click="downloadSelectedTracks()">Download</button>
       <button class="btn-danger" x-show="viewMode === 'library' && ipodSelection.size > 0"
               :disabled="currentOp?.status === 'running'"
               @click="showDeleteConfirm = true">Delete</button>
