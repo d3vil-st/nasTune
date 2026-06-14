@@ -4,6 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>nasTune</title>
+  <script>
+    (function(){
+      var t=localStorage.getItem('nastune-theme')||'auto';
+      var mq=matchMedia('(prefers-color-scheme: light)');
+      if(t==='light'||(t==='auto'&&mq.matches)) document.documentElement.classList.add('light');
+    })();
+  </script>
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/utils.js"></script>
   <script src="/static/devices.js"></script>
@@ -116,12 +123,19 @@
               @click="showSyncConfirm = true">Sync</button>
     </div>
 
-    <!-- Search -->
-    <div class="search-wrap" x-show="library" style="margin-left:auto;">
-      <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
-        <path d="M5.5 1a4.5 4.5 0 1 0 2.8 8.02l2.84 2.84a.75.75 0 1 0 1.06-1.06L9.36 7.96A4.5 4.5 0 0 0 5.5 1Zm-3 4.5a3 3 0 1 1 6 0 3 3 0 0 1-6 0Z"/>
-      </svg>
-      <input type="text" placeholder="Search artists, albums, tracks…" x-model="search" @input="onSearch">
+    <!-- Theme switcher + search (right side) -->
+    <div class="header-right">
+      <div class="theme-switcher">
+        <button class="theme-btn" :class="{ active: themeMode === 'auto' }"  @click="setTheme('auto')"  title="Follow system">Auto</button>
+        <button class="theme-btn" :class="{ active: themeMode === 'light' }" @click="setTheme('light')" title="Light theme">☀</button>
+        <button class="theme-btn" :class="{ active: themeMode === 'dark' }"  @click="setTheme('dark')"  title="Dark theme">☾</button>
+      </div>
+      <div class="search-wrap" x-show="library" style="display:none">
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
+          <path d="M5.5 1a4.5 4.5 0 1 0 2.8 8.02l2.84 2.84a.75.75 0 1 0 1.06-1.06L9.36 7.96A4.5 4.5 0 0 0 5.5 1Zm-3 4.5a3 3 0 1 1 6 0 3 3 0 0 1-6 0Z"/>
+        </svg>
+        <input type="text" placeholder="Search artists, albums, tracks…" x-model="search" @input="onSearch">
+      </div>
     </div>
   </header>
 
