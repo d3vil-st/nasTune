@@ -186,7 +186,10 @@
           :title="selectedSourceObj?.scan_error">Scan error</span>
     <span x-show="selectedSourceObj && selectedSourceObj.scan_status === 'done'"
           style="font-size:11px;color:var(--muted)"
-          x-text="selectedSourceObj ? selectedSourceObj.track_count + ' tracks' : ''"></span>
+          x-text="selectedSourceObj ? (library && sourceLibrary ? srcInitialOnIpod.size + ' / ' + selectedSourceObj.track_count + ' synced' : selectedSourceObj.track_count + ' tracks') : ''"></span>
+    <button class="manage-btn" x-show="selectedSourceId"
+            :disabled="selectedSourceObj?.scan_status === 'scanning'"
+            @click="rescanSource(selectedSourceId)">Rescan</button>
     <button class="manage-btn" @click="showManageSources = true">Manage Sources</button>
   </div>
 
