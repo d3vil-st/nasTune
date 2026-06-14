@@ -52,7 +52,7 @@ nasTune/
 └── app/
     ├── main.py                # FastAPI app factory; mounts /static; core iPod endpoints
     ├── routers/
-    │   ├── ipod.py            # /library/delete, /library/sync, /operations
+    │   ├── ipod.py            # /library/delete, /library/sync, /library/download, /operations
     │   └── sources.py         # /sources/* — CRUD, scan, browse, library, audio, artwork
     ├── services/
     │   ├── devices.py         # DeviceService: lsblk polling, mount/unmount, library cache, eject
@@ -63,23 +63,23 @@ nasTune/
     │   ├── scanner.py         # Async file scanner: walks dirs, reads tags via mutagen
     │   └── operations.py      # OperationService: gpod-rm / gpod-cp with progress tracking
     ├── templates/
-    │   └── index.html         # iTunes-like 3-pane dark UI + bottom player bar (845 lines, HTML only)
+    │   └── index.html         # iTunes-like 3-pane dark UI + bottom player bar
     └── static/
-        ├── style.css          # All CSS (~1430 lines); Apple design refresh, CSS var token system, light theme
+        ├── style.css          # All CSS; Apple design refresh, CSS var token system, light theme
         ├── utils.js           # Format helpers, gradients, _normStr/_trackKey, source format/quality, theme state
         ├── devices.js         # Device list, SSE, library fetch/refresh, eject
         ├── browser.js         # iPod 3-pane browser, artUrl, _buildIpodMap, isOnIpod
         ├── player.js          # Audio queue, play/pause/skip, iPod + source playback
-        ├── sources.js         # Source CRUD, scan polling, folder browser, _srcTrackById
-        ├── selection.js       # Checkboxes, select-all, delete/sync ops, storage bar
-        └── app.js             # Assembles all modules via Object.defineProperties + init()
+        ├── sources.js         # Source CRUD, scan polling, folder browser, _buildCopyPaths
+        ├── selection.js       # Checkboxes, select-all, delete/sync/download ops, storage bar
+        └── app.js             # Assembles all modules via Object.defineProperties + init(); URL state
 ```
 
 ---
 
 ## Docker setup
 
-The Dockerfile uses `ubuntu:26.04` (matches the gpod-utils `.deb` target). It installs the pre-built `gpod-utils_1.4.4.ubuntu26.04_amd64.deb` from GitHub releases plus `ffmpeg` for ALAC transcoding. A Python venv is created at `/opt/venv`.
+The Dockerfile uses `ubuntu:26.04` (matches the gpod-utils `.deb` target). It installs the pre-built `gpod-utils_1.4.6.ubuntu26.04_amd64.deb` from GitHub releases plus `ffmpeg` for ALAC transcoding. A Python venv is created at `/opt/venv`.
 
 ```bash
 docker compose up --build   # build + start on port 127.0.0.1:8080
@@ -130,8 +130,20 @@ Key docker-compose volumes:
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/library/delete` | `{ devnode, track_ids[] }` — enqueues gpod-rm for each track ID |
-| `POST` | `/library/sync` | `{ devnode, copy_paths[], delete_ids[] }` — delete then copy in CPU-count batches |
+| `POST` | `/library/sync` | `{ devnode, copy_paths[], delete_ids[], copy_track_count }` — delete then copy |
+| `POST` | `/library/download` | `{ devnode, tracks[] }` — streams selected tracks as a `.tar` archive |
 | `GET` | `/operations` | Current operation status: kind, status, processed, total, current, error |
+
+#### Download track object schema
+```json
+{
+  "ipod_path": ":iPod_Control:Music:F02:TGWN.mp3",
+  "artist": "...", "albumartist": "...", "album": "...",
+  "year": 1980, "track_nr": 3, "title": "..."
+}
+```
+The archive restores the original directory structure:
+`{albumartist}/{[year] - album}/{NN - title.ext}`
 
 ### Sources (app/routers/sources.py — prefix `/sources`)
 
@@ -171,17 +183,38 @@ function app() {
 
 Scripts load synchronously (no `defer`) before Alpine's deferred `<script defer>` tag, so `window.app` is defined in time. Alpine.js 3.15.12 is vendored at `app/static/alpine.min.js` rather than loaded from unpkg.
 
+### URL state persistence
+
+Navigation state is encoded in the URL hash so the browser preserves it across reloads and the back button works:
+
+- Library tab: `#tab=library&artist=Joy+Division&album=Closer`
+- Sources tab: `#tab=sources&src=1&srca=Joy+Division&sral=Closer`
+
+`app.js` reads the hash during `init()` and restores state after the library/source loads, with validation that the artist and album still exist. `$watch` on `viewMode`, `selectedArtist`, `selectedAlbum`, `selectedSourceId`, `srcArtist`, `srcAlbum` calls `_syncUrl()` on every navigation change. `history.replaceState` is used (no new history entries).
+
 ### Track matching (sync / isOnIpod)
 
 Tracks are matched across iPod and source library by a normalized key:
 
 ```
-_normStr(artist) + '|||' + _normStr(album) + '|||' + (track_nr || _normStr(title))
+_normStr(artist) + '|||' + _normStr(album) + '|||' + (disc_nr+'.' if disc_nr>1 else '') + (track_nr || _normStr(title))
 ```
 
-`_normStr` collapses Unicode dashes (U+2010 etc.) → `-` and curly quotes → `'` before lowercasing. This handles common tag discrepancies (e.g. `Guns N' Roses` vs `Guns N' Roses`, `Static-X` vs `Static‐X`).
+`_normStr` NFD-decomposes, strips diacritics, lowercases, and collapses all non-alphanumeric characters to spaces. This handles common tag discrepancies (Unicode hyphens, curly quotes, accented characters).
+
+`disc_nr` prefix (e.g. `2.`) is only added when `disc_nr > 1`. Tracks with `disc_nr` of 0, 1, or absent are treated identically, so single-disc albums match regardless of whether disc number is tagged.
 
 The `_ipodMap` (`Map<key, track>`) is built lazily on first use and invalidated on library refresh. `_srcTrackMap` (`Map<id, track>`) is built on source library load for O(1) ID → track resolution.
+
+### gpod-cp path collapsing (`_buildCopyPaths`)
+
+`sources.js` exposes `_buildCopyPaths(tracks)` which compresses individual file paths into directory paths before sending to `gpod-cp`. At up to 3 ancestor levels (CD dir → album dir → artist dir), if every library track under a directory is in the selection, the directory path is used instead of individual files. `gpod-cp` accepts both file and directory arguments natively.
+
+This means syncing a complete album sends one directory arg instead of N file args. Behavior is correct for flat albums (no CD subdirs), CD-organized albums, and mixed selections — partial albums fall back to individual file paths.
+
+### Sync progress
+
+The sync body includes `copy_track_count` (actual number of tracks to copy, not collapsed path count) so `op.total` reflects real track counts even when directories are collapsed. During `gpod-cp` execution, `_gpod_cp_batch` parses `[N/M]` streaming lines to update `op.processed` with per-track granularity and `op.current` with the track currently being copied (`Artist – Title`). A `proc_offset` parameter accumulates progress across multi-batch syncs.
 
 ### Light / dark theming
 
@@ -203,16 +236,21 @@ All interaction with the iPod goes through these three commands. The `IPOD_MOUNT
 # List all tracks on iPod as JSON (IPOD_MOUNT_POINT must be set)
 gpod-ls
 
-# Copy files to iPod
+# Copy files to iPod (accepts files or directories)
 gpod-cp /music/Artist/Album/track.mp3
+gpod-cp /music/Artist/Album/
 
-# Remove a track from iPod (by persistent ID)
-gpod-rm <track-id>
+# Remove tracks from iPod by persistent ID (accepts multiple IDs)
+gpod-rm <id1> <id2> ...
 ```
 
 Every invocation is logged at INFO level as `exec: IPOD_MOUNT_POINT=<mount> <cmd> <args>`. Set `GPOD_DRY_RUN=1` to skip execution while preserving logs.
 
-`gpod-ls` JSON output schema: `ipod_data.device` (model, capacity, uuid) + `ipod_data.playlists.items[]` where `type == "master"` contains all tracks. Track fields include `id`, `ipod_path`, `title`, `artist`, `album`, `albumartist`, `filetype`, `bitrate`, `samplerate`, `tracklen` (ms), `track_nr`, `year`, `size`, `artwork` (bool), `rating` (0–100), `playcount`.
+`gpod-ls` JSON output schema: `ipod_data.device` (model, capacity, uuid) + `ipod_data.playlists.items[]` where `type == "master"` contains all tracks. Track fields include `id`, `ipod_path`, `title`, `artist`, `album`, `albumartist`, `filetype`, `bitrate`, `samplerate`, `tracklen` (ms), `track_nr`, `cd_nr`, `year`, `size`, `artwork` (bool), `rating` (0–100), `playcount`.
+
+`gpod-rm` output: `[N/M]  :iPod_Control:...-path -> { id=X ... }` per track, summary `removed X/Y items`. IDs are positional — always delete in descending ID order across batches to avoid index shifts.
+
+`gpod-cp` output: `[N/M]  /source/path -> { title='...' artist='...' ... }` per track, summary `X/M items (size)  dupl=D`. Duplicates (same audio content by checksum) count as success.
 
 ---
 
@@ -221,6 +259,8 @@ Every invocation is logged at INFO level as `exec: IPOD_MOUNT_POINT=<mount> <cmd
 `scanner.py` walks directories with `asyncio.to_thread(_find_files)` + `asyncio.to_thread(_read_track)` (per file). Tags are read via `mutagen` with `easy=True`; M4A/AAC files are re-opened with `mutagen.mp4.MP4` to reliably extract `codec` and `bits_per_sample` (older mutagen may not expose these via the Easy API).
 
 Progress is written to `sources.scan_processed / scan_total / scan_current_file` and polled by the frontend every 2 s. Files removed from disk since the last scan are deleted from the DB (tracked by `scanned_at` timestamp).
+
+The DB schema includes `disc_nr INTEGER` on `source_tracks`. The library response includes `last_scanned_at` (Unix timestamp) which is appended as `?_v=` to artwork URLs to bust the browser cache after each rescan.
 
 ---
 
@@ -243,6 +283,29 @@ async def run_streaming(cmd: list[str]):
 
 Expose streaming endpoints as SSE using FastAPI's `StreamingResponse` with `media_type="text/event-stream"`.
 
+### Tar download streaming
+
+`/library/download` uses an OS pipe + thread to stream tar content with no temp files:
+
+```python
+r_fd, w_fd = os.pipe()
+
+def write_tar():
+    with os.fdopen(w_fd, 'wb') as wf:
+        with tarfile.open(fileobj=wf, mode='w|') as tar:
+            for t in tracks:
+                tar.add(disk_path, arcname=arcname)
+
+thread = threading.Thread(target=write_tar, daemon=True)
+thread.start()
+
+with os.fdopen(r_fd, 'rb') as rf:
+    while chunk := await asyncio.to_thread(rf.read, 65536):
+        yield chunk
+```
+
+The `mode='w|'` flag enables streaming (no seeking). The OS pipe provides natural backpressure so the writer thread blocks when the client is slow. Downloads do not check `op_service.is_busy()` since they are read-only.
+
 ---
 
 ## Known constraints and gotchas
@@ -257,9 +320,12 @@ Expose streaming endpoints as SSE using FastAPI's `StreamingResponse` with `medi
 - **Alpine.js x-show + inline flex**: Alpine's `x-show` sets `el.style.display = ''` when restoring visibility, which wipes any inline `display:flex`. Always use a CSS class for flex containers that are toggled with `x-show`.
 - **Object.defineProperties for getters**: Alpine.js getters in module objects must be merged with `Object.defineProperties`, not `Object.assign` — the latter evaluates getters immediately and stores the result as a plain value.
 - **Unicode tag normalization**: Source file tags often use Unicode hyphens (U+2010) or curly apostrophes (U+2019) where the iPod DB stores ASCII. `_normStr()` in `utils.js` normalizes both before key comparison.
-- **Mobile single-pane navigation**: On `≤768px` screens the three-column browser collapses to a single-pane slide view driven entirely by CSS `:has()` — no JS required. Selecting an artist/album slides in the next pane. Navigating *back* (deselecting) currently requires tapping a different artist or manually clearing selection; a proper back-button needs a small JS change in `browser.js` (expose `pickArtist(null)` / `pickAlbum(null)` and call them from the column headings on mobile).
+- **Mobile single-pane navigation**: On `≤768px` screens the three-column browser collapses to a single-pane slide view driven entirely by CSS `:has()` — no JS required. Selecting an artist/album slides in the next pane. Tapping the column heading navigates back (clears `selectedAlbum` / `selectedArtist`).
 - **Light theme + FOUC**: The FOUC-prevention inline `<script>` runs before the CSS `<link>` in `<head>`. It reads `localStorage` and conditionally adds `html.light` before any paint. Do not move it after the stylesheet link.
 - **Theme CSS variable tokens**: All surface/card/border colors are CSS variables. Adding a new component that needs theme awareness: use `var(--surface-bg)`, `var(--card-bg)`, `var(--fill-bg)`, `var(--surface-border)`, `var(--card-border)`, `var(--hover-surface)`, `var(--chip-active)`, `var(--overlay-bg)`, `var(--detail-bg)`, `var(--player-bg)` instead of hardcoded `rgba()` values. Override these in `html.light { }` if the dark default is wrong for light mode.
+- **gpod-rm ID positional shift**: After each batch deletion, remaining track IDs shift down. Always sort delete IDs in descending order and process them highest-first so earlier deletions don't invalidate later IDs in the same operation.
+- **gpod-cp directory args**: `gpod-cp` accepts both file paths and directory paths. Passing a directory copies all audio files under it recursively. `_buildCopyPaths` exploits this to collapse complete album/artist selections into a single directory argument.
+- **Track library structure**: The nested library response (`artists[].albums[].tracks[]`) does not embed `album` or `albumartist` on individual track objects — those fields live at the parent level. Code that needs full track context (e.g. download, display) must walk the nested structure to obtain them.
 
 ---
 
