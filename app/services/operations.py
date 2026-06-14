@@ -3,7 +3,7 @@ import logging
 import os
 
 log = logging.getLogger(__name__)
-CPU_COUNT = max(1, os.cpu_count() or 1)
+BATCH_SIZE = 50
 GPOD_DRY_RUN = os.environ.get("GPOD_DRY_RUN", "").lower() in ("1", "true", "yes")
 
 
@@ -30,6 +30,7 @@ class _Op:
 class OperationService:
     def __init__(self) -> None:
         self._op: _Op | None = None
+        self._lock = asyncio.Lock()
 
     def current(self) -> dict | None:
         return self._op.to_dict() if self._op else None
@@ -47,14 +48,15 @@ class OperationService:
         self._op = op
         asyncio.create_task(self._do_sync(op, copy_paths, delete_ids, mount))
 
-    async def _gpod_rm(self, track_id, mount: str) -> str | None:
-        log.info("exec: IPOD_MOUNT_POINT=%s gpod-rm %s", mount, track_id)
+    async def _gpod_rm_batch(self, track_ids: list, mount: str) -> str | None:
+        ids_str = [str(t) for t in track_ids]
+        log.info("exec: IPOD_MOUNT_POINT=%s gpod-rm %s", mount, " ".join(ids_str))
         if GPOD_DRY_RUN:
-            log.info("[dry-run] skipping gpod-rm %s", track_id)
+            log.info("[dry-run] skipping gpod-rm (%d tracks)", len(track_ids))
             return None
         env = {**os.environ, "IPOD_MOUNT_POINT": mount}
         proc = await asyncio.create_subprocess_exec(
-            "gpod-rm", str(track_id),
+            "gpod-rm", *ids_str,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             env=env,
@@ -82,48 +84,56 @@ class OperationService:
         return None
 
     async def _do_delete(self, op: _Op, track_ids: list, mount: str) -> None:
-        for tid in track_ids:
-            op.current = str(tid)
-            err = await self._gpod_rm(tid, mount)
-            op.processed += 1
-            if err:
-                op.status = "error"
-                op.error = err
-                log.error("gpod-rm %s failed: %s", tid, err)
-                return
-        op.status = "done"
-        op.current = ""
-        log.info("Delete done: %d tracks", op.total)
+        async with self._lock:
+            i = 0
+            while i < len(track_ids):
+                batch = track_ids[i:i + BATCH_SIZE]
+                op.current = str(batch[0]) if len(batch) == 1 else f"{batch[0]}…{batch[-1]}"
+                err = await self._gpod_rm_batch(batch, mount)
+                op.processed += len(batch)
+                if err:
+                    op.status = "error"
+                    op.error = err
+                    log.error("gpod-rm batch failed: %s", err)
+                    return
+                i += BATCH_SIZE
+            op.status = "done"
+            op.current = ""
+            log.info("Delete done: %d tracks", op.total)
 
     async def _do_sync(self, op: _Op, copy_paths: list[str], delete_ids: list, mount: str) -> None:
-        # Delete first, then copy
-        for tid in delete_ids:
-            op.current = str(tid)
-            err = await self._gpod_rm(tid, mount)
-            op.processed += 1
-            if err:
-                op.status = "error"
-                op.error = err
-                log.error("gpod-rm %s failed: %s", tid, err)
-                return
+        async with self._lock:
+            # Delete first, in batches
+            i = 0
+            while i < len(delete_ids):
+                batch = delete_ids[i:i + BATCH_SIZE]
+                op.current = str(batch[0]) if len(batch) == 1 else f"{batch[0]}…{batch[-1]}"
+                err = await self._gpod_rm_batch(batch, mount)
+                op.processed += len(batch)
+                if err:
+                    op.status = "error"
+                    op.error = err
+                    log.error("gpod-rm batch failed: %s", err)
+                    return
+                i += BATCH_SIZE
 
-        # Copy in batches of CPU_COUNT paths per gpod-cp invocation
-        i = 0
-        while i < len(copy_paths):
-            batch = copy_paths[i:i + CPU_COUNT]
-            op.current = os.path.basename(batch[0])
-            err = await self._gpod_cp_batch(batch, mount)
-            op.processed += len(batch)
-            if err:
-                op.status = "error"
-                op.error = err
-                log.error("gpod-cp batch failed: %s", err)
-                return
-            i += CPU_COUNT
+            # Copy in batches
+            i = 0
+            while i < len(copy_paths):
+                batch = copy_paths[i:i + BATCH_SIZE]
+                op.current = os.path.basename(batch[0])
+                err = await self._gpod_cp_batch(batch, mount)
+                op.processed += len(batch)
+                if err:
+                    op.status = "error"
+                    op.error = err
+                    log.error("gpod-cp batch failed: %s", err)
+                    return
+                i += BATCH_SIZE
 
-        op.status = "done"
-        op.current = ""
-        log.info("Sync done: deleted %d, copied %d", len(delete_ids), len(copy_paths))
+            op.status = "done"
+            op.current = ""
+            log.info("Sync done: deleted %d, copied %d", len(delete_ids), len(copy_paths))
 
 
 op_service = OperationService()

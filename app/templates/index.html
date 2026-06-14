@@ -666,13 +666,13 @@
         <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
           <template x-if="!showAddSource">
             <div style="display:flex;gap:8px;width:100%;justify-content:flex-end">
-              <button class="btn-secondary" @click="showManageSources = false">Close</button>
+              <button class="btn-ghost" @click="showManageSources = false">Close</button>
               <button class="btn-primary" @click="showAddSource = true; browseDir('/music')">+ Add Folder</button>
             </div>
           </template>
           <template x-if="showAddSource">
             <div style="display:flex;gap:8px;width:100%;justify-content:flex-end">
-              <button class="btn-secondary" @click="showAddSource = false">Back</button>
+              <button class="btn-ghost" @click="showAddSource = false">Back</button>
               <button class="btn-primary"
                       :disabled="!addSourceName.trim()"
                       @click="addSource()">Add Source</button>
@@ -702,7 +702,7 @@
           <p style="margin:0;color:var(--muted)" x-text="'Space freed: ' + fmtSize(ipodSelectedBytes)"></p>
         </div>
         <div style="padding:12px 20px;display:flex;justify-content:flex-end;gap:8px">
-          <button class="btn-secondary" @click="showDeleteConfirm = false">Cancel</button>
+          <button class="btn-ghost" @click="showDeleteConfirm = false">Cancel</button>
           <button class="btn-danger" @click="deleteSelectedTracks()">Delete</button>
         </div>
       </div>
@@ -739,7 +739,7 @@
           </template>
         </div>
         <div style="padding:12px 20px;display:flex;justify-content:flex-end;gap:8px">
-          <button class="btn-secondary" @click="showSyncConfirm = false">Cancel</button>
+          <button class="btn-ghost" @click="showSyncConfirm = false">Cancel</button>
           <button class="btn-primary" @click="confirmSync()">Sync</button>
         </div>
       </div>
@@ -782,6 +782,7 @@
           <span style="color:var(--dim);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" x-text="scanningSource.scan_current_file"></span>
         </template>
       </span>
+    </template>
     <!-- Operation progress (delete / sync) -->
     <template x-if="currentOp && currentOp.status === 'running'">
       <span style="margin-left:auto;display:flex;align-items:center;gap:6px">
@@ -798,7 +799,6 @@
     </template>
     <template x-if="currentOp && currentOp.status === 'error'">
       <span style="margin-left:auto;color:#ff453a;font-size:12px" x-text="'Error: ' + (currentOp.error || 'unknown')"></span>
-    </template>
     </template>
   </div>
 
