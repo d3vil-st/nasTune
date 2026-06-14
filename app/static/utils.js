@@ -78,12 +78,16 @@ function utilsModule() {
     },
 
     _normStr(s) {
-      // Collapse Unicode punctuation variants to ASCII so cross-source matching works.
-      // Handles: Unicode hyphens/dashes → hyphen-minus, curly/smart quotes → straight apostrophe.
-      return (s || '').toLowerCase().trim()
-        .replace(/[‐‑‒–—―−﹘﹣－]/g, '-')
-        .replace(/[''ʼ`´]/g, "'")
-        .replace(/[""]/g, '"');
+      // NFD-decompose so accented chars shed their diacritic (ö→o, é→e),
+      // then keep only ASCII alphanumerics. Everything else (punctuation,
+      // Unicode hyphens/apostrophes/quotes, remaining non-ASCII) collapses
+      // to a space, so no variant list is needed.
+      return (s || '')
+        .normalize('NFD')
+        .replace(/̀-ͯ/g, '')    // strip combining diacritical marks
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')      // non-alphanumeric → space
+        .trim();
     },
 
     _trackKey(artist, album, track_nr, title) {
