@@ -319,6 +319,12 @@ class DeviceService:
     def get_device_info(self, devnode: str) -> DeviceInfo | None:
         return self.devices.get(devnode)
 
+    def get_ipod_uuid(self, devnode: str) -> str | None:
+        lib = self._cache.get(devnode)
+        if lib:
+            return lib.get("device", {}).get("uuid") or None
+        return None
+
     async def select_device(self, devnode: str) -> None:
         async with self._lock:
             if devnode not in self.devices:

@@ -42,7 +42,9 @@ function app() {
     // Restore iPod artist/album after library loads
     if (url && this.library) {
       const artist = url.get('artist');
-      if (artist && this.library.artists?.find(a => a.name === artist)) {
+      if (artist === '__ALL__') {
+        this.pickArtist('__ALL__');
+      } else if (artist && this.library.artists?.find(a => a.name === artist)) {
         this.pickArtist(artist);
         const album = url.get('album');
         if (album && this.currentAlbums.find(a => a.name === album))
@@ -60,7 +62,9 @@ function app() {
       await this.pickSource(srcId);
       if (url) {
         const srca = url.get('srca');
-        if (srca && this.sourceLibrary?.artists?.find(a => a.name === srca)) {
+        if (srca === '__ALL__') {
+          this.pickSrcArtist('__ALL__');
+        } else if (srca && this.sourceLibrary?.artists?.find(a => a.name === srca)) {
           this.pickSrcArtist(srca);
           const sral = url.get('sral');
           if (sral && this.srcCurrentAlbums.find(a => a.name === sral))
