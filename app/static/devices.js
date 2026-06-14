@@ -72,6 +72,21 @@ function devicesModule() {
       }
     },
 
+    _validateIpodSelection() {
+      if (this.selectedArtist && this.selectedArtist !== '__ALL__' &&
+          !this.library.artists?.find(a => a.name === this.selectedArtist)) {
+        this.selectedArtist = null;
+        this.selectedAlbum = null;
+        this.albumArtUrl = null;
+      } else if (this.selectedAlbum && !this.currentAlbums.find(a => a.name === this.selectedAlbum)) {
+        this.selectedAlbum = null;
+        this.albumArtUrl = null;
+      } else if (this.selectedAlbum) {
+        const al = this.currentAlbums.find(a => a.name === this.selectedAlbum);
+        this.albumArtUrl = this.artUrl(al) || null;
+      }
+    },
+
     async _fetchLibrary(refresh = false) {
       this.libraryLoading = true;
       try {
@@ -80,6 +95,7 @@ function devicesModule() {
           : await fetch('/library');
         if (!r.ok) { this.libraryError = await r.text(); return; }
         this.library = await r.json();
+        if (refresh) this._validateIpodSelection();
       } catch (e) {
         this.libraryError = e.message;
       } finally {
@@ -97,19 +113,7 @@ function devicesModule() {
         this._ipodMap = null;
         this.ipodSelection = new Set();
         this.selectedTrack = null;
-        // Drop selection only if the artist/album was removed from the library
-        if (this.selectedArtist && !this.library.artists?.find(a => a.name === this.selectedArtist)) {
-          this.selectedArtist = null;
-          this.selectedAlbum = null;
-          this.albumArtUrl = null;
-        } else if (this.selectedAlbum && !this.currentAlbums.find(a => a.name === this.selectedAlbum)) {
-          this.selectedAlbum = null;
-          this.albumArtUrl = null;
-        } else if (this.selectedAlbum) {
-          // Refresh artwork URL — track list may have changed
-          const al = this.currentAlbums.find(a => a.name === this.selectedAlbum);
-          this.albumArtUrl = this.artUrl(al) || null;
-        }
+        this._validateIpodSelection();
       } catch (e) {
         this.libraryError = e.message;
       } finally {
