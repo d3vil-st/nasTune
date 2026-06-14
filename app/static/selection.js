@@ -180,7 +180,7 @@ function selectionModule() {
       for (const artist of (this.sourceLibrary?.artists || [])) {
         for (const album of artist.albums) {
           for (const t of album.tracks) {
-            if (this._ipodMap.has(this._trackKey(t.artist || artist.name, t.album || album.name, t.track_nr, t.title))) {
+            if (this._ipodMap.has(this._trackKey(t.artist || artist.name, t.album || album.name, t.track_nr, t.title, t.disc_nr))) {
               checked.add(t.id);
             }
           }
@@ -296,7 +296,7 @@ function selectionModule() {
       if (!this.selectedDevnode) return;
       if (!this._ipodMap) this._buildIpodMap();
       const deleteIds = this.syncDeleteTracks
-        .map(t => { const k = this._trackKey(t.artist || t.albumartist, t.album, t.track_nr, t.title); const ipodT = this._ipodMap.get(k); return ipodT?.id; })
+        .map(t => { const k = this._trackKey(t.artist || t.albumartist, t.album, t.track_nr, t.title, t.disc_nr); const ipodT = this._ipodMap.get(k); return ipodT?.id; })
         .filter(id => id !== undefined);
       const copyPaths = this.syncCopyTracks.map(t => t.path);
       const r = await fetch('/library/sync', {
