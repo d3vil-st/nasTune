@@ -38,6 +38,8 @@ function browserModule() {
       if (!a) return [];
       if (!this.search) return a.albums;
       const q = this.search.toLowerCase();
+      // Artist name itself matched — show all albums unfiltered
+      if (a.name.toLowerCase().includes(q)) return a.albums;
       return a.albums.filter(al =>
         al.name.toLowerCase().includes(q) ||
         al.tracks.some(t => t.title.toLowerCase().includes(q))
@@ -50,10 +52,10 @@ function browserModule() {
       if (!al) return [];
       if (!this.search) return al.tracks;
       const q = this.search.toLowerCase();
-      return al.tracks.filter(t =>
-        t.title.toLowerCase().includes(q) ||
-        al.name.toLowerCase().includes(q)
-      );
+      // Artist or album name matched — show all tracks unfiltered
+      const artistMatches = this.selectedArtist && this.selectedArtist.toLowerCase().includes(q);
+      if (artistMatches || al.name.toLowerCase().includes(q)) return al.tracks;
+      return al.tracks.filter(t => t.title.toLowerCase().includes(q));
     },
 
     onSearch() {
