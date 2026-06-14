@@ -176,6 +176,8 @@ function sourcesModule() {
       this.srcArtist = name;
       this.srcAlbum = null;
       this.srcAlbumArtUrl = null;
+      const first = this.srcCurrentAlbums[0];
+      if (first) this.pickSrcAlbum(first.name);
     },
 
     pickSrcAlbum(name) {
