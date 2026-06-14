@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2a2a2c"/>
+      <stop offset="100%" stop-color="#0f0f10"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#0A84FF"/>
+      <stop offset="100%" stop-color="#64D2FF"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-20%" width="160%" height="140%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="7" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="115" fill="url(#bg)"/>
+  <!-- Inner edge highlight -->
+  <rect width="512" height="512" rx="115" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="1.5"/>
+  <!-- Waveform bars — symmetric bell curve, all bottomed at y=410 -->
+  <g filter="url(#glow)">
+    <rect x="90"  y="282" width="52" height="128" rx="26" fill="url(#wave)"/>
+    <rect x="160" y="202" width="52" height="208" rx="26" fill="url(#wave)"/>
+    <rect x="230" y="122" width="52" height="288" rx="26" fill="url(#wave)"/>
+    <rect x="300" y="202" width="52" height="208" rx="26" fill="url(#wave)"/>
+    <rect x="370" y="282" width="52" height="128" rx="26" fill="url(#wave)"/>
+  </g>
+</svg>
