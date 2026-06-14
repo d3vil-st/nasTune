@@ -800,7 +800,8 @@
     </template>
     <!-- Operation progress (delete / sync) -->
     <template x-if="currentOp && currentOp.status === 'running'">
-      <span style="margin-left:auto;display:flex;align-items:center;gap:6px">
+      <span style="margin-left:auto;display:flex;align-items:center;gap:6px;cursor:pointer"
+            title="Click to view output" @click="showOpLog = true; $nextTick(() => { const el = $refs.opLogEl; if (el) el.scrollTop = el.scrollHeight; })">
         <span style="width:7px;height:7px;border-radius:50%;flex-shrink:0;animation:scan-pulse 1s ease-in-out infinite"
               :style="currentOp.kind === 'delete' ? 'background:#ff453a' : 'background:#30d158'"></span>
         <span style="font-weight:500"
@@ -813,8 +814,29 @@
       </span>
     </template>
     <template x-if="currentOp && currentOp.status === 'error'">
-      <span style="margin-left:auto;color:#ff453a;font-size:12px" x-text="'Error: ' + (currentOp.error || 'unknown')"></span>
+      <span style="margin-left:auto;color:#ff453a;font-size:12px;cursor:pointer" title="Click to view output"
+            @click="showOpLog = true; $nextTick(() => { const el = $refs.opLogEl; if (el) el.scrollTop = el.scrollHeight; })"
+            x-text="'Error: ' + (currentOp.error || 'unknown')"></span>
     </template>
+  </div>
+
+  <!-- ── Operation log popup ── -->
+  <div class="modal-overlay"
+       x-show="showOpLog && currentOp"
+       x-transition.opacity
+       @click.self="showOpLog = false"
+       @keydown.escape.window="showOpLog = false"
+       style="display:none">
+    <div class="op-log-modal">
+      <div class="op-log-header">
+        <span x-text="currentOp?.kind === 'delete' ? 'Delete output' : 'Sync output'"></span>
+        <span x-show="currentOp?.status === 'running'" class="op-log-badge op-log-badge-run">running</span>
+        <span x-show="currentOp?.status === 'done'"    class="op-log-badge op-log-badge-done">done</span>
+        <span x-show="currentOp?.status === 'error'"   class="op-log-badge op-log-badge-err">error</span>
+        <button class="modal-close" @click="showOpLog = false">&#x2715;</button>
+      </div>
+      <pre class="op-log-body" x-ref="opLogEl"><template x-for="(line, i) in (currentOp?.log || [])" :key="i"><span :class="line.startsWith('$') ? 'op-log-cmd' : ''" x-text="line"></span></template></pre>
+    </div>
   </div>
 
   <!-- ── Full-size cover popup ── -->
