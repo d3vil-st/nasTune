@@ -8,10 +8,10 @@ services:
       - /dev:/dev
       - /run/udev:/run/udev:ro
       - /mnt/music:/music:ro  # NAS music share — read-only
-      - ./data:/data           # persistent SQLite database
-      #- ./ipod:/mnt/ipod       # iPod mount point shared with host
+      - ./data:/data          # persistent SQLite database
+      # - ./ipod:/mnt/ipod    # iPod mount point shared with host
     devices:
       - /dev/bus/usb
     environment:
-      IPOD_MOUNT_POINT: /mnt/ipod
+      IPOD_AUTOMOUNT: 1
     restart: unless-stopped
