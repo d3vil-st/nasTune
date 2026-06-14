@@ -979,3 +979,279 @@
       height: 100%; flex-shrink: 0;
       background: rgba(48,209,88,.7);
     }
+
+    /* ══ Apple design system refresh (2025) ════════════════════════════
+       Vibrancy, true black base, pill buttons, thinner separators
+       ═══════════════════════════════════════════════════════════════ */
+
+    :root { --bg: #000; }
+
+    .header {
+      background: rgba(18,18,20,.85);
+      backdrop-filter: saturate(180%) blur(24px);
+      -webkit-backdrop-filter: saturate(180%) blur(24px);
+      border-bottom: .5px solid rgba(255,255,255,.1);
+      box-shadow: none;
+    }
+
+    .col-artists { border-right: .5px solid rgba(255,255,255,.08); }
+    .col-albums  { border-right: .5px solid rgba(255,255,255,.08); }
+
+    .col-heading {
+      background: rgba(18,18,20,.9);
+      border-bottom: .5px solid rgba(255,255,255,.08);
+    }
+
+    /* Remove zebra striping — Apple Music doesn't use it */
+    .track-row:nth-child(even)       { background: transparent; }
+    .track-row:nth-child(even):hover { background: var(--bg2); }
+
+    .badge {
+      background: rgba(255,255,255,.1);
+      color: rgba(235,235,245,.75);
+      border-radius: 20px;
+      padding: 3px 10px;
+    }
+
+    /* Pill-shaped CTAs */
+    .btn-primary,
+    .btn-danger {
+      border-radius: 980px;
+      padding: 7px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: -.1px;
+    }
+
+    /* Tab bar: chip style, no underline */
+    .tabbar {
+      background: rgba(18,18,20,.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: .5px solid rgba(255,255,255,.08);
+      padding: 5px 10px;
+    }
+    .tab { border-radius: 8px; border-bottom: 2px solid transparent; }
+    .tab:hover  { background: rgba(255,255,255,.07); }
+    .tab.active { background: rgba(255,255,255,.13); border-bottom-color: transparent; }
+
+    /* Vibrancy player bar */
+    .player-bar {
+      background: rgba(0,0,0,.8);
+      backdrop-filter: saturate(180%) blur(24px);
+      -webkit-backdrop-filter: saturate(180%) blur(24px);
+      border-top: .5px solid rgba(255,255,255,.1);
+    }
+
+    /* Larger, frosted-glass modals */
+    .modal {
+      border-radius: 20px;
+      background: rgba(40,40,42,.97);
+      backdrop-filter: saturate(200%) blur(40px);
+      -webkit-backdrop-filter: saturate(200%) blur(40px);
+      border: .5px solid rgba(255,255,255,.12);
+      box-shadow: 0 40px 100px rgba(0,0,0,.9);
+    }
+    .modal-overlay {
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    .device-picker,
+    .sources-picker {
+      background: rgba(40,40,42,.97);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: .5px solid rgba(255,255,255,.12);
+      border-radius: 14px;
+      box-shadow: 0 16px 48px rgba(0,0,0,.8);
+    }
+
+    .statusbar {
+      background: rgba(18,18,20,.95);
+      border-top: .5px solid rgba(255,255,255,.08);
+    }
+
+    .detail-panel { background: #0d0d0f; }
+
+
+    /* ══ Responsive — mobile (≤768px) ══════════════════════════════════
+       Single-pane slide navigation using CSS :has()
+       No JS required — state comes from Alpine's .selected classes
+       ═══════════════════════════════════════════════════════════════ */
+
+    @media (max-width: 768px) {
+
+      body { font-size: 14px; }
+
+      /* ── Header ── */
+      .header {
+        flex-wrap: wrap;
+        padding: 10px 14px;
+        min-height: auto;
+        gap: 8px;
+        row-gap: 6px;
+      }
+
+      .ipod-icon { width: 38px; height: 38px; }
+      .ipod-icon svg { width: 22px; height: 22px; }
+
+      /* device-info + buttons div takes remaining first-row space */
+      .header > div:has(.device-info) { flex: 1; min-width: 0; }
+
+      .device-info h1 { font-size: 14px; }
+      .device-info .sub {
+        font-size: 10px;
+        max-width: 54vw;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .divider { display: none; }
+
+      /* Full-width rows below the first row */
+      .storage-wrap {
+        width: 100%;
+        min-width: 0;
+      }
+      .badges-row {
+        width: 100%;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .search-wrap {
+        width: 100%;
+        margin-left: 0 !important;
+      }
+      .search-wrap input { width: 100%; }
+
+      .device-picker { min-width: min(320px, calc(100vw - 28px)); }
+
+      /* ── Tab bar ── */
+      .tab { padding: 6px 16px; }
+
+      /* ── Sources bar ── */
+      .sources-bar   { flex-wrap: wrap; gap: 6px; }
+      .source-select-btn { flex: 1; justify-content: center; }
+
+      /* ── Three-pane → single-pane slide ──────────────────────────
+         Artists is the default visible pane.
+         Selecting an artist slides artists out, albums in.
+         Selecting an album  slides albums  out, tracks in.
+         Back navigation: tapping an already-selected artist/album
+         in the heading area visually shows ‹ as a hint.
+         (Full back-nav requires a small JS change in browser.js)
+         ─────────────────────────────────────────────────────────── */
+      .content { position: relative; }
+
+      .col {
+        position: absolute;
+        inset: 0;
+        width: 100% !important;
+        border-right: none !important;
+        transform: translateX(100%);
+        transition: transform .32s cubic-bezier(.4,0,.2,1);
+        will-change: transform;
+      }
+
+      .col-artists { transform: translateX(0); }
+
+      /* Artist selected → albums pane */
+      .content:has(.col-artists .artist-row.selected) .col-artists { transform: translateX(-100%); }
+      .content:has(.col-artists .artist-row.selected) .col-albums  { transform: translateX(0); }
+
+      /* Album selected → tracks pane */
+      .content:has(.col-albums .album-row.selected) .col-artists { transform: translateX(-100%); }
+      .content:has(.col-albums .album-row.selected) .col-albums  { transform: translateX(-100%); }
+      .content:has(.col-albums .album-row.selected) .col-tracks  { transform: translateX(0); }
+
+      /* Back-chevron hint on albums and tracks headings */
+      .col-albums .col-heading::before,
+      .col-tracks .col-heading::before {
+        content: '‹';
+        font-size: 22px;
+        font-weight: 200;
+        color: var(--blue);
+        margin-right: 2px;
+        line-height: 1;
+        vertical-align: middle;
+      }
+
+      /* ── Track rows: flex layout on mobile, drop rating / quality ── */
+      .tracks-head { display: none; }
+
+      .track-row {
+        display: flex !important;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        min-height: 52px;
+      }
+      .track-row .t-title   { flex: 1; font-size: 14px; }
+      .track-row .t-dur     { flex-shrink: 0; font-size: 12px; }
+      .track-row .t-fmt-cell{ flex-shrink: 0; }
+      .track-row .t-rating  { display: none; }
+      .track-row .t-quality { display: none; }
+      .track-row .t-kbps    { display: none; }
+      .track-row.active     { padding-left: 11px; border-left: 3px solid var(--blue); }
+
+      /* ── Artist / album rows ── */
+      .artist-row { min-height: 48px; padding: 8px 14px; }
+      .album-row  { min-height: 52px; padding: 8px 14px; }
+      .album-thumb { width: 44px; height: 44px; }
+
+      /* ── Album info bar ── */
+      .album-bar { padding: 10px 12px; gap: 10px; }
+      .abar-art  { width: 48px; height: 48px; font-size: 22px; }
+      .abar-title{ font-size: 13px; }
+
+      /* ── Detail panel: slide up from bottom ── */
+      .col-tracks { overflow: hidden; }
+      .detail-panel {
+        width: 100%;
+        height: 88%;
+        top: auto;
+        bottom: 0;
+        right: 0;
+        left: 0;
+        border-left: none;
+        border-top: .5px solid rgba(255,255,255,.12);
+        border-radius: 20px 20px 0 0;
+        transform: translateY(100%);
+        transition: transform .3s cubic-bezier(.4,0,.2,1);
+        box-shadow: 0 -20px 60px rgba(0,0,0,.8);
+      }
+      .detail-panel.open { transform: translateY(0); }
+
+      /* ── Player bar: info+controls on row 1, seek on row 2 ── */
+      .player-bar {
+        flex-wrap: wrap;
+        padding: 8px 14px 12px;
+        gap: 6px;
+      }
+      .player-info    { flex: 1; min-width: 0; }
+      .player-title,
+      .player-artist  { max-width: none; }
+      .player-controls{ flex-shrink: 0; }
+      .player-progress{ width: 100%; order: 10; }
+
+      /* ── Modals: bottom sheet ── */
+      .modal-overlay { align-items: flex-end; }
+      .modal {
+        width: 100%;
+        max-width: 100%;
+        border-radius: 20px 20px 0 0;
+        max-height: 90vh;
+      }
+
+      /* ── Status bar ── */
+      .statusbar { padding: 3px 12px; font-size: 10px; }
+    }
+
+    /* Very small phones */
+    @media (max-width: 480px) {
+      .ctrl-btn:first-child { display: none; } /* shuffle */
+      .ctrl-btn:last-child  { display: none; } /* stop */
+      .badge { font-size: 10px; padding: 2px 8px; }
+    }
