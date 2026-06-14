@@ -56,7 +56,9 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: DISTRO=${{ matrix.distro }} TARGETARCH=${{ matrix.arch }}
+          build-args: |
+            DISTRO=${{ matrix.distro }}
+            TARGETARCH=${{ matrix.arch }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ matrix.platform }}
           cache-to: type=gha,scope=${{ matrix.platform }},mode=max
