@@ -1,5 +1,8 @@
 FROM ubuntu:26.04
 
+# Injected by Docker buildx — values: amd64, arm64
+ARG TARGETARCH=amd64
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -14,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install pre-built gpod-utils deb (apt resolves libgpod and glib deps automatically)
 RUN curl -fsSL \
-    https://github.com/d3vil-st/gpod-utils/releases/download/v1.4.4/gpod-utils_1.4.4.ubuntu26.04_amd64.deb \
+    https://github.com/d3vil-st/gpod-utils/releases/download/v1.4.4/gpod-utils_1.4.4.ubuntu26.04_${TARGETARCH}.deb \
     -o /tmp/gpod-utils.deb \
     && apt-get update \
     && apt-get install -y --no-install-recommends /tmp/gpod-utils.deb \
