@@ -32,46 +32,69 @@
     .header {
       background: linear-gradient(180deg, #3a3a3c 0%, #2c2c2e 100%);
       border-bottom: 1px solid #000;
-      padding: 14px 20px;
+      padding: 10px 20px;
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 14px;
       flex-shrink: 0;
       box-shadow: 0 2px 12px rgba(0,0,0,.5);
-      min-height: 76px;
-    }
-
-    .ipod-icon-wrap {
+      min-height: 68px;
       position: relative;
-      flex-shrink: 0;
+      z-index: 100;
     }
 
-    .ipod-icon {
-      width: 48px;
-      height: 48px;
-      background: linear-gradient(145deg, #5a5a5c, #28282a);
-      border-radius: 11px;
-      border: 1px solid #555;
-      box-shadow: 0 2px 6px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.08);
+    /* ── Device selector (icon + info + dropdown in one block) ── */
+    .device-selector {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+      position: relative;
+      border-radius: 10px;
+      padding: 5px 8px;
+      margin: -5px -8px;
+      transition: background .12s;
+      user-select: none;
+    }
+    .device-selector.has-picker { cursor: pointer; }
+    .device-selector.has-picker:hover { background: rgba(255,255,255,.07); }
+
+    .ds-icon {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(145deg, #4a4a4c, #222224);
+      border-radius: 9px;
+      border: 1px solid rgba(255,255,255,.1);
+      box-shadow: 0 2px 6px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.07);
       display: flex;
       align-items: center;
       justify-content: center;
+      flex-shrink: 0;
     }
+    .ds-icon svg { width: 20px; height: 20px; }
 
-    .ipod-icon svg { width: 28px; height: 28px; }
-    .ipod-icon-wrap.has-picker .ipod-icon { cursor: pointer; }
-    .ipod-icon-wrap.has-picker .ipod-icon:hover { background: linear-gradient(145deg, #6a6a6c, #38383a); }
+    .device-name-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .ds-chevron {
+      color: var(--blue);
+      font-size: 14px;
+      line-height: 1;
+      opacity: .85;
+    }
 
     /* ── Device picker dropdown ───────────────────────────────────── */
     .device-picker {
       position: absolute;
-      top: 54px;
+      top: calc(100% + 8px);
       left: 0;
       background: var(--bg2);
       border: 1px solid var(--border);
       border-radius: 9px;
       box-shadow: 0 8px 28px rgba(0,0,0,.6);
-      z-index: 100;
+      z-index: 500;
       min-width: 240px;
       padding: 5px;
     }
@@ -94,7 +117,7 @@
     .dp-meta { font-size: 11px; color: var(--muted); white-space: nowrap; }
     .dp-row.active .dp-meta { color: rgba(255,255,255,.7); }
 
-    .device-info { flex-shrink: 0; }
+    .device-info { flex-shrink: 0; min-width: 0; }
 
     .device-info h1 {
       font-size: 15px;
@@ -106,9 +129,46 @@
     .device-info .sub {
       font-size: 11px;
       color: var(--muted);
-      margin-top: 3px;
+      margin-top: 2px;
       letter-spacing: .1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
+
+    .sub-uuid {
+      font-family: ui-monospace, "SF Mono", monospace;
+      font-size: 10px;
+      color: var(--dim);
+      margin-top: 1px;
+    }
+
+    /* ── Header action buttons ─────────────────────────────────────── */
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .icon-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: none;
+      color: var(--muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 17px;
+      transition: color .15s, border-color .15s, transform .3s;
+    }
+    .icon-btn:hover { color: var(--text); border-color: var(--dim); }
+    .icon-btn.danger:hover { color: #e06c6c; border-color: #e06c6c; }
+    .icon-btn.spinning { animation: spin .7s linear infinite; }
 
     .divider {
       width: 1px;
@@ -199,29 +259,6 @@
 
     .search-wrap input::placeholder { color: var(--dim); }
 
-    .refresh-btn {
-      background: none;
-      border: 1px solid var(--border);
-      color: var(--muted);
-      width: 30px;
-      height: 30px;
-      border-radius: 7px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      transition: color .15s, border-color .15s, transform .3s;
-    }
-    .refresh-btn:hover { color: var(--text); border-color: var(--dim); }
-    .refresh-btn.spinning { animation: spin .7s linear infinite; }
-    .eject-btn {
-      background: none; border: 1px solid var(--border); color: var(--dim);
-      border-radius: 5px; padding: 3px 7px; cursor: pointer; font-size: 13px;
-      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-      transition: color .15s, border-color .15s;
-    }
-    .eject-btn:hover { color: #e06c6c; border-color: #e06c6c; }
     @keyframes spin { to { transform: rotate(360deg); } }
     @keyframes scan-pulse { 0%,100% { opacity:1; } 50% { opacity:.3; } }
 
@@ -1093,20 +1130,13 @@
         row-gap: 6px;
       }
 
-      .ipod-icon { width: 38px; height: 38px; }
-      .ipod-icon svg { width: 22px; height: 22px; }
+      /* Device selector: fills first-row space, reset desktop hover-margin */
+      .device-selector { flex: 1; min-width: 0; margin: 0; padding: 4px 6px; }
+      .header-actions  { flex-shrink: 0; }
 
-      /* device-info + buttons div takes remaining first-row space */
-      .header > div:has(.device-info) { flex: 1; min-width: 0; }
-
-      .device-info h1 { font-size: 14px; }
-      .device-info .sub {
-        font-size: 10px;
-        max-width: 54vw;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
+      .device-info h1   { font-size: 14px; }
+      .device-info .sub { font-size: 10px; }
+      .sub-uuid         { font-size: 9px; }
 
       .divider { display: none; }
 
@@ -1126,7 +1156,8 @@
       }
       .search-wrap input { width: 100%; }
 
-      .device-picker { min-width: min(320px, calc(100vw - 28px)); }
+      /* Picker opens downward, full-width on narrow screens */
+      .device-picker { min-width: min(300px, calc(100vw - 28px)); z-index: 600; }
 
       /* ── Tab bar ── */
       .tab { padding: 6px 16px; }

@@ -20,11 +20,14 @@
   <!-- ── Header ── -->
   <header class="header">
 
-    <!-- iPod icon; becomes a clickable picker when multiple iPods are connected -->
-    <div class="ipod-icon-wrap" :class="{ 'has-picker': devices.length > 0 }">
-      <div class="ipod-icon"
-           @click="devices.length > 0 && (showDevicePicker = !showDevicePicker)"
-           @keydown.escape.window="showDevicePicker = false">
+    <!-- Device selector: icon + info unified into one clickable block -->
+    <div class="device-selector"
+         :class="{ 'has-picker': devices.length > 0 }"
+         @click="devices.length > 0 && (showDevicePicker = !showDevicePicker)"
+         @click.outside="showDevicePicker = false"
+         @keydown.escape.window="showDevicePicker = false">
+
+      <div class="ds-icon">
         <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
           <rect x="5" y="2" width="18" height="24" rx="3.5" stroke="#aaa" stroke-width="1.5" fill="none"/>
           <rect x="8" y="4.5" width="12" height="8" rx="1" fill="#444"/>
@@ -37,11 +40,24 @@
         </svg>
       </div>
 
+      <div class="device-info">
+        <div class="device-name-row">
+          <h1 x-text="library ? library.ipod_name : (devices.length ? (selectedDevice?.devname || 'nasTune') : 'nasTune')"></h1>
+          <span class="ds-chevron" x-show="devices.length > 0">▾</span>
+        </div>
+        <div class="sub" x-show="library"
+             x-text="library ? library.device.model_name + ' · ' + library.fs_total_gb + ' GB ' + library.fs_type : ''">
+        </div>
+        <div class="sub sub-uuid" x-show="library"
+             x-text="library ? 'UUID ' + library.device.uuid : ''">
+        </div>
+        <div class="sub" x-show="!library"
+             x-text="libraryLoading ? 'Loading library…' : (libraryError ? 'Error loading library' : (selectedDevice && !selectedDevice.mounted ? 'Tap to mount iPod' : (devices.length ? 'Tap to select device' : 'No iPods connected')))">
+        </div>
+      </div>
+
       <!-- Multi-device dropdown -->
-      <div class="device-picker"
-           x-show="showDevicePicker"
-           @click.outside="showDevicePicker = false"
-           style="display:none">
+      <div class="device-picker" x-show="showDevicePicker" style="display:none">
         <template x-for="d in devices" :key="d.devnode">
           <div class="dp-row"
                :class="{ active: d.devnode === selectedDevnode }"
@@ -53,20 +69,11 @@
       </div>
     </div>
 
-    <!-- Device name + subtitle + refresh -->
-    <div style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
-      <div class="device-info">
-      <h1 x-text="library ? library.ipod_name : (devices.length ? (selectedDevice?.devname || 'nasTune') : 'nasTune')"></h1>
-      <div class="sub" x-show="library"
-           x-text="library ? library.device.model_name + ' · ' + library.fs_total_gb + ' GB ' + library.fs_type + ' · UUID ' + library.device.uuid : ''">
-      </div>
-      <div class="sub" x-show="!library"
-           x-text="libraryLoading ? 'Loading library…' : (libraryError ? 'Error loading library' : (selectedDevice && !selectedDevice.mounted ? 'Click to mount iPod' : (devices.length ? 'Select a device above' : 'No iPods connected')))">
-      </div>
-    </div>
-      <button class="refresh-btn" x-show="library" :class="{ spinning: libraryRefreshing }"
+    <!-- Refresh + eject: same-size icon buttons, outside selector -->
+    <div class="header-actions">
+      <button class="icon-btn" x-show="library" :class="{ spinning: libraryRefreshing }"
               @click="refreshLibrary" :disabled="libraryRefreshing" title="Reload library from iPod">&#x21BB;</button>
-      <button class="eject-btn" x-show="selectedDevnode" @click="ejectDevice"
+      <button class="icon-btn danger" x-show="selectedDevnode" @click="ejectDevice"
               title="Eject iPod">&#x23CF;</button>
     </div>
 
@@ -77,12 +84,12 @@
         <span x-text="(library?.fs_used_gb || 0).toFixed(2) + ' GB used'"></span>
         <template x-if="storageRemoveBytes > 0 && storageAddBytes > 0">
           <span style="display:contents">
-            <span style="color:#ff453a" x-text="'\u2212 ' + fmtSize(storageRemoveBytes)"></span>
+            <span style="color:#ff453a" x-text="'− ' + fmtSize(storageRemoveBytes)"></span>
             <span style="color:#30d158" x-text="'+ ' + fmtSize(storageAddBytes)"></span>
           </span>
         </template>
         <template x-if="storageRemoveBytes > 0 && !storageAddBytes">
-          <span style="color:#ff453a" x-text="'\u2212 ' + fmtSize(storageRemoveBytes)"></span>
+          <span style="color:#ff453a" x-text="'− ' + fmtSize(storageRemoveBytes)"></span>
         </template>
         <template x-if="storageAddBytes > 0 && !storageRemoveBytes">
           <span style="color:#30d158" x-text="'+ ' + fmtSize(storageAddBytes)"></span>
@@ -750,9 +757,9 @@
     <template x-if="sources.some(s => s.scan_status === 'scanning')">
       <span style="margin-left:auto;display:flex;align-items:center;gap:6px">
         <span style="width:7px;height:7px;border-radius:50%;background:#ffd60a;flex-shrink:0;animation:scan-pulse 1s ease-in-out infinite"></span>
-        <span style="color:#ffd60a;font-weight:500" x-text="'Scanning “' + (scanningSource?.name || '') + '”'"></span>
+        <span style="color:#ffd60a;font-weight:500" x-text="'Scanning &quot;' + (scanningSource?.name || '') + '&quot;'"></span>
         <template x-if="scanningSource && scanningSource.scan_total > 0">
-          <span style="color:var(--muted)" x-text="(scanningSource.scan_processed || 0).toLocaleString() + ' / ' + scanningSource.scan_total.toLocaleString() + ' files'"></span>
+          <span style="color:var(--muted)" x-text="(scanningSource.scan_processed || 0).toLocaleString() + ' / ' + scanningSource.scan_total.toLocaleString() + ' files'"></span>
         </template>
         <template x-if="scanningSource && !scanningSource.scan_total">
           <span style="color:var(--muted)">Finding files…</span>
