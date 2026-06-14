@@ -5,7 +5,7 @@ ARG TARGETARCH=amd64
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends --no-install-suggests \
     python3 \
     python3-venv \
     curl \
@@ -20,7 +20,8 @@ RUN curl -fsSL \
     https://github.com/d3vil-st/gpod-utils/releases/download/v1.4.4/gpod-utils_1.4.4.ubuntu26.04_${TARGETARCH}.deb \
     -o /tmp/gpod-utils.deb \
     && apt-get update \
-    && apt-get install -y --no-install-recommends /tmp/gpod-utils.deb \
+    && apt-get install -y --no-install-recommends --no-install-suggests \
+    /tmp/gpod-utils.deb \
     && rm /tmp/gpod-utils.deb \
     && rm -rf /var/lib/apt/lists/*
 
