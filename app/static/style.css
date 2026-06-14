@@ -449,17 +449,10 @@
       align-items: center;
       justify-content: center;
       font-size: 18px;
-      opacity: .45;
       position: relative;
     }
-    .album-thumb img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-      opacity: 1;
-    }
-    .album-row.selected .album-thumb { opacity: 1; }
+    .album-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .album-thumb > span { opacity: .45; }
     .album-play-overlay {
       position: absolute;
       inset: 0;
@@ -581,10 +574,10 @@
       align-items: center;
       justify-content: center;
       font-size: 30px;
-      opacity: .35;
     }
 
-    .abar-art img { width: 100%; height: 100%; object-fit: cover; opacity: 1; display: block; }
+    .abar-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .abar-art > span { opacity: .35; }
 
     .abar-info { overflow: hidden; }
     .abar-title { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
