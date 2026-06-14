@@ -30,16 +30,41 @@ function sourcesModule() {
       return this.sources.find(s => s.scan_status === 'scanning') || null;
     },
 
+    get filteredSrcArtists() {
+      const artists = this.sourceLibrary?.artists || [];
+      if (!this.search) return artists;
+      const q = this.search.toLowerCase();
+      return artists.filter(a =>
+        a.name.toLowerCase().includes(q) ||
+        a.albums.some(al =>
+          al.name.toLowerCase().includes(q) ||
+          al.tracks.some(t => t.title.toLowerCase().includes(q))
+        )
+      );
+    },
+
     get srcCurrentAlbums() {
       if (!this.srcArtist || !this.sourceLibrary) return [];
       const a = this.sourceLibrary.artists.find(a => a.name === this.srcArtist);
-      return a ? a.albums : [];
+      if (!a) return [];
+      if (!this.search) return a.albums;
+      const q = this.search.toLowerCase();
+      return a.albums.filter(al =>
+        al.name.toLowerCase().includes(q) ||
+        al.tracks.some(t => t.title.toLowerCase().includes(q))
+      );
     },
 
     get srcCurrentTracks() {
       if (!this.srcAlbum) return [];
       const al = this.srcCurrentAlbums.find(a => a.name === this.srcAlbum);
-      return al ? al.tracks : [];
+      if (!al) return [];
+      if (!this.search) return al.tracks;
+      const q = this.search.toLowerCase();
+      return al.tracks.filter(t =>
+        t.title.toLowerCase().includes(q) ||
+        al.name.toLowerCase().includes(q)
+      );
     },
 
     async loadSources() {
