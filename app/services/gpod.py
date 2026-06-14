@@ -52,6 +52,7 @@ def _parse(raw: dict, mount: Path) -> dict[str, Any]:
             "id": t["id"],
             "artist": t.get("artist") or "",
             "title": t.get("title") or "Unknown",
+            "disc_nr": t.get("cd_nr") or 0,
             "track_nr": t.get("track_nr") or 0,
             "duration_ms": t.get("tracklen") or 0,
             "filetype": t.get("filetype") or "",
@@ -72,7 +73,7 @@ def _parse(raw: dict, mount: Path) -> dict[str, Any]:
 
     for artist_albums in library.values():
         for album in artist_albums.values():
-            album["tracks"].sort(key=lambda t: t["track_nr"])
+            album["tracks"].sort(key=lambda t: (t["disc_nr"], t["track_nr"]))
 
     artists_sorted = sorted(library.keys(), key=lambda a: _sort_key(a))
     result_artists = []

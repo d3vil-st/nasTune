@@ -518,6 +518,23 @@
     .track-row:nth-child(even):hover { background: var(--bg2); }
     .track-row.active  { background: rgba(10,132,255,.12) !important; border-left: 2px solid var(--blue); padding-left: 14px; }
     .track-row.missing { opacity: .45; }
+    .track-row.disc-sep-before { margin-top: 28px; position: relative; }
+    .track-row.disc-sep-before::before {
+      content: 'CD ' attr(data-disc-nr);
+      position: absolute;
+      top: -24px;
+      left: 16px;
+      height: 22px;
+      line-height: 22px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      width: calc(100% - 32px);
+      padding-top: 4px;
+      box-sizing: border-box;
+    }
 
     .missing-tag {
       display: inline-block;
@@ -1026,8 +1043,8 @@
     .row-cb:hover { border-color: var(--muted); }
 
     .row-cb:checked {
-      background: var(--blue);
-      border-color: var(--blue);
+      background: #30d158;
+      border-color: #30d158;
     }
     .row-cb:checked::after {
       content: '';
@@ -1041,15 +1058,15 @@
     }
 
     .row-cb:indeterminate {
-      background: rgba(10,132,255,.25);
-      border-color: var(--blue);
+      background: rgba(48,209,88,.2);
+      border-color: #30d158;
     }
     .row-cb:indeterminate::after {
       content: '';
       display: block;
       width: 7px;
       height: 1.5px;
-      background: var(--blue);
+      background: #30d158;
       border-radius: 1px;
     }
     .artist-row, .album-row { user-select: none; }
@@ -1395,6 +1412,8 @@
       .track-row .t-quality { display: none; }
       .track-row .t-kbps    { display: none; }
       .track-row.active     { padding-left: 11px; border-left: 3px solid var(--blue); }
+      .track-row:not(.missing):not(.now-playing) .t-nr-text { display: none; }
+      .track-row:not(.missing):not(.now-playing) .t-nr-play { display: inline; }
 
       /* ── Artist / album rows ── */
       .artist-row { min-height: 48px; padding: 8px 14px; }

@@ -148,20 +148,24 @@ async def browse_fs(path: str = "/"):
 async def get_source_library(source_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT id FROM sources WHERE id=?", (source_id,)) as cur:
-            if not await cur.fetchone():
+        async with db.execute("SELECT last_scanned_at FROM sources WHERE id=?", (source_id,)) as cur:
+            row = await cur.fetchone()
+            if not row:
                 raise HTTPException(404, "Source not found")
+            last_scanned_at = row[0] or 0
 
         async with db.execute(
-            """SELECT id, path, artist, albumartist, album, title, track_nr,
+            """SELECT id, path, artist, albumartist, album, title, disc_nr, track_nr,
                       duration_ms, bitrate, samplerate, year, size, codec, bits_per_sample
                FROM source_tracks WHERE source_id=?
-               ORDER BY albumartist, artist, album, track_nr, title""",
+               ORDER BY albumartist, artist, album, disc_nr, track_nr, title""",
             (source_id,),
         ) as cur:
             tracks = [dict(t) for t in await cur.fetchall()]
 
-    return JSONResponse(_build_library(tracks))
+    result = _build_library(tracks)
+    result["last_scanned_at"] = last_scanned_at
+    return JSONResponse(result)
 
 
 @router.get("/audio")
@@ -197,11 +201,11 @@ async def source_artwork(path: str):
 
         audio = MFile(str(full), easy=False)
         if not audio or not audio.tags:
-            raise HTTPException(404, "No artwork")
+            return Response(status_code=404, headers={"Cache-Control": "no-store"})
 
         result = _mp4(audio.tags) or _id3(audio.tags) or _vorbis(audio.tags)
         if not result:
-            raise HTTPException(404, "No artwork")
+            return Response(status_code=404, headers={"Cache-Control": "no-store"})
 
         data, mime = result
         return Response(
@@ -235,6 +239,7 @@ def _build_library(tracks: list[dict]) -> dict:
             "albumartist": t.get("albumartist") or "",
             "album": album_key,
             "title": t.get("title") or "Unknown",
+            "disc_nr": t.get("disc_nr") or 0,
             "track_nr": t.get("track_nr") or 0,
             "duration_ms": t.get("duration_ms") or 0,
             "bitrate": t.get("bitrate") or 0,
@@ -252,7 +257,7 @@ def _build_library(tracks: list[dict]) -> dict:
             key=lambda a: (a["year"] if a["year"] > 0 else 9999, a["name"].lower()),
         )
         for album in albums:
-            album["tracks"].sort(key=lambda t: (t["track_nr"] or 999, t["title"].lower()))
+            album["tracks"].sort(key=lambda t: (t["disc_nr"] or 0, t["track_nr"] or 999, t["title"].lower()))
         track_count = sum(len(a["tracks"]) for a in albums)
         result_artists.append({"name": artist, "albums": albums, "track_count": track_count})
 
