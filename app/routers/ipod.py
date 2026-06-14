@@ -1,11 +1,12 @@
 import asyncio
+import json
 import logging
 import os
 import re
 import tarfile
 import threading
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -150,3 +151,22 @@ async def download_tracks(body: DownloadBody):
 @router.get("/operations")
 async def get_operations():
     return JSONResponse(op_service.current())
+
+
+@router.get("/operations/events")
+async def operations_events(request: Request):
+    async def stream():
+        last_json = None
+        while True:
+            if await request.is_disconnected():
+                break
+            current_json = json.dumps(op_service.current())
+            if current_json != last_json:
+                last_json = current_json
+                yield f"data: {current_json}\n\n"
+            await asyncio.sleep(0.25)
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
