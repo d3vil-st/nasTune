@@ -44,8 +44,18 @@ function sourcesModule() {
     },
 
     get srcCurrentAlbums() {
-      if (!this.srcArtist || !this.sourceLibrary) return [];
-      const a = this.sourceLibrary.artists.find(a => a.name === this.srcArtist);
+      if (!this.sourceLibrary) return [];
+      const artists = this.sourceLibrary.artists;
+      if (this.srcArtist === '__ALL__') {
+        if (!this.search) return artists.flatMap(a => a.albums);
+        const q = this.search.toLowerCase();
+        return artists.flatMap(a => a.albums.filter(al =>
+          al.name.toLowerCase().includes(q) ||
+          al.tracks.some(t => t.title.toLowerCase().includes(q))
+        ));
+      }
+      if (!this.srcArtist) return [];
+      const a = artists.find(a => a.name === this.srcArtist);
       if (!a) return [];
       if (!this.search) return a.albums;
       const q = this.search.toLowerCase();
@@ -176,8 +186,10 @@ function sourcesModule() {
       this.srcArtist = name;
       this.srcAlbum = null;
       this.srcAlbumArtUrl = null;
-      const first = this.srcCurrentAlbums[0];
-      if (first) this.pickSrcAlbum(first.name);
+      if (name !== '__ALL__') {
+        const first = this.srcCurrentAlbums[0];
+        if (first) this.pickSrcAlbum(first.name);
+      }
     },
 
     pickSrcAlbum(name) {

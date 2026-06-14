@@ -400,6 +400,8 @@
     }
 
     .artist-row:hover:not(.selected) { background: var(--bg2); }
+    .artist-row.all-row .artist-name { font-style: italic; }
+    .artist-row.all-row { border-bottom: 1px solid var(--border); margin-bottom: 2px; }
 
     .artist-row.selected {
       background: var(--blue-bg);
@@ -860,13 +862,39 @@
     .statusbar {
       background: var(--bg2);
       border-top: 1px solid var(--border);
-      padding: 4px 16px;
-      font-size: 11px;
+      padding: 5px 20px;
+      font-size: 12px;
       color: var(--dim);
       flex-shrink: 0;
       display: flex;
       gap: 20px;
       align-items: center;
+    }
+    /* Fixed-width right section — width is CSS-declared so it never reflows when
+       text content changes (N/M counter, track name), preventing left-side jumping. */
+    .statusbar-op {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: min(480px, 55%);
+      flex-shrink: 1;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .statusbar-op-count {
+      flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      color: var(--muted);
+    }
+    .statusbar-op-current {
+      flex: 1 1 0;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--dim);
     }
 
     /* ── Tab bar ─────────────────────────────────────────────────── */
@@ -1501,7 +1529,8 @@
       }
 
       /* ── Status bar ── */
-      .statusbar { padding: 3px 12px; font-size: 10px; }
+      .statusbar { padding: 3px 12px; font-size: 11px; }
+      .statusbar-op { width: min(320px, 70%); }
     }
 
     /* Very small phones */

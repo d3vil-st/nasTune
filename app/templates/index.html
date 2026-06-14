@@ -237,6 +237,12 @@
           <span>Artists&ensp;(<span x-text="filteredArtists.length"></span>)</span>
         </div>
         <div class="col-scroll">
+          <div class="artist-row all-row" x-show="library"
+               :class="{ selected: selectedArtist === '__ALL__' }"
+               @click="pickArtist('__ALL__')">
+            <span class="artist-name">All Artists</span>
+            <span class="artist-count" x-text="library?.total_albums"></span>
+          </div>
           <template x-for="a in filteredArtists" :key="a.name">
             <div class="artist-row"
                  :class="{ selected: selectedArtist === a.name }"
@@ -254,12 +260,12 @@
 
       <!-- Albums -->
       <div class="col col-albums">
-        <div class="col-heading" @click="pickArtist(null)">
+        <div class="col-heading" @click="matchMedia('(max-width:768px)').matches && pickArtist(null)">
           <input type="checkbox" class="row-cb" @click.stop x-show="selectedArtist"
                  :checked="allCurrentAlbumsSelected()"
                  x-effect="$el.indeterminate = someCurrentAlbumsSelected() && !allCurrentAlbumsSelected()"
                  @change="toggleAllCurrentAlbums($event.target.checked)">
-          <span x-text="selectedArtist || 'Albums'"></span>
+          <span x-text="selectedArtist === '__ALL__' ? 'All Artists' : (selectedArtist || 'Albums')"></span>
         </div>
         <div class="col-scroll">
           <template x-if="!selectedArtist">
@@ -435,6 +441,12 @@
           </template>
           <template x-if="selectedSourceId && !sourceLibraryLoading">
             <div>
+              <div class="artist-row all-row"
+                   :class="{ selected: srcArtist === '__ALL__' }"
+                   @click="pickSrcArtist('__ALL__')">
+                <span class="artist-name">All Artists</span>
+                <span class="artist-count" x-text="(sourceLibrary?.artists || []).reduce((s,a) => s + a.albums.length, 0)"></span>
+              </div>
               <template x-for="a in filteredSrcArtists" :key="a.name">
                 <div class="artist-row"
                      :class="{ selected: srcArtist === a.name }"
@@ -454,12 +466,12 @@
 
       <!-- Middle: Albums of selected artist -->
       <div class="col col-albums">
-        <div class="col-heading" @click="pickSrcArtist(null)">
+        <div class="col-heading" @click="matchMedia('(max-width:768px)').matches && pickSrcArtist(null)">
           <input type="checkbox" class="row-cb" @click.stop x-show="srcArtist"
                  :checked="allSrcCurrentAlbumsSelected()"
                  x-effect="$el.indeterminate = someSrcCurrentAlbumsSelected() && !allSrcCurrentAlbumsSelected()"
                  @change="toggleAllSrcCurrentAlbums($event.target.checked)">
-          <span x-text="srcArtist || 'Albums'"></span>
+          <span x-text="srcArtist === '__ALL__' ? 'All Artists' : (srcArtist || 'Albums')"></span>
         </div>
         <div class="col-scroll">
           <template x-if="!srcArtist">
@@ -784,59 +796,71 @@
     </template>
     <!-- Scan progress (visible any time a source is scanning) -->
     <template x-if="sources.some(s => s.scan_status === 'scanning')">
-      <span style="margin-left:auto;display:flex;align-items:center;gap:6px">
+      <span class="statusbar-op">
         <span style="width:7px;height:7px;border-radius:50%;background:#ffd60a;flex-shrink:0;animation:scan-pulse 1s ease-in-out infinite"></span>
-        <span style="color:#ffd60a;font-weight:500" x-text="'Scanning &quot;' + (scanningSource?.name || '') + '&quot;'"></span>
+        <span style="color:#ffd60a;font-weight:500;flex-shrink:0" x-text="'Scanning &quot;' + (scanningSource?.name || '') + '&quot;'"></span>
         <template x-if="scanningSource && scanningSource.scan_total > 0">
-          <span style="color:var(--muted)" x-text="(scanningSource.scan_processed || 0).toLocaleString() + ' / ' + scanningSource.scan_total.toLocaleString() + ' files'"></span>
+          <span class="statusbar-op-count" x-text="(scanningSource.scan_processed || 0).toLocaleString() + ' / ' + scanningSource.scan_total.toLocaleString() + ' files'"></span>
         </template>
         <template x-if="scanningSource && !scanningSource.scan_total">
-          <span style="color:var(--muted)">Finding files…</span>
+          <span style="color:var(--muted);flex-shrink:0">Finding files…</span>
         </template>
         <template x-if="scanningSource?.scan_current_file">
-          <span style="color:var(--dim);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" x-text="scanningSource.scan_current_file"></span>
+          <span class="statusbar-op-current" x-text="scanningSource.scan_current_file"></span>
         </template>
       </span>
     </template>
     <!-- Operation progress (delete / sync) -->
     <template x-if="currentOp && currentOp.status === 'running'">
-      <span style="margin-left:auto;display:flex;align-items:center;gap:6px;cursor:pointer"
-            title="Click to view output" @click="showOpLog = true; $nextTick(() => { const el = $refs.opLogEl; if (el) el.scrollTop = el.scrollHeight; })">
+      <span class="statusbar-op" style="cursor:pointer"
+            title="Click to view output" @click="openLiveLog()">
         <span style="width:7px;height:7px;border-radius:50%;flex-shrink:0;animation:scan-pulse 1s ease-in-out infinite"
               :style="currentOp.kind === 'delete' ? 'background:#ff453a' : 'background:#30d158'"></span>
-        <span style="font-weight:500"
+        <span style="font-weight:500;flex-shrink:0"
               :style="currentOp.kind === 'delete' ? 'color:#ff453a' : 'color:#30d158'"
               x-text="currentOp.kind === 'delete' ? 'Deleting…' : 'Syncing…'"></span>
-        <span style="color:var(--muted)" x-text="currentOp.processed + ' / ' + currentOp.total"></span>
+        <span class="statusbar-op-count" x-text="currentOp.processed + ' / ' + currentOp.total"></span>
         <template x-if="currentOp.current">
-          <span style="color:var(--dim);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" x-text="currentOp.current"></span>
+          <span class="statusbar-op-current" x-text="currentOp.current"></span>
         </template>
       </span>
     </template>
-    <template x-if="currentOp && currentOp.status === 'error'">
-      <span style="margin-left:auto;color:#ff453a;font-size:12px;cursor:pointer" title="Click to view output"
-            @click="showOpLog = true; $nextTick(() => { const el = $refs.opLogEl; if (el) el.scrollTop = el.scrollHeight; })"
-            x-text="'Error: ' + (currentOp.error || 'unknown')"></span>
+    <!-- Last finished operation (persists across reloads) -->
+    <template x-if="currentOp?.status !== 'running' && lastOp && selectedDevnode">
+      <span class="statusbar-op" style="cursor:pointer"
+            title="Click to view output" @click="openLastOpLog()">
+        <span style="flex-shrink:0"
+              :style="lastOp.status === 'done' ? 'color:#30d158' : 'color:#ff453a'"
+              x-text="lastOp.status === 'done' ? '✓' : '✗'"></span>
+        <span style="color:var(--muted);flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1 1 0"
+              x-text="(lastOp.kind === 'sync' ? 'Sync' : 'Delete') + ' · ' + lastOp.total + ' tracks' + (fmtOpDuration(lastOp) ? ' · ' + fmtOpDuration(lastOp) : '')"></span>
+        <span style="color:var(--dim);flex-shrink:0;font-variant-numeric:tabular-nums" x-text="fmtAgo(lastOp.finished_at)"></span>
+      </span>
     </template>
   </div>
 
   <!-- ── Operation log popup ── -->
   <div class="modal-overlay"
-       x-show="showOpLog && currentOp"
+       x-show="showOpLog && (historyViewOp || currentOp)"
        x-transition.opacity
-       @click.self="showOpLog = false"
-       @keydown.escape.window="showOpLog = false"
+       @click.self="showOpLog = false; historyViewOp = null"
+       @keydown.escape.window="showOpLog = false; historyViewOp = null"
        style="display:none">
-    <div class="op-log-modal">
-      <div class="op-log-header">
-        <span x-text="currentOp?.kind === 'delete' ? 'Delete output' : 'Sync output'"></span>
-        <span x-show="currentOp?.status === 'running'" class="op-log-badge op-log-badge-run">running</span>
-        <span x-show="currentOp?.status === 'done'"    class="op-log-badge op-log-badge-done">done</span>
-        <span x-show="currentOp?.status === 'error'"   class="op-log-badge op-log-badge-err">error</span>
-        <button class="modal-close" @click="showOpLog = false">&#x2715;</button>
+    <template x-if="showOpLog && (historyViewOp || currentOp)">
+      <div class="op-log-modal">
+        <div class="op-log-header">
+          <span x-text="(historyViewOp || currentOp).kind === 'delete' ? 'Delete output' : 'Sync output'"></span>
+          <template x-if="historyViewOp">
+            <span style="color:var(--dim);font-size:11px;font-weight:400" x-text="fmtAgo(historyViewOp.finished_at)"></span>
+          </template>
+          <span x-show="(historyViewOp || currentOp).status === 'running'" class="op-log-badge op-log-badge-run">running</span>
+          <span x-show="(historyViewOp || currentOp).status === 'done'"    class="op-log-badge op-log-badge-done">done</span>
+          <span x-show="(historyViewOp || currentOp).status === 'error'"   class="op-log-badge op-log-badge-err">error</span>
+          <button class="modal-close" @click="showOpLog = false; historyViewOp = null">&#x2715;</button>
+        </div>
+        <pre class="op-log-body" x-ref="opLogEl"><template x-for="(line, i) in ((historyViewOp || currentOp)?.log || [])" :key="i"><span :class="line.startsWith('$') ? 'op-log-cmd' : ''" x-text="line"></span></template></pre>
       </div>
-      <pre class="op-log-body" x-ref="opLogEl"><template x-for="(line, i) in (currentOp?.log || [])" :key="i"><span :class="line.startsWith('$') ? 'op-log-cmd' : ''" x-text="line"></span></template></pre>
-    </div>
+    </template>
   </div>
 
   <!-- ── Full-size cover popup ── -->

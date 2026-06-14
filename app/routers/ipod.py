@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.services.devices import device_service
-from app.services.operations import op_service
+from app.services.operations import op_service, _OP_HISTORY_DIR
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["ipod"])
@@ -121,17 +121,24 @@ async def _tar_stream(tracks: list[DownloadTrack], mount: str):
     thread.join()
 
 
+def _resolve_device_id(devnode: str) -> str:
+    uuid = device_service.get_ipod_uuid(devnode)
+    if uuid:
+        return uuid
+    return devnode.lstrip("/").replace("/", "_")
+
+
 @router.post("/library/delete")
 async def delete_tracks(body: DeleteBody):
     mount = _get_mount(body.devnode)
-    await op_service.run_delete(body.track_ids, mount)
+    await op_service.run_delete(body.track_ids, mount, device_id=_resolve_device_id(body.devnode))
     return {"ok": True}
 
 
 @router.post("/library/sync")
 async def sync_tracks(body: SyncBody):
     mount = _get_mount(body.devnode)
-    await op_service.run_sync(body.copy_paths, body.delete_ids, mount, copy_track_count=body.copy_track_count)
+    await op_service.run_sync(body.copy_paths, body.delete_ids, mount, device_id=_resolve_device_id(body.devnode), copy_track_count=body.copy_track_count)
     return {"ok": True}
 
 
@@ -151,6 +158,23 @@ async def download_tracks(body: DownloadBody):
 @router.get("/operations")
 async def get_operations():
     return JSONResponse(op_service.current())
+
+
+@router.get("/operations/history")
+async def get_op_history(devnode: str):
+    device_id = _resolve_device_id(devnode)
+    safe = re.sub(r"[^a-zA-Z0-9_\-]", "_", device_id)
+    dir_path = _OP_HISTORY_DIR / safe
+    if not dir_path.exists():
+        return JSONResponse([])
+    files = sorted(dir_path.glob("*.json"), reverse=True)[:10]
+    ops = []
+    for f in files:
+        try:
+            ops.append(json.loads(f.read_text()))
+        except Exception:
+            pass
+    return JSONResponse(ops)
 
 
 @router.get("/operations/events")
