@@ -191,10 +191,12 @@ function sourcesModule() {
     },
 
     sourceArtUrl(album) {
-      if (!album) return null;
+      if (!album) return '';
       const t = album.tracks && album.tracks[0];
-      if (!t) return null;
-      return '/sources/artwork?path=' + encodeURIComponent(t.path);
+      if (!t) return '';
+      let url = '/sources/artwork?path=' + encodeURIComponent(t.path);
+      if (this.sourceLibrary?.last_scanned_at) url += '&_v=' + this.sourceLibrary.last_scanned_at;
+      return url;
     },
 
     _buildSrcTrackMap() {
