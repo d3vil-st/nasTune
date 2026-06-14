@@ -53,6 +53,10 @@ function browserModule() {
       this.selectedAlbum = null;
       this.selectedTrack = null;
       this.albumArtUrl = null;
+      this.srcArtist = null;
+      this.srcAlbum = null;
+      this.srcSelectedTrack = null;
+      this.srcAlbumArtUrl = null;
     },
 
     pickArtist(name) {

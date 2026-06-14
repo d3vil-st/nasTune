@@ -130,7 +130,7 @@
         <button class="theme-btn" :class="{ active: themeMode === 'light' }" @click="setTheme('light')" title="Light theme">☀</button>
         <button class="theme-btn" :class="{ active: themeMode === 'dark' }"  @click="setTheme('dark')"  title="Dark theme">☾</button>
       </div>
-      <div class="search-wrap" x-show="library" style="display:none">
+      <div class="search-wrap" x-show="library || sourceLibrary" style="display:none">
         <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
           <path d="M5.5 1a4.5 4.5 0 1 0 2.8 8.02l2.84 2.84a.75.75 0 1 0 1.06-1.06L9.36 7.96A4.5 4.5 0 0 0 5.5 1Zm-3 4.5a3 3 0 1 1 6 0 3 3 0 0 1-6 0Z"/>
         </svg>
@@ -409,7 +409,7 @@
                  :checked="allSrcArtistsSelected()"
                  x-effect="$el.indeterminate = someSrcArtistsSelected() && !allSrcArtistsSelected()"
                  @change="toggleAllSrcArtists($event.target.checked)">
-          <span x-text="'Artists' + (sourceLibrary ? ' (' + sourceLibrary.artists.length + ')' : '')"></span>
+          <span x-text="'Artists' + (sourceLibrary ? ' (' + filteredSrcArtists.length + (search ? '/' + sourceLibrary.artists.length : '') + ')' : '')"></span>
         </div>
         <div class="col-scroll">
           <template x-if="!selectedSourceId">
@@ -424,7 +424,7 @@
           </template>
           <template x-if="selectedSourceId && !sourceLibraryLoading">
             <div>
-              <template x-for="a in (sourceLibrary?.artists || [])" :key="a.name">
+              <template x-for="a in filteredSrcArtists" :key="a.name">
                 <div class="artist-row"
                      :class="{ selected: srcArtist === a.name }"
                      @click="pickSrcArtist(a.name)">
@@ -765,7 +765,7 @@
       <span x-text="srcCurrentAlbums.length + ' albums · ' + srcCurrentAlbums.reduce((s,a)=>s+a.tracks.length,0) + ' tracks'"></span>
     </template>
     <template x-if="viewMode === 'sources' && !srcArtist && sourceLibrary">
-      <span x-text="(sourceLibrary.total_tracks || 0).toLocaleString() + ' songs · ' + (sourceLibrary.artists?.length || 0) + ' artists'"></span>
+      <span x-text="search ? filteredSrcArtists.length + ' / ' + (sourceLibrary.artists?.length || 0) + ' artists' : (sourceLibrary.total_tracks || 0).toLocaleString() + ' songs · ' + (sourceLibrary.artists?.length || 0) + ' artists'"></span>
     </template>
     <!-- Scan progress (visible any time a source is scanning) -->
     <template x-if="sources.some(s => s.scan_status === 'scanning')">
