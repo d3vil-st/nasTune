@@ -17,6 +17,7 @@ class SyncBody(BaseModel):
     devnode: str
     copy_paths: list[str] = []
     delete_ids: list[int | str] = []
+    copy_track_count: int | None = None
 
 
 def _get_mount(devnode: str) -> str:
@@ -40,7 +41,7 @@ async def delete_tracks(body: DeleteBody):
 @router.post("/library/sync")
 async def sync_tracks(body: SyncBody):
     mount = _get_mount(body.devnode)
-    await op_service.run_sync(body.copy_paths, body.delete_ids, mount)
+    await op_service.run_sync(body.copy_paths, body.delete_ids, mount, copy_track_count=body.copy_track_count)
     return {"ok": True}
 
 

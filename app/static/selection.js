@@ -302,7 +302,7 @@ function selectionModule() {
       const r = await fetch('/library/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ devnode: this.selectedDevnode, copy_paths: copyPaths, delete_ids: deleteIds }),
+        body: JSON.stringify({ devnode: this.selectedDevnode, copy_paths: copyPaths, delete_ids: deleteIds, copy_track_count: this.syncCopyTracks.length }),
       });
       if (!r.ok) { const d = await r.json().catch(()=>({})); alert(d.detail || 'Sync failed'); return; }
       this._startOpPoll();
