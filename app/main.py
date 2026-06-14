@@ -12,6 +12,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 from pydantic import BaseModel
@@ -33,6 +34,7 @@ async def lifespan(_app):
 app = FastAPI(lifespan=lifespan)
 app.include_router(sources_router)
 app.include_router(ipod_router)
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 templates.env.filters["tojson"] = lambda v: Markup(json.dumps(v, ensure_ascii=False))
 
