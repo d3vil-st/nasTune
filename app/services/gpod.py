@@ -46,6 +46,7 @@ def _parse(raw: dict, mount: Path) -> dict[str, Any]:
 
         library[artist][album_name]["tracks"].append({
             "id": t["id"],
+            "artist": t.get("artist") or "",
             "title": t.get("title") or "Unknown",
             "track_nr": t.get("track_nr") or 0,
             "duration_ms": t.get("tracklen") or 0,
