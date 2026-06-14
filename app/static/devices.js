@@ -88,6 +88,8 @@ function devicesModule() {
     async refreshLibrary() {
       if (this.libraryRefreshing) return;
       this.libraryRefreshing = true;
+      const prevArtist = this.selectedArtist;
+      const prevAlbum  = this.selectedAlbum;
       try {
         const r = await fetch('/library/refresh', { method: 'POST' });
         if (!r.ok) { this.libraryError = await r.text(); return; }
@@ -98,6 +100,12 @@ function devicesModule() {
         this.selectedAlbum = null;
         this.selectedTrack = null;
         this.albumArtUrl = null;
+        // Restore navigation if the artist/album still exist after refresh
+        if (prevArtist && this.library.artists?.find(a => a.name === prevArtist)) {
+          this.pickArtist(prevArtist);
+          if (prevAlbum && this.currentAlbums.find(a => a.name === prevAlbum))
+            this.pickAlbum(prevAlbum);
+        }
       } catch (e) {
         this.libraryError = e.message;
       } finally {
