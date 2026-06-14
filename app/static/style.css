@@ -258,7 +258,7 @@
       background: var(--fill-bg);
       border: 1px solid var(--bg3);
       color: var(--text);
-      padding: 6px 10px 6px 28px;
+      padding: 6px 26px 6px 28px;
       border-radius: 7px;
       font-size: 12px;
       width: 190px;
@@ -272,6 +272,21 @@
     }
 
     .search-wrap input::placeholder { color: var(--dim); }
+
+    .search-clear {
+      position: absolute;
+      right: 7px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: var(--dim);
+      cursor: pointer;
+      padding: 0;
+      font-size: 13px;
+      line-height: 1;
+    }
+    .search-clear:hover { color: var(--text); }
 
     @keyframes spin { to { transform: rotate(360deg); } }
     @keyframes scan-pulse { 0%,100% { opacity:1; } 50% { opacity:.3; } }
@@ -953,6 +968,8 @@
       transition: color .15s, border-color .15s;
     }
     .manage-btn:hover { color: var(--text); border-color: var(--dim); }
+    .manage-btn.active { color: var(--blue); border-color: var(--blue); }
+    .manage-btn.active:hover { color: var(--blue); border-color: var(--blue); }
     .sources-picker {
       position: absolute;
       top: 36px; left: 0;
