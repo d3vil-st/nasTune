@@ -118,8 +118,8 @@ class OperationService:
             log.debug("gpod-cp output:\n%s", output)
         if proc.returncode != 0:
             return output or f"gpod-cp exited {proc.returncode}"
-        # "N/M items  dupl=D" — duplicates count as success
-        m = re.search(r'(\d+)/(\d+)\s+items\s+dupl=(\d+)', output)
+        # "N/M items (size)  dupl=D" — duplicates count as success
+        m = re.search(r'(\d+)/(\d+)\s+items.*?dupl=(\d+)', output)
         if m:
             added, total, dupl = int(m.group(1)), int(m.group(2)), int(m.group(3))
             if added + dupl < total:
