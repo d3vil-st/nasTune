@@ -6,6 +6,21 @@ Built around [gpod-utils](https://github.com/d3vil-st/gpod-utils), which wraps l
 
 ---
 
+## Screenshots
+
+<table>
+  <tr>
+    <td><img src="docs/screenshots/Screenshot%202026-06-14%20at%2022-29-08%20nasTune.png" alt="iPod library browser"></td>
+    <td><img src="docs/screenshots/Screenshot%202026-06-14%20at%2022-29-35%20nasTune.png" alt="Track detail panel (light theme)"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/Screenshot%202026-06-14%20at%2022-30-25%20nasTune.png" alt="Sources tab with NAS library"></td>
+    <td><img src="docs/screenshots/Screenshot%202026-06-14%20at%2022-30-59%20nasTune.png" alt="Track selection with Download and Delete"></td>
+  </tr>
+</table>
+
+---
+
 ## Features
 
 - **Browse** your iPod library in a 3-pane iTunes-style view (artists → albums → tracks)
