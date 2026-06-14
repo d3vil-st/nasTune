@@ -118,8 +118,10 @@
         <span class="badge" x-text="(library?.artists?.length || 0) + ' artists'"></span>
       </div>
       <button class="btn-danger" x-show="viewMode === 'library' && ipodSelection.size > 0"
+              :disabled="currentOp?.status === 'running'"
               @click="showDeleteConfirm = true">Delete</button>
       <button class="btn-primary" x-show="viewMode === 'sources' && hasSyncChanges"
+              :disabled="currentOp?.status === 'running'"
               @click="showSyncConfirm = true">Sync</button>
     </div>
 
