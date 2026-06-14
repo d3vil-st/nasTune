@@ -88,23 +88,25 @@ function devicesModule() {
     async refreshLibrary() {
       if (this.libraryRefreshing) return;
       this.libraryRefreshing = true;
-      const prevArtist = this.selectedArtist;
-      const prevAlbum  = this.selectedAlbum;
       try {
         const r = await fetch('/library/refresh', { method: 'POST' });
         if (!r.ok) { this.libraryError = await r.text(); return; }
         this.library = await r.json();
         this._ipodMap = null;
         this.ipodSelection = new Set();
-        this.selectedArtist = null;
-        this.selectedAlbum = null;
         this.selectedTrack = null;
-        this.albumArtUrl = null;
-        // Restore navigation if the artist/album still exist after refresh
-        if (prevArtist && this.library.artists?.find(a => a.name === prevArtist)) {
-          this.pickArtist(prevArtist);
-          if (prevAlbum && this.currentAlbums.find(a => a.name === prevAlbum))
-            this.pickAlbum(prevAlbum);
+        // Drop selection only if the artist/album was removed from the library
+        if (this.selectedArtist && !this.library.artists?.find(a => a.name === this.selectedArtist)) {
+          this.selectedArtist = null;
+          this.selectedAlbum = null;
+          this.albumArtUrl = null;
+        } else if (this.selectedAlbum && !this.currentAlbums.find(a => a.name === this.selectedAlbum)) {
+          this.selectedAlbum = null;
+          this.albumArtUrl = null;
+        } else if (this.selectedAlbum) {
+          // Refresh artwork URL — track list may have changed
+          const al = this.currentAlbums.find(a => a.name === this.selectedAlbum);
+          this.albumArtUrl = this.artUrl(al) || null;
         }
       } catch (e) {
         this.libraryError = e.message;
