@@ -310,7 +310,7 @@ function selectionModule() {
 
     _startOpPoll() {
       if (this.opPollTimer) return;
-      this.opPollTimer = setInterval(async () => {
+      const poll = async () => {
         try {
           const r = await fetch('/operations');
           this.currentOp = r.ok ? await r.json() : null;
@@ -319,12 +319,14 @@ function selectionModule() {
             this.opPollTimer = null;
             if (this.currentOp?.status === 'done') {
               this._ipodMap = null;
-              await this._fetchLibrary();
+              await this._fetchLibrary(true);
               if (this.selectedSourceId) this._initSrcChecked();
             }
           }
         } catch (e) { /* ignore */ }
-      }, 1000);
+      };
+      poll();
+      this.opPollTimer = setInterval(poll, 1000);
     },
   };
 }
