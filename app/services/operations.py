@@ -3,7 +3,7 @@ import logging
 import os
 
 log = logging.getLogger(__name__)
-BATCH_SIZE = 50
+BATCH_SIZE = 5
 GPOD_DRY_RUN = os.environ.get("GPOD_DRY_RUN", "").lower() in ("1", "true", "yes")
 
 
@@ -62,8 +62,11 @@ class OperationService:
             env=env,
         )
         out, _ = await proc.communicate()
+        output = out.decode().strip()
+        if output:
+            log.debug("gpod-rm output:\n%s", output)
         if proc.returncode != 0:
-            return out.decode().strip() or f"gpod-rm exited {proc.returncode}"
+            return output or f"gpod-rm exited {proc.returncode}"
         return None
 
     async def _gpod_cp_batch(self, paths: list[str], mount: str) -> str | None:
@@ -79,8 +82,11 @@ class OperationService:
             env=env,
         )
         out, _ = await proc.communicate()
+        output = out.decode().strip()
+        if output:
+            log.debug("gpod-cp output:\n%s", output)
         if proc.returncode != 0:
-            return out.decode().strip() or f"gpod-cp exited {proc.returncode}"
+            return output or f"gpod-cp exited {proc.returncode}"
         return None
 
     async def _do_delete(self, op: _Op, track_ids: list, mount: str) -> None:
