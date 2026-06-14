@@ -133,6 +133,8 @@ Key docker-compose volumes:
 | `POST` | `/library/sync` | `{ devnode, copy_paths[], delete_ids[], copy_track_count }` — delete then copy |
 | `POST` | `/library/download` | `{ devnode, tracks[] }` — streams selected tracks as a `.tar` archive |
 | `GET` | `/operations` | Current operation status: kind, status, processed, total, current, error |
+| `GET` | `/operations/events` | SSE stream; pushes full op state on any change (250 ms server-side diff-poll) |
+| `GET` | `/operations/history?devnode=` | Last 10 finished ops for the device, newest-first, full log included |
 
 #### Download track object schema
 ```json
@@ -191,6 +193,46 @@ Navigation state is encoded in the URL hash so the browser preserves it across r
 - Sources tab: `#tab=sources&src=1&srca=Joy+Division&sral=Closer`
 
 `app.js` reads the hash during `init()` and restores state after the library/source loads, with validation that the artist and album still exist. `$watch` on `viewMode`, `selectedArtist`, `selectedAlbum`, `selectedSourceId`, `srcArtist`, `srcAlbum` calls `_syncUrl()` on every navigation change. `history.replaceState` is used (no new history entries).
+
+### Operation history and SSE
+
+Operations are tracked in real time via SSE and persisted to disk so the status bar survives page reloads.
+
+- **SSE**: `_connectOpEvents()` in `selection.js` opens an `EventSource` to `/operations/events`. The variable is closure-scoped (not stored in Alpine state) to avoid proxy issues with non-plain objects. On `running → done/error` transition, the library is refreshed and `loadOpHistory` is called.
+- **History files**: each finished op is written to `/data/op_history/{device_id}/{timestamp}.json` and the directory is pruned to the last 10 files. `device_id` is the iPod UUID from the library cache; falls back to sanitized devnode if the library is not yet loaded.
+- **`lastOp` getter**: in-session `currentOp` (when status is `done` or `error`) takes priority over `opHistory[0]` so the status bar shows the freshest result.
+- **Op log modal**: clicking the running indicator or last-op entry in the status bar opens a terminal-style modal (`op-log-modal`). Live ops auto-scroll; historical ops are shown via `historyViewOp`.
+
+### All Artists mode
+
+`selectedArtist === '__ALL__'` (and `srcArtist === '__ALL__'`) is a sentinel that selects all artists at once.
+
+- `currentAlbums` / `srcCurrentAlbums` return a flat list via `flatMap(a => a.albums)` when `__ALL__` is active. Search still filters this flat list by album name or track title.
+- `pickArtist('__ALL__')` / `pickSrcArtist('__ALL__')` skip the first-album auto-select that happens for normal artist selection.
+- Album-column checkboxes pass the **album object** directly to `isAlbumSelected(al)` / `toggleAlbum(al, checked)` (and source equivalents) instead of `(artistName, albumName)`. Passing the object is required because artist-name lookup fails when `artistName === '__ALL__'` — no library entry has that name.
+- URL state encodes `__ALL__` literally and the restoration logic handles it before the normal `.find()` check.
+
+### Search navigation
+
+Search filters all three panes simultaneously. `onSearch()` clears the artist and album selection on each keystroke, so a search and a navigation selection cannot coexist — typing always resets navigation.
+
+When a user then clicks an artist from the filtered list, both `search` and `selectedArtist` are set. The album getter resolves what to show based on *why* the artist appeared:
+
+- **Artist name matched** — `a.name.toLowerCase().includes(q)` → show all albums unfiltered.
+- **Album or track matched** — filter albums to those matching the query; filter tracks to matching titles.
+- Track list is similarly unfiltered when the artist or album name matched the query, and filtered to matching titles otherwise.
+
+A clear (×) button appears inside the search input (`.search-clear`) when the field is non-empty. Clicking calls `onSearch()` to reset navigation state.
+
+### Sources bar filters
+
+The sources bar (`.sources-bar`) contains quick-action buttons that are only shown when relevant:
+
+- **Unsynced only** (`srcShowUnsynced`) — filters all three source panes to artists/albums/tracks not yet on the iPod, using `isOnIpod()`. Only visible when both iPod library and source library are loaded. Persisted in `localStorage` under key `nastune-src-unsynced`. Active state indicated by blue border (`.manage-btn.active`).
+
+### Status bar right section
+
+The status bar uses `display:flex`. The right section (scan progress, operation progress, last-op summary) is wrapped in `.statusbar-op` which has `width: min(480px, 55%)` — a CSS-declared width, not content-driven. This prevents layout reflow when the N/M counter or track name changes, which would otherwise cause the left-side text to jump. `overflow: hidden` clips content that doesn't fit. The N/M counter uses `font-variant-numeric: tabular-nums` for stable digit widths within the fixed box.
 
 ### Track matching (sync / isOnIpod)
 
@@ -326,6 +368,9 @@ The `mode='w|'` flag enables streaming (no seeking). The OS pipe provides natura
 - **gpod-rm ID positional shift**: After each batch deletion, remaining track IDs shift down. Always sort delete IDs in descending order and process them highest-first so earlier deletions don't invalidate later IDs in the same operation.
 - **gpod-cp directory args**: `gpod-cp` accepts both file paths and directory paths. Passing a directory copies all audio files under it recursively. `_buildCopyPaths` exploits this to collapse complete album/artist selections into a single directory argument.
 - **Track library structure**: The nested library response (`artists[].albums[].tracks[]`) does not embed `album` or `albumartist` on individual track objects — those fields live at the parent level. Code that needs full track context (e.g. download, display) must walk the nested structure to obtain them.
+- **`__ALL__` sentinel in album checkboxes**: `isAlbumSelected`, `isAlbumIndeterminate`, `toggleAlbum` (and source equivalents) accept an album object, not `(artistName, albumName)`. Do not change to string-based lookup — it breaks when `selectedArtist === '__ALL__'` because no library artist has that name.
+- **`_normStr` empty fallback**: `_normStr` returns `norm || raw` so that symbol-only strings like `#####` (which normalize to `''`) don't collide with each other or with null/empty artist names.
+- **Status bar `.statusbar-op` width**: declared as `width: min(480px, 55%)` (CSS value, not content-driven). Never change to `width: auto` or remove the declaration — the right section will grow/shrink with text and cause the left content to jump during N/M counter updates.
 
 ---
 

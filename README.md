@@ -9,12 +9,16 @@ Built around [gpod-utils](https://github.com/d3vil-st/gpod-utils), which wraps l
 ## Features
 
 - **Browse** your iPod library in a 3-pane iTunes-style view (artists → albums → tracks)
+- **All Artists** — select the top row in the artist column to browse all albums across every artist in a single flat view
 - **Sync** tracks from a NAS music source to the iPod — add missing tracks, remove ones no longer in the source
+- **Unsynced filter** — one-click toggle in the Sources bar to show only tracks not yet on the iPod; state saved per browser
 - **Delete** selected tracks from the iPod
 - **Download** selected tracks as a `.tar` archive with restored directory structure (`Artist/[Year] - Album/NN - Title.ext`)
 - **Play** tracks directly in the browser (iPod and NAS source), with ALAC→FLAC transcoding on the fly for Firefox compatibility
 - **Compare** iPod contents against your NAS library — checkboxes show what's already synced
+- **Operation log** — click the status bar progress indicator to view live gpod stdout in a terminal popup; last operation result and log persist across page reloads
 - **Multi-disc album** support with CD separators and disc-aware track matching
+- **Search** with smart navigation — click an artist from results to see all their albums (when the artist name matched) or only relevant albums (when an album or track matched); clear button in the search field
 - **Auto-discover** connected iPods via USB polling; optional auto-mount
 - **Light / Dark / Auto** theme with system preference detection
 - **Mobile-friendly** responsive 3-pane layout that collapses to a single-pane slide view on small screens
