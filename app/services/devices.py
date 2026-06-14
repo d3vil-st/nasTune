@@ -67,6 +67,7 @@ class DeviceService:
         self._subscribers: set[asyncio.Queue] = set()
         self._active_streams: dict[str, int] = {}  # devnode -> open stream count
         self._loading: set[str] = set()            # devnodes currently running gpod-ls
+        self._ejected: set[str] = set()            # devnodes explicitly ejected by user; skip auto-mount until physical disconnect
 
     # ── Stream tracking ──────────────────────────────────────────────
 
@@ -159,6 +160,9 @@ class DeviceService:
             c = await self._process_bd(bd, visible)
             changed = changed or c
 
+        # Clear ejected state for devices that physically disconnected (no longer in lsblk)
+        self._ejected -= self._ejected - visible
+
         async with self._lock:
             gone = {dn for dn, d in self.devices.items() if not d.manual} - visible
 
@@ -203,7 +207,7 @@ class DeviceService:
         existing_mount = bd.get("mountpoint")
         if existing_mount:
             mount_str = existing_mount
-        elif AUTOMOUNT:
+        elif AUTOMOUNT and devnode not in self._ejected:
             mount_path = MOUNT_BASE / devname
             await asyncio.to_thread(mount_path.mkdir, parents=True, exist_ok=True)
             ok = await self._do_mount(devnode, str(mount_path))
@@ -211,7 +215,8 @@ class DeviceService:
                 return changed
             mount_str = str(mount_path)
         else:
-            # Not mounted and automount is off — register as unmounted so it appears in the UI
+            # Not mounted (automount off, or device was explicitly ejected) — register as
+            # unmounted so it remains visible in the UI with a manual Mount button
             size_bytes = bd.get("size") or 0
             info = DeviceInfo(
                 devnode=devnode,
@@ -222,8 +227,9 @@ class DeviceService:
                 is_ipod=False,
                 mounted=False,
             )
-            log.info("USB device visible (not mounted): %s  fstype=%s  size=%.1f GB",
-                     devnode, fstype_raw, size_bytes / 1024 ** 3)
+            reason = "ejected" if devnode in self._ejected else "automount disabled"
+            log.info("USB device visible (not mounted, %s): %s  fstype=%s  size=%.1f GB",
+                     reason, devnode, fstype_raw, size_bytes / 1024 ** 3)
             async with self._lock:
                 self.devices[devnode] = info
             self._broadcast()
@@ -267,7 +273,7 @@ class DeviceService:
 
     async def _do_mount(self, devnode: str, mountpoint: str) -> bool:
         proc = await asyncio.create_subprocess_exec(
-            "mount", devnode, mountpoint,
+            "mount", "-o", "sync", devnode, mountpoint,
             stderr=asyncio.subprocess.PIPE,
         )
         _, stderr = await proc.communicate()
@@ -413,6 +419,8 @@ class DeviceService:
             )
             await proc.communicate()
             log.info("sync complete for %s", devnode)
+            self._ejected.add(devnode)
+            log.info("Marked %s as ejected; auto-mount suppressed until physical disconnect", devnode)
         await self._remove(devnode)
 
     def subscribe(self) -> asyncio.Queue:
