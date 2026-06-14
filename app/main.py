@@ -8,6 +8,14 @@ logging.basicConfig(
     format="%(levelname)-8s %(name)s: %(message)s",
 )
 
+
+class _NoOperationsPoll(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return not ("GET /operations " in msg and '" 200' in msg)
+
+logging.getLogger("uvicorn.access").addFilter(_NoOperationsPoll())
+
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
