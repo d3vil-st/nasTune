@@ -8,6 +8,7 @@ BATCH_SIZE = 5
 GPOD_DRY_RUN = os.environ.get("GPOD_DRY_RUN", "").lower() in ("1", "true", "yes")
 
 _PROGRESS_RE = re.compile(r'^\[\s*\d+/\d+\]')
+_PROGRESS_NM_RE = re.compile(r'^\[\s*(\d+)/(\d+)\]')
 _TITLE_ARTIST_RE = re.compile(r"title='(.*?)'\s+artist='(.*?)'")
 
 
@@ -47,8 +48,9 @@ class OperationService:
         self._op = op
         asyncio.create_task(self._do_delete(op, track_ids, mount))
 
-    async def run_sync(self, copy_paths: list[str], delete_ids: list, mount: str) -> None:
-        op = _Op("sync", len(copy_paths) + len(delete_ids))
+    async def run_sync(self, copy_paths: list[str], delete_ids: list, mount: str, copy_track_count: int | None = None) -> None:
+        total = (copy_track_count if copy_track_count is not None else len(copy_paths)) + len(delete_ids)
+        op = _Op("sync", total)
         self._op = op
         asyncio.create_task(self._do_sync(op, copy_paths, delete_ids, mount))
 
@@ -87,12 +89,13 @@ class OperationService:
                 return msg
         return None
 
-    async def _gpod_cp_batch(self, paths: list[str], mount: str, op: _Op) -> str | None:
+    async def _gpod_cp_batch(self, paths: list[str], mount: str, op: _Op, proc_offset: int = 0) -> tuple[str | None, int]:
+        """Returns (error, batch_track_count). Updates op.processed live via [N/M] lines."""
         paths = list(dict.fromkeys(paths))
         log.info("exec: IPOD_MOUNT_POINT=%s gpod-cp %s", mount, " ".join(paths))
         if GPOD_DRY_RUN:
-            log.info("[dry-run] skipping gpod-cp (%d file(s))", len(paths))
-            return None
+            log.info("[dry-run] skipping gpod-cp (%d path(s))", len(paths))
+            return None, 0
         env = {**os.environ, "IPOD_MOUNT_POINT": mount}
         proc = await asyncio.create_subprocess_exec(
             "gpod-cp", *paths,
@@ -101,15 +104,18 @@ class OperationService:
             env=env,
         )
         lines = []
+        batch_total = 0
         async for raw in proc.stdout:
             line = raw.decode().rstrip()
             lines.append(line)
-            if _PROGRESS_RE.match(line):
+            nm = _PROGRESS_NM_RE.match(line)
+            if nm:
+                n, batch_total = int(nm.group(1)), int(nm.group(2))
+                op.processed = proc_offset + n
                 m = _TITLE_ARTIST_RE.search(line)
                 if m:
                     op.current = f"{m.group(2)} – {m.group(1)}"
                 else:
-                    # fall back to filename from path before " ->"
                     path_part = line.split("->")[0].strip().split()[-1] if "->" in line else ""
                     op.current = os.path.basename(path_part) if path_part else line
         await proc.wait()
@@ -117,16 +123,18 @@ class OperationService:
         if output:
             log.debug("gpod-cp output:\n%s", output)
         if proc.returncode != 0:
-            return output or f"gpod-cp exited {proc.returncode}"
+            return output or f"gpod-cp exited {proc.returncode}", batch_total
         # "N/M items (size)  dupl=D" — duplicates count as success
         m = re.search(r'(\d+)/(\d+)\s+items.*?dupl=(\d+)', output)
         if m:
             added, total, dupl = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            if batch_total == 0:
+                batch_total = total
             if added + dupl < total:
                 msg = f"gpod-cp partial: copied {added + dupl}/{total} items ({dupl} duplicate(s))"
                 log.warning("%s\n%s", msg, output)
-                return msg
-        return None
+                return msg, batch_total
+        return None, batch_total
 
     async def _do_delete(self, op: _Op, track_ids: list, mount: str) -> None:
         async with self._lock:
@@ -162,11 +170,13 @@ class OperationService:
                     return
                 i += BATCH_SIZE
 
+            copy_offset = 0
             i = 0
             while i < len(copy_paths):
                 batch = copy_paths[i:i + BATCH_SIZE]
-                err = await self._gpod_cp_batch(batch, mount, op)
-                op.processed += len(batch)
+                err, batch_tracks = await self._gpod_cp_batch(batch, mount, op, proc_offset=len(delete_ids) + copy_offset)
+                copy_offset += batch_tracks
+                op.processed = len(delete_ids) + copy_offset
                 if err:
                     op.status = "error"
                     op.error = err
