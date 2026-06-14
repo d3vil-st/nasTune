@@ -65,7 +65,7 @@ nasTune/
     ├── templates/
     │   └── index.html         # iTunes-like 3-pane dark UI + bottom player bar (845 lines, HTML only)
     └── static/
-        ├── style.css          # All CSS (~980 lines)
+        ├── style.css          # All CSS (~1260 lines); includes Apple design refresh + responsive layout
         ├── utils.js           # Format helpers, gradients, _normStr/_trackKey, source format/quality
         ├── devices.js         # Device list, SSE, library fetch/refresh, eject
         ├── browser.js         # iPod 3-pane browser, artUrl, _buildIpodMap, isOnIpod
@@ -247,6 +247,7 @@ Expose streaming endpoints as SSE using FastAPI's `StreamingResponse` with `medi
 - **Alpine.js x-show + inline flex**: Alpine's `x-show` sets `el.style.display = ''` when restoring visibility, which wipes any inline `display:flex`. Always use a CSS class for flex containers that are toggled with `x-show`.
 - **Object.defineProperties for getters**: Alpine.js getters in module objects must be merged with `Object.defineProperties`, not `Object.assign` — the latter evaluates getters immediately and stores the result as a plain value.
 - **Unicode tag normalization**: Source file tags often use Unicode hyphens (U+2010) or curly apostrophes (U+2019) where the iPod DB stores ASCII. `_normStr()` in `utils.js` normalizes both before key comparison.
+- **Mobile single-pane navigation**: On `≤768px` screens the three-column browser collapses to a single-pane slide view driven entirely by CSS `:has()` — no JS required. Selecting an artist/album slides in the next pane. Navigating *back* (deselecting) currently requires tapping a different artist or manually clearing selection; a proper back-button needs a small JS change in `browser.js` (expose `pickArtist(null)` / `pickAlbum(null)` and call them from the column headings on mobile).
 
 ---
 
