@@ -1,14 +1,18 @@
 import asyncio
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any
 
 from app.services.fs_utils import fs_usage, fs_type
 
+log = logging.getLogger(__name__)
+
 
 async def fetch_library(mount: str) -> dict[str, Any]:
     env = {**os.environ, "IPOD_MOUNT_POINT": mount}
+    log.info("exec: IPOD_MOUNT_POINT=%s gpod-ls", mount)
     process = await asyncio.create_subprocess_exec(
         "gpod-ls",
         stdout=asyncio.subprocess.PIPE,

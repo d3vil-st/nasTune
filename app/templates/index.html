@@ -329,6 +329,9 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      display: flex;
+      align-items: center;
+      gap: 7px;
     }
 
     .col-scroll {
@@ -1173,7 +1176,13 @@
 
       <!-- Artists -->
       <div class="col col-artists">
-        <div class="col-heading">Artists&ensp;(<span x-text="filteredArtists.length"></span>)</div>
+        <div class="col-heading">
+          <input type="checkbox" class="row-cb" @click.stop x-show="library"
+                 :checked="allFilteredArtistsSelected()"
+                 x-effect="$el.indeterminate = someFilteredArtistsSelected() && !allFilteredArtistsSelected()"
+                 @change="toggleAllFilteredArtists($event.target.checked)">
+          <span>Artists&ensp;(<span x-text="filteredArtists.length"></span>)</span>
+        </div>
         <div class="col-scroll">
           <template x-for="a in filteredArtists" :key="a.name">
             <div class="artist-row"
@@ -1192,7 +1201,13 @@
 
       <!-- Albums -->
       <div class="col col-albums">
-        <div class="col-heading" x-text="selectedArtist || 'Albums'"></div>
+        <div class="col-heading">
+          <input type="checkbox" class="row-cb" @click.stop x-show="selectedArtist"
+                 :checked="allCurrentAlbumsSelected()"
+                 x-effect="$el.indeterminate = someCurrentAlbumsSelected() && !allCurrentAlbumsSelected()"
+                 @change="toggleAllCurrentAlbums($event.target.checked)">
+          <span x-text="selectedArtist || 'Albums'"></span>
+        </div>
         <div class="col-scroll">
           <template x-if="!selectedArtist">
             <div class="empty">
@@ -1230,7 +1245,10 @@
       <!-- Tracks -->
       <div class="col col-tracks">
         <div class="tracks-head">
-          <span></span>
+          <input type="checkbox" class="row-cb" @click.stop x-show="selectedAlbum"
+                 :checked="allCurrentTracksSelected()"
+                 x-effect="$el.indeterminate = someCurrentTracksSelected() && !allCurrentTracksSelected()"
+                 @change="toggleAllCurrentTracks($event.target.checked)">
           <span style="text-align:right">#</span>
           <span>Title</span>
           <span style="text-align:right">Rating</span>
@@ -1341,7 +1359,11 @@
       <!-- Left: Source artist list -->
       <div class="col col-artists">
         <div class="col-heading">
-          Artists&ensp;<template x-if="sourceLibrary">(<span x-text="sourceLibrary.artists.length"></span>)</template>
+          <input type="checkbox" class="row-cb" @click.stop x-show="sourceLibrary"
+                 :checked="allSrcArtistsSelected()"
+                 x-effect="$el.indeterminate = someSrcArtistsSelected() && !allSrcArtistsSelected()"
+                 @change="toggleAllSrcArtists($event.target.checked)">
+          <span x-text="'Artists' + (sourceLibrary ? ' (' + sourceLibrary.artists.length + ')' : '')"></span>
         </div>
         <div class="col-scroll">
           <template x-if="!selectedSourceId">
@@ -1375,7 +1397,13 @@
 
       <!-- Middle: Albums of selected artist -->
       <div class="col col-albums">
-        <div class="col-heading" x-text="srcArtist || 'Albums'"></div>
+        <div class="col-heading">
+          <input type="checkbox" class="row-cb" @click.stop x-show="srcArtist"
+                 :checked="allSrcCurrentAlbumsSelected()"
+                 x-effect="$el.indeterminate = someSrcCurrentAlbumsSelected() && !allSrcCurrentAlbumsSelected()"
+                 @change="toggleAllSrcCurrentAlbums($event.target.checked)">
+          <span x-text="srcArtist || 'Albums'"></span>
+        </div>
         <div class="col-scroll">
           <template x-if="!srcArtist">
             <div class="empty">
@@ -1415,7 +1443,11 @@
       <!-- Right: Tracks with sync status -->
       <div class="col col-tracks">
         <div class="tracks-head" style="grid-template-columns: 16px 36px 1fr 50px 66px 72px;">
-          <span></span><span style="text-align:right">#</span>
+          <input type="checkbox" class="row-cb" @click.stop x-show="srcAlbum"
+                 :checked="allSrcCurrentTracksSelected()"
+                 x-effect="$el.indeterminate = someSrcCurrentTracksSelected() && !allSrcCurrentTracksSelected()"
+                 @change="toggleAllSrcCurrentTracks($event.target.checked)">
+          <span style="text-align:right">#</span>
           <span>Title</span>
           <span style="text-align:right">Time</span>
           <span style="text-align:center">Format</span>
@@ -1839,6 +1871,7 @@
       browseParent: null,
       _ipodIndex: null,
       _ipodMap: null,
+      _srcTrackMap: null,
       _srcPollTimer: null,
 
       // Selection & operations
@@ -2329,6 +2362,7 @@
           const r = await fetch('/sources/' + id + '/library');
           if (r.ok) {
             this.sourceLibrary = await r.json();
+            this._buildSrcTrackMap();
             this._initSrcChecked();
           }
         } catch (e) { console.error('loadSourceLibrary:', e); }
@@ -2603,6 +2637,44 @@
         this.ipodSelection = s;
       },
 
+      allCurrentTracksSelected() {
+        return this.currentTracks.length > 0 && this.currentTracks.every(t => this.ipodSelection.has(t.id));
+      },
+      someCurrentTracksSelected() {
+        return this.currentTracks.some(t => this.ipodSelection.has(t.id));
+      },
+      toggleAllCurrentTracks(checked) {
+        const s = new Set(this.ipodSelection);
+        this.currentTracks.forEach(t => checked ? s.add(t.id) : s.delete(t.id));
+        this.ipodSelection = s;
+      },
+
+      allCurrentAlbumsSelected() {
+        return this.currentAlbums.length > 0 &&
+          this.currentAlbums.every(al => al.tracks.length > 0 && al.tracks.every(t => this.ipodSelection.has(t.id)));
+      },
+      someCurrentAlbumsSelected() {
+        return this.currentAlbums.some(al => al.tracks.some(t => this.ipodSelection.has(t.id)));
+      },
+      toggleAllCurrentAlbums(checked) {
+        const s = new Set(this.ipodSelection);
+        this.currentAlbums.flatMap(al => al.tracks).forEach(t => checked ? s.add(t.id) : s.delete(t.id));
+        this.ipodSelection = s;
+      },
+
+      allFilteredArtistsSelected() {
+        const tracks = this.filteredArtists.flatMap(a => a.albums.flatMap(al => al.tracks));
+        return tracks.length > 0 && tracks.every(t => this.ipodSelection.has(t.id));
+      },
+      someFilteredArtistsSelected() {
+        return this.filteredArtists.some(a => a.albums.some(al => al.tracks.some(t => this.ipodSelection.has(t.id))));
+      },
+      toggleAllFilteredArtists(checked) {
+        const s = new Set(this.ipodSelection);
+        this.filteredArtists.flatMap(a => a.albums.flatMap(al => al.tracks)).forEach(t => checked ? s.add(t.id) : s.delete(t.id));
+        this.ipodSelection = s;
+      },
+
       async deleteSelectedTracks() {
         this.showDeleteConfirm = false;
         const ids = this.ipodSelectedTracks.map(t => t.id);
@@ -2682,6 +2754,44 @@
         this.srcChecked = s;
       },
 
+      allSrcCurrentTracksSelected() {
+        return this.srcCurrentTracks.length > 0 && this.srcCurrentTracks.every(t => this.srcChecked.has(t.id));
+      },
+      someSrcCurrentTracksSelected() {
+        return this.srcCurrentTracks.some(t => this.srcChecked.has(t.id));
+      },
+      toggleAllSrcCurrentTracks(checked) {
+        const s = new Set(this.srcChecked);
+        this.srcCurrentTracks.forEach(t => checked ? s.add(t.id) : s.delete(t.id));
+        this.srcChecked = s;
+      },
+
+      allSrcCurrentAlbumsSelected() {
+        return this.srcCurrentAlbums.length > 0 &&
+          this.srcCurrentAlbums.every(al => al.tracks.length > 0 && al.tracks.every(t => this.srcChecked.has(t.id)));
+      },
+      someSrcCurrentAlbumsSelected() {
+        return this.srcCurrentAlbums.some(al => al.tracks.some(t => this.srcChecked.has(t.id)));
+      },
+      toggleAllSrcCurrentAlbums(checked) {
+        const s = new Set(this.srcChecked);
+        this.srcCurrentAlbums.flatMap(al => al.tracks).forEach(t => checked ? s.add(t.id) : s.delete(t.id));
+        this.srcChecked = s;
+      },
+
+      allSrcArtistsSelected() {
+        const tracks = (this.sourceLibrary?.artists || []).flatMap(a => a.albums.flatMap(al => al.tracks));
+        return tracks.length > 0 && tracks.every(t => this.srcChecked.has(t.id));
+      },
+      someSrcArtistsSelected() {
+        return (this.sourceLibrary?.artists || []).some(a => a.albums.some(al => al.tracks.some(t => this.srcChecked.has(t.id))));
+      },
+      toggleAllSrcArtists(checked) {
+        const s = new Set(this.srcChecked);
+        (this.sourceLibrary?.artists || []).flatMap(a => a.albums.flatMap(al => al.tracks)).forEach(t => checked ? s.add(t.id) : s.delete(t.id));
+        this.srcChecked = s;
+      },
+
       _srcAlbum(artistName, albumName) {
         const artist = this.sourceLibrary?.artists.find(a => a.name === artistName);
         return artist?.albums.find(al => al.name === albumName) || null;
@@ -2702,12 +2812,17 @@
         return [...this.srcChecked].filter(id => !this.srcInitialOnIpod.has(id));
       },
 
-      _srcTrackById(id) {
+      _buildSrcTrackMap() {
+        this._srcTrackMap = new Map();
         for (const artist of (this.sourceLibrary?.artists || []))
           for (const album of artist.albums)
             for (const t of album.tracks)
-              if (t.id === id) return t;
-        return null;
+              this._srcTrackMap.set(t.id, t);
+      },
+
+      _srcTrackById(id) {
+        if (!this._srcTrackMap) this._buildSrcTrackMap();
+        return this._srcTrackMap.get(id) || null;
       },
 
       get syncDeleteTracks() { return this.syncToDelete.map(id => this._srcTrackById(id)).filter(Boolean); },

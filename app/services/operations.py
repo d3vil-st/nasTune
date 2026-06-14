@@ -4,6 +4,7 @@ import os
 
 log = logging.getLogger(__name__)
 CPU_COUNT = max(1, os.cpu_count() or 1)
+GPOD_DRY_RUN = os.environ.get("GPOD_DRY_RUN", "").lower() in ("1", "true", "yes")
 
 
 class _Op:
@@ -47,6 +48,10 @@ class OperationService:
         asyncio.create_task(self._do_sync(op, copy_paths, delete_ids, mount))
 
     async def _gpod_rm(self, track_id, mount: str) -> str | None:
+        log.info("exec: IPOD_MOUNT_POINT=%s gpod-rm %s", mount, track_id)
+        if GPOD_DRY_RUN:
+            log.info("[dry-run] skipping gpod-rm %s", track_id)
+            return None
         env = {**os.environ, "IPOD_MOUNT_POINT": mount}
         proc = await asyncio.create_subprocess_exec(
             "gpod-rm", str(track_id),
@@ -60,6 +65,10 @@ class OperationService:
         return None
 
     async def _gpod_cp_batch(self, paths: list[str], mount: str) -> str | None:
+        log.info("exec: IPOD_MOUNT_POINT=%s gpod-cp %s", mount, " ".join(paths))
+        if GPOD_DRY_RUN:
+            log.info("[dry-run] skipping gpod-cp (%d file(s))", len(paths))
+            return None
         env = {**os.environ, "IPOD_MOUNT_POINT": mount}
         proc = await asyncio.create_subprocess_exec(
             "gpod-cp", *paths,
@@ -75,7 +84,6 @@ class OperationService:
     async def _do_delete(self, op: _Op, track_ids: list, mount: str) -> None:
         for tid in track_ids:
             op.current = str(tid)
-            log.info("gpod-rm %s", tid)
             err = await self._gpod_rm(tid, mount)
             op.processed += 1
             if err:
@@ -91,7 +99,6 @@ class OperationService:
         # Delete first, then copy
         for tid in delete_ids:
             op.current = str(tid)
-            log.info("gpod-rm %s", tid)
             err = await self._gpod_rm(tid, mount)
             op.processed += 1
             if err:
@@ -105,7 +112,6 @@ class OperationService:
         while i < len(copy_paths):
             batch = copy_paths[i:i + CPU_COUNT]
             op.current = os.path.basename(batch[0])
-            log.info("gpod-cp: %d file(s) starting with %s", len(batch), batch[0])
             err = await self._gpod_cp_batch(batch, mount)
             op.processed += len(batch)
             if err:
