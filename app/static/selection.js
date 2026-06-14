@@ -75,19 +75,15 @@ function selectionModule() {
 
     isTrackSelected(t) { return this.ipodSelection.has(t.id); },
 
-    isAlbumSelected(artistName, albumName) {
-      const artist = this.library?.artists.find(a => a.name === artistName);
-      const album = artist?.albums.find(al => al.name === albumName);
-      if (!album) return false;
-      return album.tracks.length > 0 && album.tracks.every(t => this.ipodSelection.has(t.id));
+    isAlbumSelected(al) {
+      if (!al) return false;
+      return al.tracks.length > 0 && al.tracks.every(t => this.ipodSelection.has(t.id));
     },
 
-    isAlbumIndeterminate(artistName, albumName) {
-      const artist = this.library?.artists.find(a => a.name === artistName);
-      const album = artist?.albums.find(al => al.name === albumName);
-      if (!album) return false;
-      const n = album.tracks.filter(t => this.ipodSelection.has(t.id)).length;
-      return n > 0 && n < album.tracks.length;
+    isAlbumIndeterminate(al) {
+      if (!al) return false;
+      const n = al.tracks.filter(t => this.ipodSelection.has(t.id)).length;
+      return n > 0 && n < al.tracks.length;
     },
 
     isArtistSelected(name) {
@@ -111,12 +107,10 @@ function selectionModule() {
       this.ipodSelection = s;
     },
 
-    toggleAlbum(artistName, albumName, checked) {
-      const artist = this.library?.artists.find(a => a.name === artistName);
-      const album = artist?.albums.find(al => al.name === albumName);
-      if (!album) return;
+    toggleAlbum(al, checked) {
+      if (!al) return;
       const s = new Set(this.ipodSelection);
-      album.tracks.forEach(t => checked ? s.add(t.id) : s.delete(t.id));
+      al.tracks.forEach(t => checked ? s.add(t.id) : s.delete(t.id));
       this.ipodSelection = s;
     },
 
@@ -232,14 +226,12 @@ function selectionModule() {
 
     isSrcTrackChecked(t) { return this.srcChecked.has(t.id); },
 
-    isSrcAlbumChecked(artistName, albumName) {
-      const al = this._srcAlbum(artistName, albumName);
+    isSrcAlbumChecked(al) {
       if (!al) return false;
       return al.tracks.length > 0 && al.tracks.every(t => this.srcChecked.has(t.id));
     },
 
-    isSrcAlbumIndeterminate(artistName, albumName) {
-      const al = this._srcAlbum(artistName, albumName);
+    isSrcAlbumIndeterminate(al) {
       if (!al) return false;
       const n = al.tracks.filter(t => this.srcChecked.has(t.id)).length;
       return n > 0 && n < al.tracks.length;
@@ -262,8 +254,7 @@ function selectionModule() {
       this.srcChecked = s;
     },
 
-    toggleSrcAlbum(artistName, albumName, checked) {
-      const al = this._srcAlbum(artistName, albumName);
+    toggleSrcAlbum(al, checked) {
       if (!al) return;
       const s = new Set(this.srcChecked);
       al.tracks.forEach(t => checked ? s.add(t.id) : s.delete(t.id));

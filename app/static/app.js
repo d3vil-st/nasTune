@@ -73,6 +73,9 @@ function app() {
       }
     }
 
+    // Persist unsynced filter toggle
+    this.$watch('srcShowUnsynced', v => localStorage.setItem('nastune-src-unsynced', v ? '1' : '0'));
+
     // Keep URL in sync with navigation state
     this.$watch('viewMode',        () => this._syncUrl());
     this.$watch('selectedArtist',  () => this._syncUrl());

@@ -19,6 +19,7 @@ function sourcesModule() {
     browseParent: null,
     _srcTrackMap: null,
     _srcPollTimer: null,
+    srcShowUnsynced: localStorage.getItem('nastune-src-unsynced') === '1',
 
     get selectedSourceObj() {
       return this.sources.find(s => s.id === this.selectedSourceId) || null;
@@ -31,50 +32,75 @@ function sourcesModule() {
     },
 
     get filteredSrcArtists() {
-      const artists = this.sourceLibrary?.artists || [];
-      if (!this.search) return artists;
-      const q = this.search.toLowerCase();
-      return artists.filter(a =>
-        a.name.toLowerCase().includes(q) ||
-        a.albums.some(al =>
-          al.name.toLowerCase().includes(q) ||
-          al.tracks.some(t => t.title.toLowerCase().includes(q))
-        )
-      );
+      let artists = this.sourceLibrary?.artists || [];
+      if (this.search) {
+        const q = this.search.toLowerCase();
+        artists = artists.filter(a =>
+          a.name.toLowerCase().includes(q) ||
+          a.albums.some(al =>
+            al.name.toLowerCase().includes(q) ||
+            al.tracks.some(t => t.title.toLowerCase().includes(q))
+          )
+        );
+      }
+      if (this.srcShowUnsynced && this.library) {
+        artists = artists.filter(a =>
+          a.albums.some(al => al.tracks.some(t => !this.isOnIpod(t)))
+        );
+      }
+      return artists;
     },
 
     get srcCurrentAlbums() {
       if (!this.sourceLibrary) return [];
       const artists = this.sourceLibrary.artists;
+      let albums;
       if (this.srcArtist === '__ALL__') {
-        if (!this.search) return artists.flatMap(a => a.albums);
-        const q = this.search.toLowerCase();
-        return artists.flatMap(a => a.albums.filter(al =>
-          al.name.toLowerCase().includes(q) ||
-          al.tracks.some(t => t.title.toLowerCase().includes(q))
-        ));
+        albums = artists.flatMap(a => a.albums);
+        if (this.search) {
+          const q = this.search.toLowerCase();
+          albums = albums.filter(al =>
+            al.name.toLowerCase().includes(q) ||
+            al.tracks.some(t => t.title.toLowerCase().includes(q))
+          );
+        }
+      } else {
+        if (!this.srcArtist) return [];
+        const a = artists.find(a => a.name === this.srcArtist);
+        if (!a) return [];
+        albums = a.albums;
+        if (this.search) {
+          const q = this.search.toLowerCase();
+          if (!a.name.toLowerCase().includes(q)) {
+            albums = albums.filter(al =>
+              al.name.toLowerCase().includes(q) ||
+              al.tracks.some(t => t.title.toLowerCase().includes(q))
+            );
+          }
+        }
       }
-      if (!this.srcArtist) return [];
-      const a = artists.find(a => a.name === this.srcArtist);
-      if (!a) return [];
-      if (!this.search) return a.albums;
-      const q = this.search.toLowerCase();
-      return a.albums.filter(al =>
-        al.name.toLowerCase().includes(q) ||
-        al.tracks.some(t => t.title.toLowerCase().includes(q))
-      );
+      if (this.srcShowUnsynced && this.library) {
+        albums = albums.filter(al => al.tracks.some(t => !this.isOnIpod(t)));
+      }
+      return albums;
     },
 
     get srcCurrentTracks() {
       if (!this.srcAlbum) return [];
       const al = this.srcCurrentAlbums.find(a => a.name === this.srcAlbum);
       if (!al) return [];
-      if (!this.search) return al.tracks;
-      const q = this.search.toLowerCase();
-      return al.tracks.filter(t =>
-        t.title.toLowerCase().includes(q) ||
-        al.name.toLowerCase().includes(q)
-      );
+      let tracks = al.tracks;
+      if (this.search) {
+        const q = this.search.toLowerCase();
+        const artistMatches = this.srcArtist && this.srcArtist.toLowerCase().includes(q);
+        if (!artistMatches && !al.name.toLowerCase().includes(q)) {
+          tracks = tracks.filter(t => t.title.toLowerCase().includes(q));
+        }
+      }
+      if (this.srcShowUnsynced && this.library) {
+        tracks = tracks.filter(t => !this.isOnIpod(t));
+      }
+      return tracks;
     },
 
     async loadSources() {
