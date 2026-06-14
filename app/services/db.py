@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS source_tracks (
     albumartist TEXT,
     album       TEXT,
     title       TEXT,
+    disc_nr     INTEGER,
     track_nr    INTEGER,
     duration_ms INTEGER,
     bitrate     INTEGER,
@@ -62,6 +63,7 @@ async def init_db() -> None:
         for col, ddl in [
             ("codec",           "ALTER TABLE source_tracks ADD COLUMN codec           TEXT"),
             ("bits_per_sample", "ALTER TABLE source_tracks ADD COLUMN bits_per_sample INTEGER"),
+            ("disc_nr",         "ALTER TABLE source_tracks ADD COLUMN disc_nr         INTEGER"),
         ]:
             if col not in st_cols:
                 await db.execute(ddl)

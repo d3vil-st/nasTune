@@ -79,9 +79,9 @@
     <!-- Refresh + eject: same-size icon buttons, outside selector -->
     <div class="header-actions">
       <button class="icon-btn" x-show="library" :class="{ spinning: libraryRefreshing }"
-              @click="refreshLibrary" :disabled="libraryRefreshing" title="Reload library from iPod">&#x21BB;</button>
+              @click="refreshLibrary" :disabled="libraryRefreshing || currentOp?.status === 'running'" title="Reload library from iPod">&#x21BB;</button>
       <button class="icon-btn danger" x-show="selectedDevnode" @click="ejectDevice"
-              title="Eject iPod">&#x23CF;</button>
+              :disabled="currentOp?.status === 'running'" title="Eject iPod">&#x23CF;</button>
     </div>
 
     <!-- Storage bar (only when library loaded) -->
@@ -339,10 +339,11 @@
           </template>
           <template x-if="selectedAlbum">
             <div>
-              <template x-for="t in currentTracks" :key="t.id">
+              <template x-for="(t, i) in currentTracks" :key="t.id">
                 <div class="track-row"
                      style="grid-template-columns: 16px 36px 1fr 54px 50px 66px 72px;"
-                     :class="{ active: selectedTrack?.id === t.id, missing: t.missing, 'now-playing': isCurrentTrack(t) }"
+                     :class="{ active: selectedTrack?.id === t.id, missing: t.missing, 'now-playing': isCurrentTrack(t), 'disc-sep-before': t.disc_nr > 0 && (i === 0 ? currentTracks.some(x => x.disc_nr > 0 && x.disc_nr !== t.disc_nr) : t.disc_nr !== currentTracks[i-1].disc_nr) }"
+                     :data-disc-nr="t.disc_nr || ''"
                      @click="openDetail(t)">
                   <input type="checkbox" class="row-cb" @click.stop
                          :checked="isTrackSelected(t)"
@@ -477,7 +478,7 @@
                          @change="toggleSrcAlbum(srcArtist, al.name, $event.target.checked)">
                   <div class="album-thumb" :style="gradientFor(al.name)"
                        @click.stop="pickSrcAlbum(al.name); playSrcAlbum(al)">
-                    <img :src="sourceArtUrl(al)" @error="$el.style.display='none'" loading="lazy" alt="">
+                    <img x-effect="$el.style.display=''; $el.src=sourceArtUrl(al)" @error="$el.style.display='none'" loading="lazy" alt="">
                     <div class="album-play-overlay">&#x25B6;</div>
                   </div>
                   <div class="album-text">
@@ -536,10 +537,11 @@
           </template>
           <template x-if="srcAlbum">
             <div>
-              <template x-for="t in srcCurrentTracks" :key="t.id">
+              <template x-for="(t, i) in srcCurrentTracks" :key="t.id">
                 <div class="track-row"
                      style="grid-template-columns: 16px 36px 1fr 50px 66px 72px;"
-                     :class="{ active: srcSelectedTrack?.id === t.id, 'now-playing': isSrcCurrentTrack(t) }"
+                     :class="{ active: srcSelectedTrack?.id === t.id, 'now-playing': isSrcCurrentTrack(t), 'disc-sep-before': t.disc_nr > 0 && (i === 0 ? srcCurrentTracks.some(x => x.disc_nr > 0 && x.disc_nr !== t.disc_nr) : t.disc_nr !== srcCurrentTracks[i-1].disc_nr) }"
+                     :data-disc-nr="t.disc_nr || ''"
                      @click="openSrcDetail(t)">
                   <input type="checkbox" class="row-cb" @click.stop
                          :checked="isSrcTrackChecked(t)"

@@ -55,6 +55,7 @@ def _read_track(file_path: Path) -> dict | None:
             'albumartist': g('albumartist') or g('artist'),
             'album': g('album'),
             'title': g('title') or file_path.stem,
+            'disc_nr': gi('discnumber'),
             'track_nr': gi('tracknumber'),
             'duration_ms': int(info.length * 1000) if hasattr(info, 'length') else None,
             'bitrate': int(getattr(info, 'bitrate', 0) / 1000) or None,
@@ -74,14 +75,15 @@ async def _flush_batch(batch: list[dict]) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executemany(
             """INSERT INTO source_tracks
-                   (source_id, path, artist, albumartist, album, title, track_nr,
+                   (source_id, path, artist, albumartist, album, title, disc_nr, track_nr,
                     duration_ms, bitrate, samplerate, year, size, file_mtime, codec, bits_per_sample, scanned_at)
                VALUES
-                   (:source_id, :path, :artist, :albumartist, :album, :title, :track_nr,
+                   (:source_id, :path, :artist, :albumartist, :album, :title, :disc_nr, :track_nr,
                     :duration_ms, :bitrate, :samplerate, :year, :size, :file_mtime, :codec, :bits_per_sample, :scanned_at)
                ON CONFLICT(source_id, path) DO UPDATE SET
                    artist=excluded.artist, albumartist=excluded.albumartist,
-                   album=excluded.album, title=excluded.title, track_nr=excluded.track_nr,
+                   album=excluded.album, title=excluded.title,
+                   disc_nr=excluded.disc_nr, track_nr=excluded.track_nr,
                    duration_ms=excluded.duration_ms, bitrate=excluded.bitrate,
                    samplerate=excluded.samplerate, year=excluded.year,
                    size=excluded.size, file_mtime=excluded.file_mtime,
