@@ -8,7 +8,6 @@ function selectionModule() {
     showSyncConfirm: false,
     showOpLog: false,
     currentOp: null,
-    opPollTimer: null,
 
     // ── Storage bar ──────────────────────────────────────────────────
 
@@ -203,7 +202,6 @@ function selectionModule() {
       });
       if (!r.ok) { const d = await r.json().catch(()=>({})); alert(d.detail || 'Delete failed'); return; }
       this.ipodSelection = new Set();
-      this._startOpPoll();
     },
 
     // ── Sources selection ────────────────────────────────────────────
@@ -339,34 +337,32 @@ function selectionModule() {
         body: JSON.stringify({ devnode: this.selectedDevnode, copy_paths: copyPaths, delete_ids: deleteIds, copy_track_count: this.syncCopyTracks.length }),
       });
       if (!r.ok) { const d = await r.json().catch(()=>({})); alert(d.detail || 'Sync failed'); return; }
-      this._startOpPoll();
     },
 
-    _startOpPoll() {
-      if (this.opPollTimer) return;
-      const poll = async () => {
-        try {
-          const r = await fetch('/operations');
-          this.currentOp = r.ok ? await r.json() : null;
+    _connectOpEvents() {
+      // Closure-scoped so Alpine never proxies the EventSource object
+      let es = null;
+      this._connectOpEvents = () => {
+        if (es) return;
+        es = new EventSource('/operations/events');
+        es.onmessage = async (evt) => {
+          const op = JSON.parse(evt.data);
+          const prevStatus = this.currentOp?.status;
+          this.currentOp = op;
           if (this.showOpLog) {
             this.$nextTick(() => {
               const el = this.$refs?.opLogEl;
               if (el) el.scrollTop = el.scrollHeight;
             });
           }
-          if (!this.currentOp || this.currentOp.status !== 'running') {
-            clearInterval(this.opPollTimer);
-            this.opPollTimer = null;
-            if (this.currentOp?.status === 'done') {
-              this._ipodMap = null;
-              await this._fetchLibrary(true);
-              if (this.selectedSourceId) this._initSrcChecked();
-            }
+          if (prevStatus === 'running' && op?.status === 'done') {
+            this._ipodMap = null;
+            await this._fetchLibrary(true);
+            if (this.selectedSourceId) this._initSrcChecked();
           }
-        } catch (e) { /* ignore */ }
+        };
       };
-      poll();
-      this.opPollTimer = setInterval(poll, 1000);
+      this._connectOpEvents();
     },
   };
 }
