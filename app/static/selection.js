@@ -159,15 +159,20 @@ function selectionModule() {
     },
 
     async downloadSelectedTracks() {
-      const tracks = this.ipodSelectedTracks.map(t => ({
-        ipod_path:   t.ipod_path,
-        artist:      t.artist      || '',
-        albumartist: t.albumartist || '',
-        album:       t.album       || '',
-        year:        t.year        || null,
-        track_nr:    t.track_nr    || null,
-        title:       t.title       || '',
-      }));
+      const tracks = [];
+      for (const artist of (this.library?.artists || []))
+        for (const album of artist.albums)
+          for (const t of album.tracks)
+            if (this.ipodSelection.has(t.id))
+              tracks.push({
+                ipod_path:   t.ipod_path,
+                artist:      t.artist || artist.name,
+                albumartist: artist.name,
+                album:       album.name,
+                year:        album.year || t.year || null,
+                track_nr:    t.track_nr || null,
+                title:       t.title || '',
+              });
       if (!tracks.length || !this.selectedDevnode) return;
       const r = await fetch('/library/download', {
         method: 'POST',
