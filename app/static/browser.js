@@ -74,7 +74,7 @@ function browserModule() {
       this.selectedAlbum = null;
       this.selectedTrack = null;
       this.albumArtUrl = null;
-      if (name !== '__ALL__') {
+      if (name !== '__ALL__' && window.innerWidth > 768) {
         const first = this.currentAlbums[0];
         if (first) this.pickAlbum(first.name);
       }

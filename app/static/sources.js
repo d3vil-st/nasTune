@@ -212,7 +212,7 @@ function sourcesModule() {
       this.srcArtist = name;
       this.srcAlbum = null;
       this.srcAlbumArtUrl = null;
-      if (name !== '__ALL__') {
+      if (name !== '__ALL__' && window.innerWidth > 768) {
         const first = this.srcCurrentAlbums[0];
         if (first) this.pickSrcAlbum(first.name);
       }
