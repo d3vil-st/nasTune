@@ -60,7 +60,9 @@ jobs:
             DISTRO=${{ matrix.distro }}
             TARGETARCH=${{ matrix.arch }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-from: |
+            type=registry,ref=${{ env.IMAGE }}:latest
+            type=gha,scope=${{ matrix.platform }}
           cache-to: type=gha,scope=${{ matrix.platform }},mode=max
 
       - name: Export digest
