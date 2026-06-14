@@ -8,6 +8,14 @@ function selectionModule() {
     showSyncConfirm: false,
     showOpLog: false,
     currentOp: null,
+    opHistory: [],
+    historyViewOp: null,
+
+    get lastOp() {
+      // In-session finished op takes priority; fall back to persisted history
+      if (this.currentOp && this.currentOp.status !== 'running') return this.currentOp;
+      return this.opHistory[0] || null;
+    },
 
     // ── Storage bar ──────────────────────────────────────────────────
 
@@ -339,6 +347,26 @@ function selectionModule() {
       if (!r.ok) { const d = await r.json().catch(()=>({})); alert(d.detail || 'Sync failed'); return; }
     },
 
+    async loadOpHistory(devnode) {
+      if (!devnode) { this.opHistory = []; return; }
+      try {
+        const r = await fetch(`/operations/history?devnode=${encodeURIComponent(devnode)}`);
+        this.opHistory = r.ok ? await r.json() : [];
+      } catch { this.opHistory = []; }
+    },
+
+    openLiveLog() {
+      this.historyViewOp = null;
+      this.showOpLog = true;
+      this.$nextTick(() => { const el = this.$refs?.opLogEl; if (el) el.scrollTop = el.scrollHeight; });
+    },
+
+    openLastOpLog() {
+      this.historyViewOp = this.lastOp;
+      this.showOpLog = true;
+      this.$nextTick(() => { const el = this.$refs?.opLogEl; if (el) el.scrollTop = el.scrollHeight; });
+    },
+
     _connectOpEvents() {
       // Closure-scoped so Alpine never proxies the EventSource object
       let es = null;
@@ -349,16 +377,17 @@ function selectionModule() {
           const op = JSON.parse(evt.data);
           const prevStatus = this.currentOp?.status;
           this.currentOp = op;
-          if (this.showOpLog) {
+          if (this.showOpLog && !this.historyViewOp) {
             this.$nextTick(() => {
               const el = this.$refs?.opLogEl;
               if (el) el.scrollTop = el.scrollHeight;
             });
           }
-          if (prevStatus === 'running' && op?.status === 'done') {
+          if (prevStatus === 'running' && op?.status !== 'running') {
             this._ipodMap = null;
             await this._fetchLibrary(true);
             if (this.selectedSourceId) this._initSrcChecked();
+            await this.loadOpHistory(this.selectedDevnode);
           }
         };
       };

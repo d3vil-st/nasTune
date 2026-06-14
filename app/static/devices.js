@@ -19,6 +19,7 @@ function devicesModule() {
         if (data.selected) {
           this.selectedDevnode = data.selected;
           await this._fetchLibrary(true);
+          await this.loadOpHistory(data.selected);
         }
       } catch (e) {
         this.libraryError = e.message;
@@ -63,6 +64,7 @@ function devicesModule() {
         });
         if (!r.ok) { this.libraryError = await r.text(); return; }
         await this._fetchLibrary();
+        await this.loadOpHistory(devnode);
       } catch (e) {
         this.libraryError = e.message;
       } finally {
