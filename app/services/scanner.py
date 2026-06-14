@@ -61,7 +61,7 @@ def _read_track(file_path: Path) -> dict | None:
             'bitrate': int(getattr(info, 'bitrate', 0) / 1000) or None,
             'samplerate': getattr(info, 'sample_rate', None),
             'bits_per_sample': bits_per_sample,
-            'year': gi('date'),
+            'year': (lambda v: int(v.split('-')[0].split('/')[0]) if v else None)(g('date')),
             'size': stat.st_size,
             'file_mtime': int(stat.st_mtime),
             'codec': codec,
