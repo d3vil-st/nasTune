@@ -357,6 +357,7 @@
     .col-artists { width: 230px; flex-shrink: 0; border-right: 1px solid var(--border); }
     .col-albums  { width: 290px; flex-shrink: 0; border-right: 1px solid var(--border); }
     .col-tracks  { flex: 1; position: relative; }
+    .col-tracks > .col-heading { display: none; }
 
     .col-heading {
       padding: 7px 14px;
@@ -1352,6 +1353,16 @@
       .content:has(.col-albums .album-row.selected) .col-albums  { transform: translateX(-100%); }
       .content:has(.col-albums .album-row.selected) .col-tracks  { transform: translateX(0); }
 
+      /* Back navigation: tapping heading navigates one level up */
+      .col-albums .col-heading,
+      .col-tracks .col-heading {
+        cursor: pointer;
+      }
+      .col-albums .col-heading:active,
+      .col-tracks .col-heading:active {
+        background: var(--hover-surface);
+      }
+
       /* Back-chevron hint on albums and tracks headings */
       .col-albums .col-heading::before,
       .col-tracks .col-heading::before {
@@ -1363,6 +1374,9 @@
         line-height: 1;
         vertical-align: middle;
       }
+
+      /* Tracks col-heading: hidden on desktop, shown on mobile */
+      .col-tracks > .col-heading { display: flex; }
 
       /* ── Track rows: flex layout on mobile, drop rating / quality ── */
       .tracks-head { display: none; }

@@ -249,7 +249,7 @@
 
       <!-- Albums -->
       <div class="col col-albums">
-        <div class="col-heading">
+        <div class="col-heading" @click="pickArtist(null)">
           <input type="checkbox" class="row-cb" @click.stop x-show="selectedArtist"
                  :checked="allCurrentAlbumsSelected()"
                  x-effect="$el.indeterminate = someCurrentAlbumsSelected() && !allCurrentAlbumsSelected()"
@@ -292,6 +292,9 @@
 
       <!-- Tracks -->
       <div class="col col-tracks">
+        <div class="col-heading" @click="pickAlbum(null)">
+          <span x-text="selectedAlbum || 'Tracks'"></span>
+        </div>
         <div class="tracks-head">
           <input type="checkbox" class="row-cb" @click.stop x-show="selectedAlbum"
                  :checked="allCurrentTracksSelected()"
@@ -445,7 +448,7 @@
 
       <!-- Middle: Albums of selected artist -->
       <div class="col col-albums">
-        <div class="col-heading">
+        <div class="col-heading" @click="pickSrcArtist(null)">
           <input type="checkbox" class="row-cb" @click.stop x-show="srcArtist"
                  :checked="allSrcCurrentAlbumsSelected()"
                  x-effect="$el.indeterminate = someSrcCurrentAlbumsSelected() && !allSrcCurrentAlbumsSelected()"
@@ -490,6 +493,9 @@
 
       <!-- Right: Tracks with sync status -->
       <div class="col col-tracks">
+        <div class="col-heading" @click="pickSrcAlbum(null)">
+          <span x-text="srcAlbum || 'Tracks'"></span>
+        </div>
         <div class="tracks-head" style="grid-template-columns: 16px 36px 1fr 50px 66px 72px;">
           <input type="checkbox" class="row-cb" @click.stop x-show="srcAlbum"
                  :checked="allSrcCurrentTracksSelected()"
