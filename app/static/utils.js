@@ -127,5 +127,21 @@ function utilsModule() {
       if (!s) return 'src-dot-pending';
       return { done: 'src-dot-done', scanning: 'src-dot-scanning', error: 'src-dot-error' }[s.scan_status] || 'src-dot-pending';
     },
+
+    themeMode: localStorage.getItem('nastune-theme') || 'auto',
+
+    setTheme(mode) {
+      this.themeMode = mode;
+      localStorage.setItem('nastune-theme', mode);
+      const isLight = mode === 'light' ||
+        (mode === 'auto' && matchMedia('(prefers-color-scheme: light)').matches);
+      document.documentElement.classList.toggle('light', isLight);
+    },
+
+    initTheme() {
+      matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+        if (this.themeMode === 'auto') this.setTheme('auto');
+      });
+    },
   };
 }
