@@ -221,5 +221,59 @@ function sourcesModule() {
       const artist = this.sourceLibrary?.artists.find(a => a.name === name);
       return artist ? artist.albums.flatMap(al => al.tracks) : [];
     },
+
+    // Return the minimal set of paths (files or dirs) covering exactly `tracks`.
+    // Checks up to 3 ancestor levels: leaf dir (CD), album dir, artist dir.
+    // A dir is used when every library track under it is in the wanted set.
+    _buildCopyPaths(tracks) {
+      if (!tracks.length) return [];
+
+      const wanted = new Set(tracks.map(t => t.path));
+
+      const allPaths = [];
+      for (const artist of (this.sourceLibrary?.artists || []))
+        for (const album of artist.albums)
+          for (const t of album.tracks)
+            allPaths.push(t.path);
+
+      if (!allPaths.length) return [...wanted];
+
+      const dirname = p => p.substring(0, p.lastIndexOf('/'));
+
+      // Build coverage map: dir -> { total, wanted } at up to 3 ancestor levels
+      const coverage = new Map();
+      for (const path of allPaths) {
+        let p = path;
+        for (let level = 0; level < 3; level++) {
+          p = dirname(p);
+          if (!p) break;
+          if (!coverage.has(p)) coverage.set(p, { total: 0, wanted: 0 });
+          const c = coverage.get(p);
+          c.total++;
+          if (wanted.has(path)) c.wanted++;
+        }
+      }
+
+      // Dirs where every track is selected; shallowest (highest in tree) first
+      const completeDirs = [...coverage.entries()]
+        .filter(([, c]) => c.wanted > 0 && c.wanted === c.total)
+        .map(([dir]) => dir)
+        .sort((a, b) => a.split('/').length - b.split('/').length);
+
+      // Greedy: pick highest-level dir, skip descendants already covered
+      const selectedDirs = [];
+      const covered = new Set();
+      for (const dir of completeDirs) {
+        if (selectedDirs.some(d => dir === d || dir.startsWith(d + '/'))) continue;
+        selectedDirs.push(dir);
+        for (const path of wanted)
+          if (path.startsWith(dir + '/')) covered.add(path);
+      }
+
+      const result = selectedDirs.map(d => d + '/');
+      for (const path of wanted)
+        if (!covered.has(path)) result.push(path);
+      return result;
+    },
   };
 }

@@ -298,7 +298,7 @@ function selectionModule() {
       const deleteIds = this.syncDeleteTracks
         .map(t => { const k = this._trackKey(t.artist || t.albumartist, t.album, t.track_nr, t.title, t.disc_nr); const ipodT = this._ipodMap.get(k); return ipodT?.id; })
         .filter(id => id !== undefined);
-      const copyPaths = this.syncCopyTracks.map(t => t.path);
+      const copyPaths = this._buildCopyPaths(this.syncCopyTracks);
       const r = await fetch('/library/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
