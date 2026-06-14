@@ -53,6 +53,23 @@ function utilsModule() {
       return new Date(ts * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
     },
 
+    fmtAgo(ts) {
+      if (!ts) return '';
+      const diff = Date.now() / 1000 - ts;
+      if (diff < 60)    return 'just now';
+      if (diff < 3600)  return Math.floor(diff / 60) + 'm ago';
+      if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+      return Math.floor(diff / 86400) + 'd ago';
+    },
+
+    fmtOpDuration(op) {
+      const s = op?.duration_s ?? (op?.finished_at ? op.finished_at - op.started_at : null);
+      if (!s) return '';
+      if (s < 60) return Math.round(s) + 's';
+      const m = Math.floor(s / 60), sec = Math.round(s % 60);
+      return sec ? `${m}m ${sec}s` : `${m}m`;
+    },
+
     fmtSize(bytes) {
       if (!bytes) return '0 B';
       if (bytes < 1024) return bytes + ' B';

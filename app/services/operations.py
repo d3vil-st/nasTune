@@ -1,11 +1,42 @@
 import asyncio
+import json
 import logging
 import os
 import re
+import time
+from pathlib import Path
 
 log = logging.getLogger(__name__)
-BATCH_SIZE = 5
+BATCH_SIZE = 50
 GPOD_DRY_RUN = os.environ.get("GPOD_DRY_RUN", "").lower() in ("1", "true", "yes")
+
+_DB_PATH = Path(os.environ.get("DB_PATH", "/data/nastune.db"))
+_OP_HISTORY_DIR = _DB_PATH.parent / "op_history"
+
+
+def _save_op_history(op: "_Op", device_id: str) -> None:
+    # device_id is the iPod UUID (preferred) or sanitized devnode as fallback
+    safe = re.sub(r"[^a-zA-Z0-9_\-]", "_", device_id)
+    dir_path = _OP_HISTORY_DIR / safe
+    dir_path.mkdir(parents=True, exist_ok=True)
+    finished_at = time.time()
+    ts = time.strftime("%Y%m%dT%H%M%S", time.localtime(op.started_at))
+    record = {
+        "id": ts,
+        "device_id": device_id,
+        "kind": op.kind,
+        "status": op.status,
+        "total": op.total,
+        "processed": op.processed,
+        "started_at": op.started_at,
+        "finished_at": finished_at,
+        "duration_s": round(finished_at - op.started_at, 1),
+        "error": op.error,
+        "log": op.log,
+    }
+    (dir_path / f"{ts}.json").write_text(json.dumps(record, ensure_ascii=False))
+    for old in sorted(dir_path.glob("*.json"))[:-10]:
+        old.unlink(missing_ok=True)
 
 _PROGRESS_RE = re.compile(r'^\[\s*\d+/\d+\]')
 _PROGRESS_NM_RE = re.compile(r'^\[\s*(\d+)/(\d+)\]')
@@ -21,6 +52,7 @@ class _Op:
         self.current = ""
         self.error: str | None = None
         self.log: list[str] = []
+        self.started_at = time.time()
 
     def to_dict(self) -> dict:
         return {
@@ -45,16 +77,16 @@ class OperationService:
     def is_busy(self) -> bool:
         return self._op is not None and self._op.status == "running"
 
-    async def run_delete(self, track_ids: list, mount: str) -> None:
+    async def run_delete(self, track_ids: list, mount: str, device_id: str = "") -> None:
         op = _Op("delete", len(track_ids))
         self._op = op
-        asyncio.create_task(self._do_delete(op, track_ids, mount))
+        asyncio.create_task(self._do_delete(op, track_ids, mount, device_id))
 
-    async def run_sync(self, copy_paths: list[str], delete_ids: list, mount: str, copy_track_count: int | None = None) -> None:
+    async def run_sync(self, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "", copy_track_count: int | None = None) -> None:
         total = (copy_track_count if copy_track_count is not None else len(copy_paths)) + len(delete_ids)
         op = _Op("sync", total)
         self._op = op
-        asyncio.create_task(self._do_sync(op, copy_paths, delete_ids, mount))
+        asyncio.create_task(self._do_sync(op, copy_paths, delete_ids, mount, device_id))
 
     async def _gpod_rm_batch(self, track_ids: list, mount: str, op: _Op) -> str | None:
         ids_str = list(dict.fromkeys(str(t) for t in track_ids))
@@ -144,7 +176,7 @@ class OperationService:
                 return msg, batch_total
         return None, batch_total
 
-    async def _do_delete(self, op: _Op, track_ids: list, mount: str) -> None:
+    async def _do_delete(self, op: _Op, track_ids: list, mount: str, device_id: str = "") -> None:
         async with self._lock:
             track_ids = sorted(track_ids, key=lambda x: int(x), reverse=True)
             i = 0
@@ -156,13 +188,17 @@ class OperationService:
                     op.status = "error"
                     op.error = err
                     log.error("gpod-rm batch failed: %s", err)
+                    if device_id:
+                        _save_op_history(op, device_id)
                     return
                 i += BATCH_SIZE
             op.status = "done"
             op.current = ""
             log.info("Delete done: %d tracks", op.total)
+            if device_id:
+                _save_op_history(op, device_id)
 
-    async def _do_sync(self, op: _Op, copy_paths: list[str], delete_ids: list, mount: str) -> None:
+    async def _do_sync(self, op: _Op, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "") -> None:
         async with self._lock:
             # Delete highest IDs first so lower IDs don't shift after each batch commit
             delete_ids = sorted(delete_ids, key=lambda x: int(x), reverse=True)
@@ -189,12 +225,16 @@ class OperationService:
                     op.status = "error"
                     op.error = err
                     log.error("gpod-cp batch failed: %s", err)
+                    if device_id:
+                        _save_op_history(op, device_id)
                     return
                 i += BATCH_SIZE
 
             op.status = "done"
             op.current = ""
             log.info("Sync done: deleted %d, copied %d", len(delete_ids), len(copy_paths))
+            if device_id:
+                _save_op_history(op, device_id)
 
 
 op_service = OperationService()

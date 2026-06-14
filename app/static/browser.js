@@ -24,8 +24,16 @@ function browserModule() {
     },
 
     get currentAlbums() {
-      if (!this.selectedArtist) return [];
       const artists = this.library?.artists || [];
+      if (this.selectedArtist === '__ALL__') {
+        if (!this.search) return artists.flatMap(a => a.albums);
+        const q = this.search.toLowerCase();
+        return artists.flatMap(a => a.albums.filter(al =>
+          al.name.toLowerCase().includes(q) ||
+          al.tracks.some(t => t.title.toLowerCase().includes(q))
+        ));
+      }
+      if (!this.selectedArtist) return [];
       const a = artists.find(a => a.name === this.selectedArtist);
       if (!a) return [];
       if (!this.search) return a.albums;
@@ -64,8 +72,10 @@ function browserModule() {
       this.selectedAlbum = null;
       this.selectedTrack = null;
       this.albumArtUrl = null;
-      const first = this.currentAlbums[0];
-      if (first) this.pickAlbum(first.name);
+      if (name !== '__ALL__') {
+        const first = this.currentAlbums[0];
+        if (first) this.pickAlbum(first.name);
+      }
     },
 
     pickAlbum(name) {
