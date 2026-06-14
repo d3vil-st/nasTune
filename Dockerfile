@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends --no-install-su
 
 # Install pre-built gpod-utils deb (apt resolves libgpod and glib deps automatically)
 RUN curl -fsSL \
-    https://github.com/d3vil-st/gpod-utils/releases/download/v1.4.4/gpod-utils_1.4.4.ubuntu26.04_${TARGETARCH}.deb \
+    https://github.com/d3vil-st/gpod-utils/releases/download/v1.4.5/gpod-utils_1.4.5.ubuntu26.04_${TARGETARCH}.deb \
     -o /tmp/gpod-utils.deb \
     && apt-get update \
     && apt-get install -y --no-install-recommends --no-install-suggests \
