@@ -37,6 +37,7 @@ function app() {
 
     await this.loadDevices();
     this.startSSE();
+    this._connectOpEvents();
 
     // Restore iPod artist/album after library loads
     if (url && this.library) {
