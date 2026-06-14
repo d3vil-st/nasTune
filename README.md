@@ -1,3 +1,5 @@
+<img src="docs/logo.svg" alt="nasTune" width="80" height="80">
+
 # nasTune
 
 A self-hosted web UI for managing iPod Classic and iPod 5th generation devices from a headless NAS. Runs as a Docker container; access it from any browser on your local network — no iTunes, no display required.
