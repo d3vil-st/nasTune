@@ -1171,9 +1171,7 @@
       background: rgba(48,209,88,.7);
     }
 
-    /* ══ Apple design system refresh (2025) ════════════════════════════
-       Vibrancy, true black base, pill buttons, thinner separators
-       ═══════════════════════════════════════════════════════════════ */
+    /* ══ Vibrancy layer — true black base, pill buttons, thinner separators ══ */
 
     .header {
       background: var(--surface-bg);

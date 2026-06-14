@@ -65,7 +65,7 @@ nasTune/
     ├── templates/
     │   └── index.html         # iTunes-like 3-pane dark UI + bottom player bar
     └── static/
-        ├── style.css          # All CSS; Apple design refresh, CSS var token system, light theme
+        ├── style.css          # All CSS; CSS var token system, light/dark theme
         ├── utils.js           # Format helpers, gradients, _normStr/_trackKey, source format/quality, theme state
         ├── devices.js         # Device list, SSE, library fetch/refresh, eject
         ├── browser.js         # iPod 3-pane browser, artUrl, _buildIpodMap, isOnIpod
