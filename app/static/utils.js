@@ -82,12 +82,15 @@ function utilsModule() {
       // then keep only ASCII alphanumerics. Everything else (punctuation,
       // Unicode hyphens/apostrophes/quotes, remaining non-ASCII) collapses
       // to a space, so no variant list is needed.
-      return (s || '')
+      // If normalization yields empty (e.g. artist "#####"), fall back to
+      // the raw lowercase string so symbol-only names stay distinct.
+      const raw = (s || '').trim().toLowerCase();
+      const norm = raw
         .normalize('NFD')
-        .replace(/̀-ͯ/g, '')    // strip combining diacritical marks
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, ' ')      // non-alphanumeric → space
+        .replace(/[̀-ͯ]/g, '')  // strip combining diacritical marks
+        .replace(/[^a-z0-9]+/g, ' ')
         .trim();
+      return norm || raw;
     },
 
     _trackKey(artist, album, track_nr, title, disc_nr) {
