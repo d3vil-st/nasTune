@@ -993,8 +993,50 @@
 
     /* ── Checkboxes ──────────────────────────────────────────────── */
     .row-cb {
-      width: 13px; height: 13px; flex-shrink: 0; cursor: pointer;
-      accent-color: var(--blue); border-radius: 2px;
+      appearance: none;
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+      cursor: pointer;
+      border-radius: 3px;
+      border: 1.5px solid var(--dim);
+      background: transparent;
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: border-color .12s, background .12s;
+      vertical-align: middle;
+    }
+    .row-cb:hover { border-color: var(--muted); }
+
+    .row-cb:checked {
+      background: var(--blue);
+      border-color: var(--blue);
+    }
+    .row-cb:checked::after {
+      content: '';
+      display: block;
+      width: 4px;
+      height: 7px;
+      border: 1.5px solid #fff;
+      border-top: none;
+      border-left: none;
+      transform: rotate(42deg) translateY(-1px);
+    }
+
+    .row-cb:indeterminate {
+      background: rgba(10,132,255,.25);
+      border-color: var(--blue);
+    }
+    .row-cb:indeterminate::after {
+      content: '';
+      display: block;
+      width: 7px;
+      height: 1.5px;
+      background: var(--blue);
+      border-radius: 1px;
     }
     .artist-row, .album-row { user-select: none; }
 
