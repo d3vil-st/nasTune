@@ -158,6 +158,34 @@ function selectionModule() {
       this.ipodSelection = s;
     },
 
+    async downloadSelectedTracks() {
+      const tracks = this.ipodSelectedTracks.map(t => ({
+        ipod_path:   t.ipod_path,
+        artist:      t.artist      || '',
+        albumartist: t.albumartist || '',
+        album:       t.album       || '',
+        year:        t.year        || null,
+        track_nr:    t.track_nr    || null,
+        title:       t.title       || '',
+      }));
+      if (!tracks.length || !this.selectedDevnode) return;
+      const r = await fetch('/library/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ devnode: this.selectedDevnode, tracks }),
+      });
+      if (!r.ok) { alert('Download failed'); return; }
+      const blob = await r.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = 'ipod_export.tar';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    },
+
     async deleteSelectedTracks() {
       this.showDeleteConfirm = false;
       const ids = this.ipodSelectedTracks.map(t => t.id);
