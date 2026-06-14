@@ -92,7 +92,7 @@ function browserModule() {
       for (const artist of (this.library?.artists || [])) {
         for (const album of artist.albums) {
           for (const t of album.tracks) {
-            this._ipodMap.set(this._trackKey(t.artist || artist.name, t.album || album.name, t.track_nr, t.title), t);
+            this._ipodMap.set(this._trackKey(t.artist || artist.name, t.album || album.name, t.track_nr, t.title, t.disc_nr), t);
           }
         }
       }
@@ -102,7 +102,7 @@ function browserModule() {
     isOnIpod(track) {
       if (!this.library) return false;
       if (!this._ipodMap) this._buildIpodMap();
-      return this._ipodMap.has(this._trackKey(track.artist || track.albumartist, track.album, track.track_nr, track.title));
+      return this._ipodMap.has(this._trackKey(track.artist || track.albumartist, track.album, track.track_nr, track.title, track.disc_nr));
     },
   };
 }

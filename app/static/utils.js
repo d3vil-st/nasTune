@@ -90,12 +90,13 @@ function utilsModule() {
         .trim();
     },
 
-    _trackKey(artist, album, track_nr, title) {
+    _trackKey(artist, album, track_nr, title, disc_nr) {
       const a  = this._normStr(artist);
       const al = this._normStr(album);
       const nr = track_nr != null && track_nr > 0 ? String(track_nr) : '';
       const t  = this._normStr(title);
-      return a + '|||' + al + '|||' + (nr || t);
+      const d  = disc_nr != null && disc_nr > 0 ? disc_nr + '.' : '';
+      return a + '|||' + al + '|||' + d + (nr || t);
     },
 
     srcFmtShort(t) {
