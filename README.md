@@ -46,7 +46,6 @@ docker compose up --build
 Open `http://<nas-ip>:8080` in your browser. Connect an iPod via USB — it will be detected automatically if already mounted by the host, or auto-mounted if `IPOD_AUTOMOUNT=1` is set.
 
 The default `docker-compose.yml` expects:
-- iPod mounted at `./ipod` on the host (mapped to `/mnt/ipod` in the container)
 - NAS music at `/mnt/music` on the host (read-only)
 
 Adjust volume paths to match your setup.
