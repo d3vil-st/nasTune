@@ -182,7 +182,7 @@
     }
     .icon-btn:hover { color: var(--text); border-color: var(--dim); }
     .icon-btn.danger:hover { color: #e06c6c; border-color: #e06c6c; }
-    .icon-btn.spinning { animation: spin .7s linear infinite; }
+    .icon-btn .spinning { display: inline-block; animation: spin .7s linear infinite; }
 
     .divider {
       width: 1px;
