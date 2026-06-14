@@ -26,7 +26,7 @@ The backend is built around [gpod-utils](https://github.com/d3vil-st/gpod-utils)
 | ASGI server | **Uvicorn** | Minimal, production-ready |
 | Templating | **Jinja2** | Server-side HTML, no JS build step |
 | Frontend reactivity | **HTMX** | Reserved for future SSE streaming features |
-| Client-side state | **Alpine.js** (CDN script tag) | 3-pane browser state, player, modals, detail panel — no build step |
+| Client-side state | **Alpine.js** (vendored, `app/static/alpine.min.js`) | 3-pane browser state, player, modals, detail panel — no build step |
 | iPod CLI backend | **gpod-utils** (`gpod-ls`, `gpod-cp`, `gpod-rm`) | Wraps libgpod, supports iPod Classic and iPod 5 |
 | Album art extraction | **mutagen** | Pure-Python; reads ALAC/M4A `covr`, MP3 `APIC`, FLAC picture blocks |
 | Audio codec detection | **mutagen** (`MP4.info.codec`) | Detects ALAC vs AAC before deciding whether to transcode |
@@ -65,8 +65,8 @@ nasTune/
     ├── templates/
     │   └── index.html         # iTunes-like 3-pane dark UI + bottom player bar (845 lines, HTML only)
     └── static/
-        ├── style.css          # All CSS (~1260 lines); includes Apple design refresh + responsive layout
-        ├── utils.js           # Format helpers, gradients, _normStr/_trackKey, source format/quality
+        ├── style.css          # All CSS (~1430 lines); Apple design refresh, CSS var token system, light theme
+        ├── utils.js           # Format helpers, gradients, _normStr/_trackKey, source format/quality, theme state
         ├── devices.js         # Device list, SSE, library fetch/refresh, eject
         ├── browser.js         # iPod 3-pane browser, artUrl, _buildIpodMap, isOnIpod
         ├── player.js          # Audio queue, play/pause/skip, iPod + source playback
@@ -169,7 +169,7 @@ function app() {
 }
 ```
 
-Scripts load synchronously (no `defer`) before Alpine's deferred CDN tag, so `window.app` is defined in time.
+Scripts load synchronously (no `defer`) before Alpine's deferred `<script defer>` tag, so `window.app` is defined in time. Alpine.js 3.15.12 is vendored at `app/static/alpine.min.js` rather than loaded from unpkg.
 
 ### Track matching (sync / isOnIpod)
 
@@ -182,6 +182,16 @@ _normStr(artist) + '|||' + _normStr(album) + '|||' + (track_nr || _normStr(title
 `_normStr` collapses Unicode dashes (U+2010 etc.) → `-` and curly quotes → `'` before lowercasing. This handles common tag discrepancies (e.g. `Guns N' Roses` vs `Guns N' Roses`, `Static-X` vs `Static‐X`).
 
 The `_ipodMap` (`Map<key, track>`) is built lazily on first use and invalidated on library refresh. `_srcTrackMap` (`Map<id, track>`) is built on source library load for O(1) ID → track resolution.
+
+### Light / dark theming
+
+The app supports Auto / Light / Dark modes via a 3-segment pill switcher in the header. The selected preference is stored in `localStorage` under key `nastune-theme`.
+
+- Theme state is managed by `themeMode`, `setTheme(mode)`, and `initTheme()` in `utils.js`.
+- Visual switching is done by toggling the `html.light` class — no duplicate CSS, all components use CSS custom properties (`--surface-bg`, `--card-bg`, `--player-bg`, `--detail-bg`, `--fill-bg`, `--hover-surface`, `--chip-active`, `--badge-bg`, `--overlay-bg`, `--card-border`, `--surface-border`, `--icon-grad-from/to`).
+- `html.light` is set immediately via an inline `<script>` in `<head>` (before the CSS `<link>`) to prevent flash of wrong theme (FOUC).
+- `initTheme()` (called from `app.js`'s `init()`) attaches a `prefers-color-scheme` media-query listener so Auto mode reacts to OS-level theme changes without a page reload.
+- Placeholder album art gradients (set as inline styles via Alpine's `:style` binding) are overridden in light mode via `html.light .album-thumb / .abar-art / .player-art / .detail-art { background: ... !important; }` CSS rules.
 
 ---
 
@@ -248,6 +258,8 @@ Expose streaming endpoints as SSE using FastAPI's `StreamingResponse` with `medi
 - **Object.defineProperties for getters**: Alpine.js getters in module objects must be merged with `Object.defineProperties`, not `Object.assign` — the latter evaluates getters immediately and stores the result as a plain value.
 - **Unicode tag normalization**: Source file tags often use Unicode hyphens (U+2010) or curly apostrophes (U+2019) where the iPod DB stores ASCII. `_normStr()` in `utils.js` normalizes both before key comparison.
 - **Mobile single-pane navigation**: On `≤768px` screens the three-column browser collapses to a single-pane slide view driven entirely by CSS `:has()` — no JS required. Selecting an artist/album slides in the next pane. Navigating *back* (deselecting) currently requires tapping a different artist or manually clearing selection; a proper back-button needs a small JS change in `browser.js` (expose `pickArtist(null)` / `pickAlbum(null)` and call them from the column headings on mobile).
+- **Light theme + FOUC**: The FOUC-prevention inline `<script>` runs before the CSS `<link>` in `<head>`. It reads `localStorage` and conditionally adds `html.light` before any paint. Do not move it after the stylesheet link.
+- **Theme CSS variable tokens**: All surface/card/border colors are CSS variables. Adding a new component that needs theme awareness: use `var(--surface-bg)`, `var(--card-bg)`, `var(--fill-bg)`, `var(--surface-border)`, `var(--card-border)`, `var(--hover-surface)`, `var(--chip-active)`, `var(--overlay-bg)`, `var(--detail-bg)`, `var(--player-bg)` instead of hardcoded `rgba()` values. Override these in `html.light { }` if the dark default is wrong for light mode.
 
 ---
 

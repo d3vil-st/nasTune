@@ -15,6 +15,7 @@ function app() {
   }
 
   state.init = async function () {
+    this.initTheme();
     await this.loadDevices();
     this.startSSE();
     await this.loadSources();
