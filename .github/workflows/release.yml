@@ -61,9 +61,11 @@ jobs:
             TARGETARCH=${{ matrix.arch }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           cache-from: |
-            type=registry,ref=${{ env.IMAGE }}:latest
+            type=registry,ref=${{ env.IMAGE }}:buildcache-${{ matrix.arch }}
             type=gha,scope=${{ matrix.platform }}
-          cache-to: type=gha,scope=${{ matrix.platform }},mode=max
+          cache-to: |
+            type=registry,ref=${{ env.IMAGE }}:buildcache-${{ matrix.arch }},mode=max
+            type=gha,scope=${{ matrix.platform }},mode=max
 
       - name: Export digest
         run: |
