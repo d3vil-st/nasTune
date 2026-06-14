@@ -6,6 +6,7 @@ function selectionModule() {
     srcInitialOnIpod: new Set(),
     showDeleteConfirm: false,
     showSyncConfirm: false,
+    showOpLog: false,
     currentOp: null,
     opPollTimer: null,
 
@@ -347,6 +348,12 @@ function selectionModule() {
         try {
           const r = await fetch('/operations');
           this.currentOp = r.ok ? await r.json() : null;
+          if (this.showOpLog) {
+            this.$nextTick(() => {
+              const el = this.$refs?.opLogEl;
+              if (el) el.scrollTop = el.scrollHeight;
+            });
+          }
           if (!this.currentOp || this.currentOp.status !== 'running') {
             clearInterval(this.opPollTimer);
             this.opPollTimer = null;

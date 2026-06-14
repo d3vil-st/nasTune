@@ -20,6 +20,7 @@ class _Op:
         self.processed = 0
         self.current = ""
         self.error: str | None = None
+        self.log: list[str] = []
 
     def to_dict(self) -> dict:
         return {
@@ -29,6 +30,7 @@ class _Op:
             "processed": self.processed,
             "current": self.current,
             "error": self.error,
+            "log": self.log,
         }
 
 
@@ -57,8 +59,10 @@ class OperationService:
     async def _gpod_rm_batch(self, track_ids: list, mount: str, op: _Op) -> str | None:
         ids_str = list(dict.fromkeys(str(t) for t in track_ids))
         log.info("exec: IPOD_MOUNT_POINT=%s gpod-rm %s", mount, " ".join(ids_str))
+        op.log.append(f"$ gpod-rm {' '.join(ids_str)}")
         if GPOD_DRY_RUN:
             log.info("[dry-run] skipping gpod-rm (%d tracks)", len(ids_str))
+            op.log.append("[dry-run] skipped")
             return None
         env = {**os.environ, "IPOD_MOUNT_POINT": mount}
         proc = await asyncio.create_subprocess_exec(
@@ -67,15 +71,16 @@ class OperationService:
             stderr=asyncio.subprocess.STDOUT,
             env=env,
         )
-        lines = []
+        batch_lines = []
         async for raw in proc.stdout:
             line = raw.decode().rstrip()
-            lines.append(line)
+            batch_lines.append(line)
+            op.log.append(line)
             if _PROGRESS_RE.match(line):
                 m = _TITLE_ARTIST_RE.search(line)
                 op.current = f"{m.group(2)} – {m.group(1)}" if m else line.split("->")[0].strip()
         await proc.wait()
-        output = "\n".join(lines)
+        output = "\n".join(batch_lines)
         if output:
             log.debug("gpod-rm output:\n%s", output)
         if proc.returncode != 0:
@@ -93,8 +98,10 @@ class OperationService:
         """Returns (error, batch_track_count). Updates op.processed live via [N/M] lines."""
         paths = list(dict.fromkeys(paths))
         log.info("exec: IPOD_MOUNT_POINT=%s gpod-cp %s", mount, " ".join(paths))
+        op.log.append(f"$ gpod-cp {' '.join(paths)}")
         if GPOD_DRY_RUN:
             log.info("[dry-run] skipping gpod-cp (%d path(s))", len(paths))
+            op.log.append("[dry-run] skipped")
             return None, 0
         env = {**os.environ, "IPOD_MOUNT_POINT": mount}
         proc = await asyncio.create_subprocess_exec(
@@ -103,11 +110,12 @@ class OperationService:
             stderr=asyncio.subprocess.STDOUT,
             env=env,
         )
-        lines = []
+        batch_lines = []
         batch_total = 0
         async for raw in proc.stdout:
             line = raw.decode().rstrip()
-            lines.append(line)
+            batch_lines.append(line)
+            op.log.append(line)
             nm = _PROGRESS_NM_RE.match(line)
             if nm:
                 n, batch_total = int(nm.group(1)), int(nm.group(2))
@@ -119,7 +127,7 @@ class OperationService:
                     path_part = line.split("->")[0].strip().split()[-1] if "->" in line else ""
                     op.current = os.path.basename(path_part) if path_part else line
         await proc.wait()
-        output = "\n".join(lines)
+        output = "\n".join(batch_lines)
         if output:
             log.debug("gpod-cp output:\n%s", output)
         if proc.returncode != 0:
