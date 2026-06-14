@@ -1,6 +1,6 @@
 services:
   nastune:
-    build: .
+    image: ghcr.io/d3vil-st/nastune:latest
     privileged: true          # required for mount syscalls inside the container
     ports:
       - "127.0.0.1:8080:8080"
@@ -8,8 +8,8 @@ services:
       - /dev:/dev
       - /run/udev:/run/udev:ro
       - /mnt/music:/music:ro  # NAS music share — read-only
-      - ./ipod:/mnt/ipod       # iPod mount point shared with host
       - ./data:/data           # persistent SQLite database
+      #- ./ipod:/mnt/ipod       # iPod mount point shared with host
     devices:
       - /dev/bus/usb
     environment:
