@@ -64,6 +64,8 @@ function browserModule() {
       this.selectedAlbum = null;
       this.selectedTrack = null;
       this.albumArtUrl = null;
+      const first = this.currentAlbums[0];
+      if (first) this.pickAlbum(first.name);
     },
 
     pickAlbum(name) {
