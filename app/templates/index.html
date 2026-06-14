@@ -139,6 +139,7 @@
           <path d="M5.5 1a4.5 4.5 0 1 0 2.8 8.02l2.84 2.84a.75.75 0 1 0 1.06-1.06L9.36 7.96A4.5 4.5 0 0 0 5.5 1Zm-3 4.5a3 3 0 1 1 6 0 3 3 0 0 1-6 0Z"/>
         </svg>
         <input type="text" placeholder="Search artists, albums, tracks…" x-model="search" @input="onSearch">
+        <button class="search-clear" x-show="search" @click="search = ''; onSearch()" aria-label="Clear search">&#x2715;</button>
       </div>
     </div>
   </header>
@@ -189,6 +190,9 @@
     <span x-show="selectedSourceObj && selectedSourceObj.scan_status === 'done'"
           style="font-size:11px;color:var(--muted)"
           x-text="selectedSourceObj ? (library && sourceLibrary ? srcInitialOnIpod.size + ' / ' + selectedSourceObj.track_count + ' synced' : selectedSourceObj.track_count + ' tracks') : ''"></span>
+    <button class="manage-btn" x-show="selectedSourceId && library && sourceLibrary"
+            :class="{ active: srcShowUnsynced }"
+            @click="srcShowUnsynced = !srcShowUnsynced">Unsynced only</button>
     <button class="manage-btn" x-show="selectedSourceId"
             :disabled="selectedSourceObj?.scan_status === 'scanning'"
             @click="rescanSource(selectedSourceId)">Rescan</button>
@@ -281,9 +285,9 @@
                      :class="{ selected: selectedAlbum === al.name }"
                      @click="pickAlbum(al.name)">
                   <input type="checkbox" class="row-cb" @click.stop
-                         :checked="isAlbumSelected(selectedArtist, al.name)"
-                         x-effect="$el.indeterminate = isAlbumIndeterminate(selectedArtist, al.name)"
-                         @change="toggleAlbum(selectedArtist, al.name, $event.target.checked)">
+                         :checked="isAlbumSelected(al)"
+                         x-effect="$el.indeterminate = isAlbumIndeterminate(al)"
+                         @change="toggleAlbum(al, $event.target.checked)">
                   <div class="album-thumb" :style="gradientFor(al.name)">
                     <img :src="artUrl(al)" @error="$el.style.display='none'" loading="lazy" alt="">
                     <div class="album-play-overlay" @click.stop="pickAlbum(al.name); playAlbum(al)">&#x25B6;</div>
@@ -487,9 +491,9 @@
                      :class="{ selected: srcAlbum === al.name }"
                      @click="pickSrcAlbum(al.name)">
                   <input type="checkbox" class="row-cb" @click.stop
-                         :checked="isSrcAlbumChecked(srcArtist, al.name)"
-                         x-effect="$el.indeterminate = isSrcAlbumIndeterminate(srcArtist, al.name)"
-                         @change="toggleSrcAlbum(srcArtist, al.name, $event.target.checked)">
+                         :checked="isSrcAlbumChecked(al)"
+                         x-effect="$el.indeterminate = isSrcAlbumIndeterminate(al)"
+                         @change="toggleSrcAlbum(al, $event.target.checked)">
                   <div class="album-thumb" :style="gradientFor(al.name)"
                        @click.stop="pickSrcAlbum(al.name); playSrcAlbum(al)">
                     <img x-effect="$el.style.display=''; $el.src=sourceArtUrl(al)" @error="$el.style.display='none'" loading="lazy" alt="">
