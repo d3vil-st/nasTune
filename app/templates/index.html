@@ -878,6 +878,16 @@
     <img :src="coverPopupUrl" alt="Album cover">
   </div>
 
+  <!-- ── Auth expired overlay ── -->
+  <div class="auth-expired-overlay" x-show="authExpired" style="display:none">
+    <div class="auth-expired-box">
+      <div class="auth-expired-icon">&#128274;</div>
+      <h2>Session Expired</h2>
+      <p>Your authentication session has expired. Sign in again to continue.</p>
+      <button class="btn-primary" @click="window.location.reload()">Sign In Again</button>
+    </div>
+  </div>
+
   <!-- ── Hidden audio element ── -->
   <audio x-ref="audio"
          @timeupdate="!seeking && (currentTime = $refs.audio.currentTime)"

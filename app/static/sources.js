@@ -105,7 +105,7 @@ function sourcesModule() {
 
     async loadSources() {
       try {
-        const r = await fetch('/sources');
+        const r = await this.apiFetch('/sources');
         this.sources = await r.json();
         if (this.selectedSourceId) {
           const still = this.sources.find(s => s.id === this.selectedSourceId);
@@ -132,7 +132,7 @@ function sourcesModule() {
     async _loadSourceLibrary(id) {
       this.sourceLibraryLoading = true;
       try {
-        const r = await fetch('/sources/' + id + '/library');
+        const r = await this.apiFetch('/sources/' + id + '/library');
         if (r.ok) {
           this.sourceLibrary = await r.json();
           this._buildSrcTrackMap();
@@ -159,7 +159,7 @@ function sourcesModule() {
       const name = this.addSourceName.trim();
       if (!name) return;
       try {
-        const r = await fetch('/sources', {
+        const r = await this.apiFetch('/sources', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, path: this.browsePath }),
@@ -177,7 +177,7 @@ function sourcesModule() {
     async deleteSource(id) {
       if (!confirm('Remove this source? Track data will be deleted.')) return;
       try {
-        await fetch('/sources/' + id, { method: 'DELETE' });
+        await this.apiFetch('/sources/' + id, { method: 'DELETE' });
         if (this.selectedSourceId === id) {
           this.selectedSourceId = null;
           this.sourceLibrary = null;
@@ -190,7 +190,7 @@ function sourcesModule() {
 
     async rescanSource(id) {
       try {
-        await fetch('/sources/' + id + '/scan', { method: 'POST' });
+        await this.apiFetch('/sources/' + id + '/scan', { method: 'POST' });
         await this.loadSources();
         this._startSrcPoll();
       } catch (e) { alert('Rescan failed: ' + e.message); }
@@ -198,7 +198,7 @@ function sourcesModule() {
 
     async browseDir(path) {
       try {
-        const r = await fetch('/sources/browse?path=' + encodeURIComponent(path));
+        const r = await this.apiFetch('/sources/browse?path=' + encodeURIComponent(path));
         if (!r.ok) { alert('Cannot browse: ' + path); return; }
         const data = await r.json();
         this.browsePath = data.path;

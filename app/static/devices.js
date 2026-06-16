@@ -13,7 +13,7 @@ function devicesModule() {
 
     async loadDevices() {
       try {
-        const r = await fetch('/devices');
+        const r = await this.apiFetch('/devices');
         const data = await r.json();
         this.devices = data.devices;
         if (data.selected) {
@@ -33,7 +33,7 @@ function devicesModule() {
       if (device && !device.mounted) {
         this.libraryLoading = true;
         this.libraryError = null;
-        const mr = await fetch('/devices/mount', {
+        const mr = await this.apiFetch('/devices/mount', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ devnode }),
@@ -57,7 +57,7 @@ function devicesModule() {
       this.libraryError = null;
       this.libraryLoading = true;
       try {
-        const r = await fetch('/devices/select', {
+        const r = await this.apiFetch('/devices/select', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ devnode }),
@@ -91,8 +91,8 @@ function devicesModule() {
       this.libraryLoading = true;
       try {
         const r = refresh
-          ? await fetch('/library/refresh', { method: 'POST' })
-          : await fetch('/library');
+          ? await this.apiFetch('/library/refresh', { method: 'POST' })
+          : await this.apiFetch('/library');
         if (!r.ok) { this.libraryError = await r.text(); return; }
         this.library = await r.json();
         if (refresh) this._validateIpodSelection();
@@ -107,7 +107,7 @@ function devicesModule() {
       if (this.libraryRefreshing) return;
       this.libraryRefreshing = true;
       try {
-        const r = await fetch('/library/refresh', { method: 'POST' });
+        const r = await this.apiFetch('/library/refresh', { method: 'POST' });
         if (!r.ok) { this.libraryError = await r.text(); return; }
         this.library = await r.json();
         this._ipodMap = null;
@@ -137,13 +137,14 @@ function devicesModule() {
           this.selectDevice(data.selected);
         }
       };
+      es.onerror = () => { this._probeAuth(); };
     },
 
     async ejectDevice() {
       if (!this.selectedDevnode) return;
       if (this.playerVisible) this.stopPlayback();
       try {
-        const r = await fetch('/devices/eject', {
+        const r = await this.apiFetch('/devices/eject', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ devnode: this.selectedDevnode }),
