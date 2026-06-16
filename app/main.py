@@ -18,7 +18,7 @@ logging.getLogger("uvicorn.access").addFilter(_NoOperationsPoll())
 
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from app.services.artwork import extract_artwork
 from app.services.db import init_db
 from app.services.devices import device_service
+from app.services.transcode_cache import transcode_cache
 from app.routers.sources import router as sources_router
 from app.routers.ipod import router as ipod_router
 
@@ -160,31 +161,8 @@ def _is_alac(path: Path) -> bool:
         return False
 
 
-async def _ffmpeg_stream(path: str, devnode: str):
-    device_service.stream_start(devnode)
-    proc = await asyncio.create_subprocess_exec(
-        "ffmpeg", "-hide_banner", "-loglevel", "error",
-        "-i", path, "-f", "flac", "-",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        while True:
-            chunk = await proc.stdout.read(65536)
-            if not chunk:
-                break
-            yield chunk
-    finally:
-        device_service.stream_end(devnode)
-        try:
-            proc.kill()
-        except ProcessLookupError:
-            pass
-        await proc.wait()
-
-
 @app.get("/audio")
-async def get_audio(path: str, devnode: str = ""):
+async def get_audio(path: str, devnode: str = "", background_tasks: BackgroundTasks = None):
     target = devnode or device_service.selected
     if not target:
         raise HTTPException(status_code=400, detail="No device selected")
@@ -202,14 +180,12 @@ async def get_audio(path: str, devnode: str = ""):
 
     ext = full.suffix.lower().lstrip(".")
 
-    # ALAC in M4A is not supported by Firefox on Linux — transcode to FLAC on the fly
+    # ALAC in M4A is not supported by Firefox on Linux — transcode to FLAC
     if ext in ("m4a", "aac") and await asyncio.to_thread(_is_alac, full):
-        log.info("Transcoding ALAC → FLAC: %s", full)
-        return StreamingResponse(
-            _ffmpeg_stream(str(full), target),
-            media_type="audio/flac",
-            headers={"Cache-Control": "no-store"},
-        )
+        cached = await transcode_cache.get(str(full))
+        transcode_cache.acquire(str(full))
+        background_tasks.add_task(transcode_cache.release, str(full))
+        return FileResponse(str(cached), media_type="audio/flac")
 
     mime = _AUDIO_MIMES.get(ext, "application/octet-stream")
     return FileResponse(str(full), media_type=mime)
