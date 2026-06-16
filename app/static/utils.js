@@ -164,5 +164,29 @@ function utilsModule() {
         if (this.themeMode === 'auto') this.setTheme('auto');
       });
     },
+
+    authExpired: false,
+
+    _onAuthExpired() {
+      if (this.authExpired) return;
+      this.authExpired = true;
+    },
+
+    async _probeAuth() {
+      try {
+        const r = await fetch('/devices', { redirect: 'manual' });
+        if (r.type === 'opaqueredirect') this._onAuthExpired();
+      } catch { /* network down, not auth */ }
+    },
+
+    async apiFetch(url, options) {
+      const r = await fetch(url, options);
+      const ct = r.headers.get('content-type') || '';
+      if (r.type === 'opaque' || ct.includes('text/html')) {
+        this._onAuthExpired();
+        throw new Error('auth_expired');
+      }
+      return r;
+    },
   };
 }

@@ -176,34 +176,38 @@ function selectionModule() {
                 title:       t.title || '',
               });
       if (!tracks.length || !this.selectedDevnode) return;
-      const r = await fetch('/library/download', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ devnode: this.selectedDevnode, tracks }),
-      });
-      if (!r.ok) { alert('Download failed'); return; }
-      const blob = await r.blob();
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
-      a.href     = url;
-      a.download = 'ipod_export.tar';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      try {
+        const r = await this.apiFetch('/library/download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ devnode: this.selectedDevnode, tracks }),
+        });
+        if (!r.ok) { alert('Download failed'); return; }
+        const blob = await r.blob();
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = 'ipod_export.tar';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (e) { if (e.message !== 'auth_expired') alert('Download failed: ' + e.message); }
     },
 
     async deleteSelectedTracks() {
       this.showDeleteConfirm = false;
       const ids = this.ipodSelectedTracks.map(t => t.id);
       if (!ids.length || !this.selectedDevnode) return;
-      const r = await fetch('/library/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ devnode: this.selectedDevnode, track_ids: ids }),
-      });
-      if (!r.ok) { const d = await r.json().catch(()=>({})); alert(d.detail || 'Delete failed'); return; }
-      this.ipodSelection = new Set();
+      try {
+        const r = await this.apiFetch('/library/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ devnode: this.selectedDevnode, track_ids: ids }),
+        });
+        if (!r.ok) { const d = await r.json().catch(()=>({})); alert(d.detail || 'Delete failed'); return; }
+        this.ipodSelection = new Set();
+      } catch (e) { if (e.message !== 'auth_expired') alert('Delete failed: ' + e.message); }
     },
 
     // ── Sources selection ────────────────────────────────────────────
@@ -330,18 +334,20 @@ function selectionModule() {
         .map(t => { const k = this._trackKey(t.artist || t.albumartist, t.album, t.track_nr, t.title, t.disc_nr); const ipodT = this._ipodMap.get(k); return ipodT?.id; })
         .filter(id => id !== undefined);
       const copyPaths = this._buildCopyPaths(this.syncCopyTracks);
-      const r = await fetch('/library/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ devnode: this.selectedDevnode, copy_paths: copyPaths, delete_ids: deleteIds, copy_track_count: this.syncCopyTracks.length }),
-      });
-      if (!r.ok) { const d = await r.json().catch(()=>({})); alert(d.detail || 'Sync failed'); return; }
+      try {
+        const r = await this.apiFetch('/library/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ devnode: this.selectedDevnode, copy_paths: copyPaths, delete_ids: deleteIds, copy_track_count: this.syncCopyTracks.length }),
+        });
+        if (!r.ok) { const d = await r.json().catch(()=>({})); alert(d.detail || 'Sync failed'); return; }
+      } catch (e) { if (e.message !== 'auth_expired') alert('Sync failed: ' + e.message); }
     },
 
     async loadOpHistory(devnode) {
       if (!devnode) { this.opHistory = []; return; }
       try {
-        const r = await fetch(`/operations/history?devnode=${encodeURIComponent(devnode)}`);
+        const r = await this.apiFetch(`/operations/history?devnode=${encodeURIComponent(devnode)}`);
         this.opHistory = r.ok ? await r.json() : [];
       } catch { this.opHistory = []; }
     },
@@ -381,6 +387,7 @@ function selectionModule() {
             await this.loadOpHistory(this.selectedDevnode);
           }
         };
+        es.onerror = () => { this._probeAuth(); };
       };
       this._connectOpEvents();
     },

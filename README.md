@@ -152,6 +152,33 @@ See [CLAUDE.md](CLAUDE.md) for full architecture documentation, API reference, a
 
 ---
 
+## Reverse proxy
+
+nasTune works behind a reverse proxy (nginx, Caddy, Traefik) and is compatible with Authentik forward authentication.
+
+Three endpoint groups need special treatment because they use long-lived SSE streams or large audio responses:
+
+```nginx
+location ~ ^/(devices/events|operations/events|audio|sources/audio) {
+    proxy_pass http://nastune_backend;
+    proxy_http_version 1.1;
+    proxy_set_header Connection '';
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 3600s;
+    gzip off;
+}
+```
+
+- **`proxy_http_version 1.1`** — nginx defaults to HTTP/1.0 upstream; SSE requires 1.1 for chunked transfer or events arrive batched at connection close.
+- **`proxy_set_header Connection ''`** — clears the `Connection: close` header that HTTP/1.0 adds.
+- **`proxy_buffering off` + `gzip off`** — prevents nginx from buffering SSE output waiting to fill a buffer or compress it, which kills real-time delivery.
+- **`proxy_read_timeout 3600s`** — SSE connections are idle between events; the default 60 s timeout would close them.
+
+If your global config includes an Authentik `include` directive, add it to this location block too so the streaming endpoints remain protected.
+
+---
+
 ## License
 
 MIT

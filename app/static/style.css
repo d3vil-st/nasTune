@@ -992,6 +992,29 @@
     .sp-name { font-size: 13px; font-weight: 500; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .sp-meta { font-size: 11px; color: var(--muted); white-space: nowrap; }
 
+    /* ── Auth expired overlay ────────────────────────────────────── */
+    .auth-expired-overlay {
+      position: fixed; inset: 0;
+      background: var(--overlay-bg);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 700;
+    }
+    .auth-expired-box {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 24px 60px rgba(0,0,0,.7);
+      padding: 2.5rem 3rem;
+      text-align: center;
+      max-width: 340px;
+      width: 90vw;
+    }
+    .auth-expired-icon { font-size: 2.2rem; margin-bottom: 1rem; }
+    .auth-expired-box h2 { font-size: 15px; font-weight: 600; margin: 0 0 0.5rem; }
+    .auth-expired-box p { font-size: 13px; color: var(--muted); margin: 0 0 1.5rem; line-height: 1.5; }
+
     /* ── Manage sources modal ────────────────────────────────────── */
     .modal-overlay {
       position: fixed; inset: 0;
