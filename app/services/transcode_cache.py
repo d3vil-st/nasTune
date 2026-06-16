@@ -34,13 +34,20 @@ class TranscodeCache:
         try:
             proc = await asyncio.create_subprocess_exec(
                 "ffmpeg", "-hide_banner", "-loglevel", "error",
-                "-i", src, "-c:a", "flac", str(tmp),
+                "-i", src, "-c:a", "flac", "-f", "flac", str(tmp),
                 stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
             )
-            await proc.wait()
+            _, stderr_bytes = await proc.communicate()
+            stderr_text = (stderr_bytes or b"").decode(errors="replace").strip()
             if proc.returncode != 0:
-                raise RuntimeError(f"ffmpeg exited {proc.returncode} for {src}")
+                if stderr_text:
+                    log.error("ffmpeg failed (exit %d) for %s:\n%s", proc.returncode, src, stderr_text)
+                else:
+                    log.error("ffmpeg failed (exit %d) for %s", proc.returncode, src)
+                raise RuntimeError(
+                    f"ffmpeg exited {proc.returncode}" + (f": {stderr_text[:300]}" if stderr_text else "")
+                )
             tmp.rename(dst)
             log.info("Transcoded → cache %s", dst.name)
         except OSError as exc:

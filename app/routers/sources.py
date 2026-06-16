@@ -161,10 +161,13 @@ async def source_audio(path: str, background_tasks: BackgroundTasks = None):
         except Exception:
             codec = ""
         if codec == "alac":
-            cached = await transcode_cache.get(str(full))
-            transcode_cache.acquire(str(full))
-            background_tasks.add_task(transcode_cache.release, str(full))
-            return FileResponse(str(cached), media_type="audio/flac")
+            try:
+                cached = await transcode_cache.get(str(full))
+                transcode_cache.acquire(str(full))
+                background_tasks.add_task(transcode_cache.release, str(full))
+                return FileResponse(str(cached), media_type="audio/flac")
+            except Exception:
+                log.exception("Transcode failed for %s, falling back to raw file", full)
 
     mime = _AUDIO_MIMES.get(ext, "application/octet-stream")
     return FileResponse(str(full), media_type=mime)
