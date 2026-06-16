@@ -10,6 +10,10 @@ services:
       - /mnt/music:/music:ro  # NAS music share — read-only
       - ./data:/data          # persistent SQLite database
       # - ./ipod:/mnt/ipod    # iPod mount point shared with host
+      - type: tmpfs
+        target: /tmp/nastune-cache
+        tmpfs:
+          size: 536870912     # 512 MB for ALAC transcode cache
     devices:
       - /dev/bus/usb
     environment:

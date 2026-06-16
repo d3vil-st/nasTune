@@ -4,8 +4,8 @@ import time
 from pathlib import Path
 
 import aiosqlite
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
 log = logging.getLogger(__name__)
@@ -29,27 +29,8 @@ async def _validated_source_path(path: str) -> Path:
     return full
 
 
-async def _ffmpeg_transcode(path: str):
-    proc = await asyncio.create_subprocess_exec(
-        "ffmpeg", "-hide_banner", "-loglevel", "error",
-        "-i", path, "-f", "flac", "-",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        while True:
-            chunk = await proc.stdout.read(65536)
-            if not chunk:
-                break
-            yield chunk
-    finally:
-        try:
-            proc.kill()
-        except ProcessLookupError:
-            pass
-        await proc.wait()
-
 from app.services.db import DB_PATH
+from app.services.transcode_cache import transcode_cache
 from app.services.scanner import scan_source
 
 router = APIRouter(prefix="/sources", tags=["sources"])
@@ -169,7 +150,7 @@ async def get_source_library(source_id: int):
 
 
 @router.get("/audio")
-async def source_audio(path: str):
+async def source_audio(path: str, background_tasks: BackgroundTasks = None):
     full = await _validated_source_path(path)
     ext = full.suffix.lower().lstrip(".")
 
@@ -180,12 +161,10 @@ async def source_audio(path: str):
         except Exception:
             codec = ""
         if codec == "alac":
-            log.info("Transcoding ALAC → FLAC: %s", full)
-            return StreamingResponse(
-                _ffmpeg_transcode(str(full)),
-                media_type="audio/flac",
-                headers={"Cache-Control": "no-store"},
-            )
+            cached = await transcode_cache.get(str(full))
+            transcode_cache.acquire(str(full))
+            background_tasks.add_task(transcode_cache.release, str(full))
+            return FileResponse(str(cached), media_type="audio/flac")
 
     mime = _AUDIO_MIMES.get(ext, "application/octet-stream")
     return FileResponse(str(full), media_type=mime)
