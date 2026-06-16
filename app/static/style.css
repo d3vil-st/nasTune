@@ -203,6 +203,7 @@
 
     .storage-bar {
       display: flex;
+      position: relative;
       height: 22px;
       background: var(--fill-bg);
       border-radius: 10px;
@@ -213,6 +214,27 @@
       height: 100%;
       flex-shrink: 0;
       background: linear-gradient(90deg, #0a84ff, #32ade6);
+      transition: width .4s ease;
+    }
+
+    .storage-bar-stripe {
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        -45deg,
+        rgba(255,255,255,.07) 0,
+        rgba(255,255,255,.07) 5px,
+        transparent 5px,
+        transparent 11px
+      );
+      background-size: 15.56px 100%;
+      animation: storage-stripe .5s linear infinite;
+      pointer-events: none;
+    }
+
+    @keyframes storage-stripe {
+      from { background-position: 0 0; }
+      to   { background-position: 15.56px 0; }
     }
 
     .badges-row {
@@ -1188,10 +1210,12 @@
     .storage-fill-remove {
       height: 100%; flex-shrink: 0;
       background: rgba(255,69,58,.75);
+      transition: width .4s ease;
     }
     .storage-fill-add {
       height: 100%; flex-shrink: 0;
       background: rgba(48,209,88,.7);
+      transition: width .4s ease;
     }
 
     /* ══ Vibrancy layer — true black base, pill buttons, thinner separators ══ */
