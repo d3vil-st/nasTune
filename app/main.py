@@ -182,10 +182,13 @@ async def get_audio(path: str, devnode: str = "", background_tasks: BackgroundTa
 
     # ALAC in M4A is not supported by Firefox on Linux — transcode to FLAC
     if ext in ("m4a", "aac") and await asyncio.to_thread(_is_alac, full):
-        cached = await transcode_cache.get(str(full))
-        transcode_cache.acquire(str(full))
-        background_tasks.add_task(transcode_cache.release, str(full))
-        return FileResponse(str(cached), media_type="audio/flac")
+        try:
+            cached = await transcode_cache.get(str(full))
+            transcode_cache.acquire(str(full))
+            background_tasks.add_task(transcode_cache.release, str(full))
+            return FileResponse(str(cached), media_type="audio/flac")
+        except Exception:
+            log.exception("Transcode failed for %s, falling back to raw file", full)
 
     mime = _AUDIO_MIMES.get(ext, "application/octet-stream")
     return FileResponse(str(full), media_type=mime)
