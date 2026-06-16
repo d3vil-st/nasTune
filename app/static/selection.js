@@ -10,12 +10,16 @@ function selectionModule() {
     currentOp: null,
     opHistory: [],
     historyViewOp: null,
+    _opDeleteCount: 0,
+    _opCopyCount: 0,
 
     get lastOp() {
       // In-session finished op takes priority; fall back to persisted history
       if (this.currentOp && this.currentOp.status !== 'running') return this.currentOp;
       return this.opHistory[0] || null;
     },
+
+    get opRunning() { return this.currentOp?.status === 'running'; },
 
     // ── Storage bar ──────────────────────────────────────────────────
 
@@ -47,19 +51,37 @@ function selectionModule() {
       const total = this.library?.fs_total_gb || 0;
       if (!total) return 0;
       const usedAfter = (this.library?.fs_used_gb || 0) - this.storageRemoveBytes / 1073741824;
-      return Math.max(0, Math.min(100, (usedAfter / total) * 100));
+      let pct = Math.max(0, Math.min(100, (usedAfter / total) * 100));
+      // During copy phase, blue grows as files land on device
+      if (this.opRunning && this._opCopyCount) {
+        const copyDone = Math.max(0, (this.currentOp.processed || 0) - this._opDeleteCount);
+        const copyFrac = Math.min(1, copyDone / this._opCopyCount);
+        pct = Math.min(100, pct + (this.storageAddBytes / 1073741824 / total) * 100 * copyFrac);
+      }
+      return pct;
     },
 
     get storageRemovePct() {
       const total = this.library?.fs_total_gb || 0;
       if (!total) return 0;
-      return Math.min(100, (this.storageRemoveBytes / 1073741824 / total) * 100);
+      const base = Math.min(100, (this.storageRemoveBytes / 1073741824 / total) * 100);
+      if (this.opRunning && this._opDeleteCount) {
+        const delFrac = Math.min(1, (this.currentOp.processed || 0) / this._opDeleteCount);
+        return base * (1 - delFrac);
+      }
+      return base;
     },
 
     get storageAddPct() {
       const total = this.library?.fs_total_gb || 0;
       if (!total) return 0;
-      return Math.min(100, (this.storageAddBytes / 1073741824 / total) * 100);
+      const base = Math.min(100, (this.storageAddBytes / 1073741824 / total) * 100);
+      if (this.opRunning && this._opCopyCount) {
+        const copyDone = Math.max(0, (this.currentOp.processed || 0) - this._opDeleteCount);
+        const copyFrac = Math.min(1, copyDone / this._opCopyCount);
+        return base * (1 - copyFrac);
+      }
+      return base;
     },
 
     get storageFreePct() {
@@ -199,6 +221,8 @@ function selectionModule() {
       this.showDeleteConfirm = false;
       const ids = this.ipodSelectedTracks.map(t => t.id);
       if (!ids.length || !this.selectedDevnode) return;
+      this._opDeleteCount = ids.length;
+      this._opCopyCount = 0;
       try {
         const r = await this.apiFetch('/library/delete', {
           method: 'POST',
@@ -334,6 +358,8 @@ function selectionModule() {
         .map(t => { const k = this._trackKey(t.artist || t.albumartist, t.album, t.track_nr, t.title, t.disc_nr); const ipodT = this._ipodMap.get(k); return ipodT?.id; })
         .filter(id => id !== undefined);
       const copyPaths = this._buildCopyPaths(this.syncCopyTracks);
+      this._opDeleteCount = deleteIds.length;
+      this._opCopyCount = this.syncCopyTracks.length;
       try {
         const r = await this.apiFetch('/library/sync', {
           method: 'POST',
@@ -381,6 +407,8 @@ function selectionModule() {
             });
           }
           if (prevStatus === 'running' && op?.status !== 'running') {
+            this._opDeleteCount = 0;
+            this._opCopyCount = 0;
             this._ipodMap = null;
             await this._fetchLibrary(true);
             if (this.selectedSourceId) this._initSrcChecked();
