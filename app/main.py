@@ -32,11 +32,23 @@ from app.services.transcode_cache import transcode_cache
 from app.routers.sources import router as sources_router
 from app.routers.ipod import router as ipod_router
 
+log = logging.getLogger(__name__)
+
+
+async def _cache_cleanup_loop():
+    while True:
+        await asyncio.sleep(300)  # run every 5 minutes
+        try:
+            transcode_cache.cleanup_expired(max_age_seconds=3600)
+        except Exception:
+            log.exception("Error in transcode cache cleanup")
+
 
 @asynccontextmanager
 async def lifespan(_app):
     await init_db()
     await device_service.start()
+    asyncio.create_task(_cache_cleanup_loop())
     yield
 
 
@@ -149,9 +161,6 @@ _AUDIO_MIMES = {
     "flac": "audio/flac",
 }
 
-log = logging.getLogger(__name__)
-
-
 def _is_alac(path: Path) -> bool:
     try:
         from mutagen.mp4 import MP4
@@ -192,6 +201,21 @@ async def get_audio(path: str, devnode: str = "", background_tasks: BackgroundTa
 
     mime = _AUDIO_MIMES.get(ext, "application/octet-stream")
     return FileResponse(str(full), media_type=mime)
+
+
+@app.post("/audio/cache/evict")
+async def evict_audio_cache(path: str, devnode: str = ""):
+    target = devnode or device_service.selected
+    if not target:
+        return {"evicted": False}
+    info = device_service.get_device_info(target)
+    if not info:
+        return {"evicted": False}
+    mount = Path(info.mount).resolve()
+    full = (mount / path.lstrip("/")).resolve()
+    if not str(full).startswith(str(mount)):
+        return {"evicted": False}
+    return {"evicted": transcode_cache.evict(str(full))}
 
 
 @app.post("/devices/mount")
