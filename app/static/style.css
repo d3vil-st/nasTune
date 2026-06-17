@@ -10,8 +10,8 @@
       --text2:     #ebebf5cc;
       --muted:     #98989d;
       --dim:       #636366;
-      --blue:      #0a84ff;
-      --blue-bg:   #0a84ff;
+      --blue:      #3d80c0;
+      --blue-bg:   #3d80c0;
       /* Semantic surface tokens — overridden in html.light */
       --surface-bg:     rgba(18,18,20,.85);
       --surface-border: rgba(255,255,255,.08);
@@ -191,7 +191,7 @@
       flex-shrink: 0;
     }
 
-    .storage-wrap { flex-shrink: 0; min-width: 200px; }
+    .storage-wrap { flex-shrink: 0; min-width: 200px; width: min(480px, 24vw); }
 
     .storage-labels {
       display: flex;
@@ -213,7 +213,7 @@
     .storage-fill {
       height: 100%;
       flex-shrink: 0;
-      background: linear-gradient(90deg, #0a84ff, #32ade6);
+      background: linear-gradient(90deg, #2e6da4, #3a8bbf);
       transition: width .4s ease;
     }
 
@@ -222,14 +222,17 @@
       inset: 0;
       background: repeating-linear-gradient(
         -45deg,
-        rgba(255,255,255,.07) 0,
-        rgba(255,255,255,.07) 5px,
+        rgba(255,255,255,.05) 0,
+        rgba(255,255,255,.05) 5px,
         transparent 5px,
         transparent 11px
       );
       background-size: 15.56px 100%;
-      animation: storage-stripe .5s linear infinite;
       pointer-events: none;
+    }
+
+    .storage-bar-stripe.running {
+      animation: storage-stripe .5s linear infinite;
     }
 
     @keyframes storage-stripe {
@@ -246,19 +249,19 @@
     }
     .badges {
       display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
+      flex-direction: column;
+      gap: 2px;
       flex-shrink: 0;
     }
 
     .badge {
-      padding: 3px 9px;
-      border-radius: 10px;
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 500;
-      background: var(--fill-bg);
-      color: var(--text2);
+      color: var(--muted);
       white-space: nowrap;
+      background: none;
+      padding: 0;
+      border-radius: 0;
     }
 
     .search-wrap {
@@ -1145,7 +1148,7 @@
     .btn-ghost:hover { background: var(--bg3); }
 
     /* ── Sync status ─────────────────────────────────────────────── */
-    .sync-check { color: #34c759; font-size: 11px; font-weight: 700; }
+    .sync-check { color: #3d9060; font-size: 11px; font-weight: 700; }
     .sync-dash  { color: var(--bg3); font-size: 11px; }
 
     /* ── Checkboxes ──────────────────────────────────────────────── */
@@ -1169,8 +1172,8 @@
     .row-cb:hover { border-color: var(--muted); }
 
     .row-cb:checked {
-      background: #30d158;
-      border-color: #30d158;
+      background: #3d9060;
+      border-color: #3d9060;
     }
     .row-cb:checked::after {
       content: '';
@@ -1184,22 +1187,22 @@
     }
 
     .row-cb:indeterminate {
-      background: rgba(48,209,88,.2);
-      border-color: #30d158;
+      background: rgba(61,144,96,.2);
+      border-color: #3d9060;
     }
     .row-cb:indeterminate::after {
       content: '';
       display: block;
       width: 7px;
       height: 1.5px;
-      background: #30d158;
+      background: #3d9060;
       border-radius: 1px;
     }
     .artist-row, .album-row { user-select: none; }
 
     /* ── Delete / danger button ──────────────────────────────────── */
     .btn-danger {
-      background: #ff453a; border: none; color: #fff;
+      background: #b84840; border: none; color: #fff;
       border-radius: 10px; padding: 3px 10px; font-size: 11px; font-weight: 600;
       cursor: pointer; transition: opacity .15s; white-space: nowrap;
       display: inline-flex; align-items: center;
@@ -1209,12 +1212,12 @@
 
     .storage-fill-remove {
       height: 100%; flex-shrink: 0;
-      background: rgba(255,69,58,.75);
+      background: rgba(170,65,55,.7);
       transition: width .4s ease;
     }
     .storage-fill-add {
       height: 100%; flex-shrink: 0;
-      background: rgba(48,209,88,.7);
+      background: rgba(55,145,80,.65);
       transition: width .4s ease;
     }
 
@@ -1241,10 +1244,10 @@
     .track-row:nth-child(even):hover { background: var(--bg2); }
 
     .badge {
-      background: var(--badge-bg);
-      color: var(--text2);
-      border-radius: 20px;
-      padding: 3px 10px;
+      background: none;
+      color: var(--muted);
+      border-radius: 0;
+      padding: 0;
     }
 
     /* Pill-shaped CTAs */
@@ -1356,8 +1359,8 @@
       --text2:     rgba(28,28,30,.75);
       --muted:     #6c6c70;
       --dim:       #aeaeb2;
-      --blue:      #007aff;
-      --blue-bg:   #007aff;
+      --blue:      #2d6eaa;
+      --blue-bg:   #2d6eaa;
       --surface-bg:     rgba(242,242,247,.88);
       --surface-border: rgba(0,0,0,.08);
       --card-bg:        rgba(255,255,255,.97);
@@ -1599,5 +1602,5 @@
     @media (max-width: 480px) {
       .ctrl-btn:first-child { display: none; } /* shuffle */
       .ctrl-btn:last-child  { display: none; } /* stop */
-      .badge { font-size: 10px; padding: 2px 8px; }
+      .badge { font-size: 10px; }
     }
