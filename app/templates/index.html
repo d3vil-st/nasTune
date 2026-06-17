@@ -108,7 +108,7 @@
         <div class="storage-fill" :style="'width:' + storageBasePct + '%'"></div>
         <div class="storage-fill-remove" :style="'width:' + storageRemovePct + '%'"></div>
         <div class="storage-fill-add" :style="'width:' + storageAddPct + '%'"></div>
-        <div class="storage-bar-stripe" x-show="opRunning" style="display:none"></div>
+        <div class="storage-bar-stripe" :class="{ running: opRunning }"></div>
       </div>
     </div>
 
