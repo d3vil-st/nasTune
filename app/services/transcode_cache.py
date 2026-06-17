@@ -3,6 +3,7 @@ import errno
 import hashlib
 import logging
 import os
+import time
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -68,6 +69,34 @@ class TranscodeCache:
             self._refs.pop(k, None)
         else:
             self._refs[k] = n
+
+    def evict(self, src: str) -> bool:
+        """Explicitly delete a cached file (e.g. when the user stops playing it)."""
+        dst = self._dst(src)
+        try:
+            dst.unlink()
+            self._refs.pop(str(dst), None)
+            log.info("Evicted transcode cache %s", dst.name)
+            return True
+        except FileNotFoundError:
+            return False
+
+    def cleanup_expired(self, max_age_seconds: int = 3600) -> int:
+        """Delete unreferenced cached files older than max_age_seconds. Returns count deleted."""
+        now = time.time()
+        active = set(self._refs)
+        count = 0
+        for f in _CACHE_DIR.glob("*.flac"):
+            if str(f) in active:
+                continue
+            try:
+                if now - f.stat().st_mtime > max_age_seconds:
+                    f.unlink(missing_ok=True)
+                    log.info("Expired transcode cache %s", f.name)
+                    count += 1
+            except OSError:
+                pass
+        return count
 
     def _evict_if_needed(self) -> None:
         try:

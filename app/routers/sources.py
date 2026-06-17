@@ -173,6 +173,17 @@ async def source_audio(path: str, background_tasks: BackgroundTasks = None):
     return FileResponse(str(full), media_type=mime)
 
 
+@router.post("/audio/cache/evict")
+async def evict_source_audio_cache(path: str):
+    full = Path(path).resolve()
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT path FROM sources") as cur:
+            roots = [row[0] for row in await cur.fetchall()]
+    if not any(str(full).startswith(r) for r in roots):
+        return {"evicted": False}
+    return {"evicted": transcode_cache.evict(str(full))}
+
+
 @router.get("/artwork")
 async def source_artwork(path: str):
     full = await _validated_source_path(path)

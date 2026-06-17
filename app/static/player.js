@@ -13,6 +13,7 @@ function playerModule() {
     playerArtUrl: null,
     playerContext: { artist: '', album: '' },
     playerSource: 'ipod',
+    _cacheEvictUrl: null,
 
     get playerTrack() {
       return this.queue[this.queueIndex] || null;
@@ -37,15 +38,25 @@ function playerModule() {
       this._loadAndPlay();
     },
 
+    _evictCurrentCache() {
+      const url = this._cacheEvictUrl;
+      if (!url) return;
+      this._cacheEvictUrl = null;
+      fetch(url, { method: 'POST' }).catch(() => {});
+    },
+
     _loadAndPlay() {
       const track = this.queue[this.queueIndex];
       if (!track) return;
+      this._evictCurrentCache();
       const audio = this.$refs.audio;
       if (this.playerSource === 'sources') {
         audio.src = '/sources/audio?path=' + encodeURIComponent(track.path);
+        this._cacheEvictUrl = '/sources/audio/cache/evict?path=' + encodeURIComponent(track.path);
       } else {
-        audio.src = '/audio?devnode=' + encodeURIComponent(this.selectedDevnode || '')
-                    + '&path=' + encodeURIComponent(track.ipod_path);
+        const devnode = encodeURIComponent(this.selectedDevnode || '');
+        audio.src = '/audio?devnode=' + devnode + '&path=' + encodeURIComponent(track.ipod_path);
+        this._cacheEvictUrl = '/audio/cache/evict?devnode=' + devnode + '&path=' + encodeURIComponent(track.ipod_path);
       }
       audio.play().catch(() => {});
       this.playerVisible = true;
@@ -109,6 +120,7 @@ function playerModule() {
     },
 
     stopPlayback() {
+      this._evictCurrentCache();
       const a = this.$refs.audio;
       a.pause();
       a.src = '';
