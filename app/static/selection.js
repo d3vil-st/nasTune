@@ -237,7 +237,7 @@ function selectionModule() {
     // ── Sources selection ────────────────────────────────────────────
 
     _initSrcChecked() {
-      if (!this._ipodMap) this._buildIpodMap();
+      this._buildIpodMap();  // always rebuild — library may have changed since last cache fill
       const checked = new Set();
       for (const artist of (this.sourceLibrary?.artists || [])) {
         for (const album of artist.albums) {
@@ -349,6 +349,14 @@ function selectionModule() {
     get syncDeleteBytes()  { return this.syncDeleteTracks.reduce((s, t) => s + (t.size || 0), 0); },
     get syncCopyBytes()    { return this.syncCopyTracks.reduce((s, t) => s + (t.size || 0), 0); },
     get hasSyncChanges()   { return this.syncToDelete.length > 0 || this.syncToCopy.length > 0; },
+    get syncSpaceWarning() {
+      if (!this.library || !this.syncCopyTracks.length) return false;
+      const freeBytes = (this.library.fs_total_gb - this.library.fs_used_gb) * 1024 ** 3;
+      return this.syncCopyBytes > freeBytes + this.syncDeleteBytes;
+    },
+    get syncNeedsConfirm() {
+      return this.syncToDelete.length > 0 || this.syncSpaceWarning;
+    },
 
     async confirmSync() {
       this.showSyncConfirm = false;
@@ -395,6 +403,7 @@ function selectionModule() {
       let es = null;
       this._connectOpEvents = () => {
         if (es) return;
+        const connectedAt = Date.now() / 1000;
         es = new EventSource('/operations/events');
         es.onmessage = async (evt) => {
           const op = JSON.parse(evt.data);
@@ -407,11 +416,12 @@ function selectionModule() {
               if (el) el.scrollTop = el.scrollHeight;
             });
           }
-          // Trigger on running→done transition, OR on a new op that completed so fast
-          // we never saw it as 'running' (started_at differs from any previously seen op).
+          // Trigger on running→done transition, OR on a new op that completed before
+          // the first SSE poll (fast ops like WALKMAN delete). connectedAt guards
+          // against spuriously refreshing on pre-existing done ops seen on connect.
           const justFinished = op?.status !== 'running' && (
             prevStatus === 'running' ||
-            (op?.started_at != null && op.started_at !== prevStartedAt && prevStartedAt != null)
+            (op?.started_at != null && op.started_at !== prevStartedAt && op.started_at >= connectedAt)
           );
           if (justFinished) {
             this._opDeleteCount = 0;

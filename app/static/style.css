@@ -562,6 +562,9 @@
     .track-row:nth-child(even):hover { background: var(--bg2); }
     .track-row.active  { background: rgba(10,132,255,.12) !important; border-left: 2px solid var(--blue); padding-left: 14px; }
     .track-row.missing { opacity: .45; }
+    .artist-row.not-in-src .artist-name,
+    .album-row.not-in-src .album-name,
+    .track-row.not-in-src .t-title { color: #4a9eff; }
     .track-row.disc-sep-before { margin-top: 28px; position: relative; }
     .track-row.disc-sep-before::before {
       content: 'CD ' attr(data-disc-nr);
@@ -1221,6 +1224,19 @@
       height: 100%; flex-shrink: 0;
       background: rgba(55,145,80,.65);
       transition: width .4s ease;
+    }
+    .storage-bar-delta {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: 11px;
+      font-weight: 600;
+      pointer-events: none;
+      text-shadow: 0 1px 3px rgba(0,0,0,.8);
+      z-index: 2;
     }
 
     /* ══ Vibrancy layer — true black base, pill buttons, thinner separators ══ */

@@ -109,7 +109,7 @@ function sourcesModule() {
         this.sources = await r.json();
         if (this.selectedSourceId) {
           const still = this.sources.find(s => s.id === this.selectedSourceId);
-          if (!still) { this.selectedSourceId = null; this.sourceLibrary = null; }
+          if (!still) { this.selectedSourceId = null; this.sourceLibrary = null; this._srcKeyMap = null; }
         }
       } catch (e) { console.error('loadSources:', e); }
     },
@@ -123,6 +123,7 @@ function sourcesModule() {
       this.srcAlbum = null;
       this.srcAlbumArtUrl = null;
       this.sourceLibrary = null;
+      this._srcKeyMap = null;
       this._ipodIndex = null;
       this._ipodMap = null;
       await this._loadSourceLibrary(id);
@@ -135,6 +136,7 @@ function sourcesModule() {
         const r = await this.apiFetch('/sources/' + id + '/library');
         if (r.ok) {
           this.sourceLibrary = await r.json();
+          this._srcKeyMap = null;
           this._buildSrcTrackMap();
           this._initSrcChecked();
         }
@@ -181,6 +183,7 @@ function sourcesModule() {
         if (this.selectedSourceId === id) {
           this.selectedSourceId = null;
           this.sourceLibrary = null;
+          this._srcKeyMap = null;
           this.srcArtist = null;
           this.srcAlbum = null;
         }
