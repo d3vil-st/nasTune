@@ -44,7 +44,7 @@ iPod support is built around [gpod-utils](https://github.com/d3vil-st/gpod-utils
 - **Light / Dark / Auto** theme with system preference detection
 - **Mobile-friendly** responsive 3-pane layout that collapses to a single-pane slide view on small screens
 - **URL state** — navigation (tab, artist, album, device) is encoded in the hash so reloads and bookmarks work
-- **Build version** displayed in the header (tag + short SHA + `-dirty` suffix for uncommitted local builds)
+- **Build version** displayed in the right end of the status bar (tag + short SHA + `-dirty` suffix for uncommitted local builds)
 
 ---
 

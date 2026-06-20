@@ -915,16 +915,26 @@
       gap: 20px;
       align-items: center;
     }
-    /* Fixed-width right section — width is CSS-declared so it never reflows when
-       text content changes (N/M counter, track name), preventing left-side jumping. */
-    .statusbar-op {
+    /* Fixed-width right section — prevents left-content reflow when N/M counter
+       or track name changes. Items stack right via justify-content: flex-end;
+       none of the children grow, so there are no artificial gaps. */
+    .statusbar-right {
       margin-left: auto;
       display: flex;
       align-items: center;
-      gap: 6px;
-      width: min(480px, 55%);
-      flex-shrink: 1;
+      gap: 10px;
+      width: min(440px, 54%);
+      flex-shrink: 0;
+      overflow: hidden;
+      justify-content: flex-end;
+    }
+
+    .statusbar-op {
+      display: flex;
+      align-items: center;
+      gap: 5px;
       min-width: 0;
+      flex-shrink: 1;
       overflow: hidden;
     }
     .statusbar-op-count {
@@ -934,8 +944,8 @@
       color: var(--muted);
     }
     .statusbar-op-current {
-      flex: 1 1 0;
-      min-width: 0;
+      max-width: 160px;
+      flex-shrink: 1;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -1366,15 +1376,11 @@
       box-shadow: 0 1px 3px rgba(0,0,0,.25);
     }
     .build-ver {
-      position: fixed;
-      top: 4px;
-      right: 8px;
       font-size: 10px;
       color: var(--dim);
       font-family: ui-monospace, monospace;
       white-space: nowrap;
-      pointer-events: none;
-      z-index: 10;
+      flex-shrink: 0;
     }
 
     /* ── Light theme ─────────────────────────────────────────────────── */
@@ -1624,7 +1630,7 @@
 
       /* ── Status bar ── */
       .statusbar { padding: 3px 12px; font-size: 11px; }
-      .statusbar-op { width: min(320px, 70%); }
+      .statusbar-right { width: min(320px, 78%); }
     }
 
     /* Very small phones */
