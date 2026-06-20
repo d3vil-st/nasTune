@@ -14,7 +14,7 @@ from app.services.devices import device_service
 from app.services.operations import op_service, _OP_HISTORY_DIR
 
 log = logging.getLogger(__name__)
-router = APIRouter(tags=["ipod"])
+router = APIRouter(tags=["device"])
 
 _UNSAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
@@ -142,7 +142,7 @@ async def _tar_stream(tracks: list[DownloadTrack], mount: str):
 
 
 def _resolve_device_id(devnode: str) -> str:
-    uuid = device_service.get_ipod_uuid(devnode)
+    uuid = device_service.get_device_uuid(devnode)
     if uuid:
         return uuid
     return devnode.lstrip("/").replace("/", "_")
@@ -189,7 +189,7 @@ async def download_tracks(body: DownloadBody):
     return StreamingResponse(
         _tar_stream(body.tracks, mount),
         media_type="application/x-tar",
-        headers={"Content-Disposition": 'attachment; filename="ipod_export.tar"'},
+        headers={"Content-Disposition": 'attachment; filename="device_export.tar"'},
     )
 
 

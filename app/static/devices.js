@@ -56,8 +56,8 @@ function devicesModule() {
       this.walkmanScanProgress = {};
       this.selectedDevnode = devnode;
       this.library = null;
-      this._ipodMap = null;
-      this.ipodSelection = new Set();
+      this._deviceMap = null;
+      this.deviceSelection = new Set();
       this.selectedArtist = null;
       this.selectedAlbum = null;
       this.selectedTrack = null;
@@ -119,8 +119,8 @@ function devicesModule() {
         const r = await this.apiFetch('/library/refresh', { method: 'POST' });
         if (!r.ok) { this.libraryError = await r.text(); return; }
         this.library = await r.json();
-        this._ipodMap = null;
-        this.ipodSelection = new Set();
+        this._deviceMap = null;
+        this.deviceSelection = new Set();
         this.selectedTrack = null;
         this._validateIpodSelection();
       } catch (e) {
@@ -201,7 +201,7 @@ function devicesModule() {
             this.walkmanScanning = false;
             this._stopWalkmanPoll();
             if (s.status === 'done') {
-              this._ipodMap = null;
+              this._deviceMap = null;
               await this.refreshLibrary();
               if (this.selectedSourceId) this._initSrcChecked();
             }

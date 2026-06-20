@@ -30,7 +30,7 @@ from app.services.db import init_db
 from app.services.devices import device_service
 from app.services.transcode_cache import transcode_cache
 from app.routers.sources import router as sources_router
-from app.routers.ipod import router as ipod_router
+from app.routers.device import router as device_router
 from app.routers.walkman import router as walkman_router
 
 log = logging.getLogger(__name__)
@@ -61,7 +61,7 @@ async def lifespan(_app):
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(sources_router)
-app.include_router(ipod_router)
+app.include_router(device_router)
 app.include_router(walkman_router)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")

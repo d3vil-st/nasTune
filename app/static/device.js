@@ -1,4 +1,4 @@
-function browserModule() {
+function deviceModule() {
   return {
     // Browser state
     search: '',
@@ -7,8 +7,8 @@ function browserModule() {
     selectedTrack: null,
     albumArtUrl: null,
     coverPopupUrl: null,
-    _ipodIndex: null,
-    _ipodMap: null,
+    _deviceIndex: null,
+    _deviceMap: null,
     _srcKeyMap: null,
 
     get filteredArtists() {
@@ -102,22 +102,22 @@ function browserModule() {
              '&path=' + encodeURIComponent(t.ipod_path);
     },
 
-    _buildIpodMap() {
-      this._ipodMap = new Map();
+    _buildDeviceMap() {
+      this._deviceMap = new Map();
       for (const artist of (this.library?.artists || [])) {
         for (const album of artist.albums) {
           for (const t of album.tracks) {
-            this._ipodMap.set(this._trackKey(t.artist || artist.name, t.album || album.name, t.track_nr, t.title, t.disc_nr), t);
+            this._deviceMap.set(this._trackKey(t.artist || artist.name, t.album || album.name, t.track_nr, t.title, t.disc_nr), t);
           }
         }
       }
-      this._ipodIndex = new Set(this._ipodMap.keys());
+      this._deviceIndex = new Set(this._deviceMap.keys());
     },
 
-    isOnIpod(track) {
+    isOnDevice(track) {
       if (!this.library) return false;
-      if (!this._ipodMap) this._buildIpodMap();
-      return this._ipodMap.has(this._trackKey(track.artist || track.albumartist, track.album, track.track_nr, track.title, track.disc_nr));
+      if (!this._deviceMap) this._buildDeviceMap();
+      return this._deviceMap.has(this._trackKey(track.artist || track.albumartist, track.album, track.track_nr, track.title, track.disc_nr));
     },
 
     _buildSrcKeyMap() {
