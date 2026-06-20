@@ -47,6 +47,7 @@ class DownloadBody(BaseModel):
 
 
 def _get_mount(devnode: str) -> str:
+    """For iPod-only operations (gpod-rm/gpod-cp). Raises for WALKMAN."""
     info = device_service.get_device_info(devnode)
     if not info:
         raise HTTPException(404, "Device not found")
@@ -57,13 +58,25 @@ def _get_mount(devnode: str) -> str:
     return info.mount
 
 
+def _get_device(devnode: str):
+    """For operations that support both iPod and WALKMAN."""
+    info = device_service.get_device_info(devnode)
+    if not info:
+        raise HTTPException(404, "Device not found")
+    if not info.is_ipod and not info.is_walkman:
+        raise HTTPException(400, "Device does not support library operations")
+    if op_service.is_busy():
+        raise HTTPException(409, "Another operation is already running")
+    return info
+
+
 def _get_mount_ro(devnode: str) -> str:
     """Mount lookup without busy check — downloads are read-only."""
     info = device_service.get_device_info(devnode)
     if not info:
         raise HTTPException(404, "Device not found")
-    if not info.is_ipod:
-        raise HTTPException(400, "Not an iPod")
+    if not info.is_ipod and not info.is_walkman:
+        raise HTTPException(400, "Device does not support downloads")
     return info.mount
 
 
@@ -85,6 +98,15 @@ def _arcname(t: DownloadTrack) -> str:
     return f"{artist}/{album_dir}/{track_file}"
 
 
+def _track_disk_path(mount: str, ipod_path: str) -> str:
+    """Resolve a track's disk path from mount + ipod_path.
+    iPod uses colon-separated paths (:iPod_Control:…); WALKMAN uses POSIX paths (MUSIC/…).
+    """
+    if ':' in ipod_path:
+        return mount + ipod_path.replace(':', '/')
+    return os.path.join(mount, ipod_path.lstrip('/'))
+
+
 async def _tar_stream(tracks: list[DownloadTrack], mount: str):
     r_fd, w_fd = os.pipe()
 
@@ -93,9 +115,7 @@ async def _tar_stream(tracks: list[DownloadTrack], mount: str):
             with os.fdopen(w_fd, 'wb') as wf:
                 with tarfile.open(fileobj=wf, mode='w|') as tar:
                     for t in tracks:
-                        # iPod stores paths with colon separators: ":iPod_Control:Music:..."
-                        rel      = t.ipod_path.replace(':', '/')
-                        disk_path = mount + rel
+                        disk_path = _track_disk_path(mount, t.ipod_path)
                         arcname  = _arcname(t)
                         try:
                             tar.add(disk_path, arcname=arcname)
@@ -130,15 +150,33 @@ def _resolve_device_id(devnode: str) -> str:
 
 @router.post("/library/delete")
 async def delete_tracks(body: DeleteBody):
-    mount = _get_mount(body.devnode)
-    await op_service.run_delete(body.track_ids, mount, device_id=_resolve_device_id(body.devnode))
+    info = _get_device(body.devnode)
+    device_id = _resolve_device_id(body.devnode)
+    if info.is_walkman:
+        ids = [int(i) for i in body.track_ids]
+        await op_service.run_walkman_delete(ids, info.mount, info.walkman_db_id, device_id)
+    else:
+        await op_service.run_delete(body.track_ids, info.mount, device_id=device_id)
     return {"ok": True}
 
 
 @router.post("/library/sync")
 async def sync_tracks(body: SyncBody):
-    mount = _get_mount(body.devnode)
-    await op_service.run_sync(body.copy_paths, body.delete_ids, mount, device_id=_resolve_device_id(body.devnode), copy_track_count=body.copy_track_count)
+    info = _get_device(body.devnode)
+    device_id = _resolve_device_id(body.devnode)
+    if info.is_walkman:
+        meta = device_service.get_walkman_meta(body.devnode)
+        music_path = meta["cap"]["music_path"] if meta else "MUSIC"
+        delete_ids = [int(i) for i in body.delete_ids]
+        await op_service.run_walkman_sync(
+            body.copy_paths, delete_ids, info.mount, music_path,
+            info.walkman_db_id, device_id, body.copy_track_count,
+        )
+    else:
+        await op_service.run_sync(
+            body.copy_paths, body.delete_ids, info.mount,
+            device_id=device_id, copy_track_count=body.copy_track_count,
+        )
     return {"ok": True}
 
 

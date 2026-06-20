@@ -56,11 +56,11 @@
         <div class="sub" x-show="library"
              x-text="library ? library.device.model_name + ' · ' + library.fs_total_gb + ' GB ' + library.fs_type : ''">
         </div>
-        <div class="sub sub-uuid" x-show="library"
-             x-text="library ? 'UUID ' + library.device.uuid : ''">
+        <div class="sub sub-uuid" x-show="library && (library.device.uuid || library.device.serial)"
+             x-text="library ? (library.walkman ? 'Serial ' + library.device.serial : 'UUID ' + library.device.uuid) : ''">
         </div>
         <div class="sub" x-show="!library"
-             x-text="libraryLoading ? 'Loading library…' : (libraryError ? 'Error loading library' : (selectedDevice && !selectedDevice.mounted ? 'Tap to mount iPod' : (devices.length ? 'Tap to select device' : 'No iPods connected')))">
+             x-text="libraryLoading ? 'Loading library…' : (libraryError ? 'Error loading library' : (selectedDevice && !selectedDevice.mounted ? 'Tap to mount device' : (devices.length ? 'Tap to select device' : 'No devices connected')))">
         </div>
       </div>
 
@@ -79,10 +79,21 @@
 
     <!-- Refresh + eject: same-size icon buttons, outside selector -->
     <div class="header-actions">
-      <button class="icon-btn" x-show="library"
-              @click="refreshLibrary" :disabled="libraryRefreshing || currentOp?.status === 'running'" title="Reload library from iPod"><span :class="{ spinning: libraryRefreshing }">&#x21BB;</span></button>
+      <button class="icon-btn" x-show="selectedDevice?.is_walkman"
+              @click="triggerWalkmanScan()"
+              :disabled="walkmanScanning || currentOp?.status === 'running'"
+              title="Scan WALKMAN music library">
+        <span :class="{ pulsing: walkmanScanning }" style="display:flex;align-items:center;justify-content:center">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+            <circle cx="6.5" cy="6.5" r="4.5"/>
+            <line x1="10" y1="10" x2="13" y2="13"/>
+          </svg>
+        </span>
+      </button>
+      <button class="icon-btn" x-show="library && !selectedDevice?.is_walkman"
+              @click="refreshLibrary" :disabled="libraryRefreshing || currentOp?.status === 'running'" title="Reload library"><span :class="{ spinning: libraryRefreshing }">&#x21BB;</span></button>
       <button class="icon-btn danger" x-show="selectedDevnode" @click="ejectDevice"
-              :disabled="currentOp?.status === 'running'" title="Eject iPod">&#x23CF;</button>
+              :disabled="currentOp?.status === 'running'" title="Eject device">&#x23CF;</button>
     </div>
 
     <!-- Storage bar (only when library loaded) -->
@@ -204,7 +215,7 @@
   <!-- ── Error banner ── -->
   <div x-show="libraryError && !library" style="flex-shrink:0; overflow:auto;">
     <div class="error-box">
-      <strong>Could not read iPod library</strong>
+      <strong>Could not read device library</strong>
       <span x-text="libraryError"></span>
     </div>
   </div>
@@ -212,13 +223,13 @@
   <!-- ── No devices / loading / browser ── -->
   <div style="flex:1; overflow:hidden; display:flex; flex-direction:column;">
 
-    <!-- No iPods connected -->
+    <!-- No devices connected -->
     <div x-show="viewMode === 'library' && !libraryLoading && !library && devices.length === 0"
          style="flex:1; display:flex; align-items:center; justify-content:center;">
       <div class="empty">
         <span class="empty-icon">&#x1F3B5;</span>
-        <span class="empty-label">No iPods connected</span>
-        <span class="empty-sub">Connect an iPod or set <code style="color:#ebebf5;background:#3a3a3c;padding:1px 5px;border-radius:4px">IPOD_MOUNT_POINT</code></span>
+        <span class="empty-label">No devices connected</span>
+        <span class="empty-sub">Connect an iPod or WALKMAN, or set <code style="color:#ebebf5;background:#3a3a3c;padding:1px 5px;border-radius:4px">IPOD_MOUNT_POINT</code></span>
       </div>
     </div>
 
@@ -799,6 +810,22 @@
     </template>
     <template x-if="viewMode === 'sources' && !srcArtist && sourceLibrary">
       <span x-text="search ? filteredSrcArtists.length + ' / ' + (sourceLibrary.artists?.length || 0) + ' artists' : (sourceLibrary.total_tracks || 0).toLocaleString() + ' songs · ' + (sourceLibrary.artists?.length || 0) + ' artists'"></span>
+    </template>
+    <!-- WALKMAN scan progress -->
+    <template x-if="walkmanScanning">
+      <span class="statusbar-op">
+        <span style="width:7px;height:7px;border-radius:50%;background:#ffd60a;flex-shrink:0;animation:scan-pulse 1s ease-in-out infinite"></span>
+        <span style="color:#ffd60a;font-weight:500;flex-shrink:0">Scanning WALKMAN…</span>
+        <template x-if="walkmanScanProgress.total > 0">
+          <span class="statusbar-op-count" x-text="(walkmanScanProgress.processed || 0).toLocaleString() + ' / ' + walkmanScanProgress.total.toLocaleString() + ' files'"></span>
+        </template>
+        <template x-if="!walkmanScanProgress.total">
+          <span style="color:var(--muted);flex-shrink:0">Finding files…</span>
+        </template>
+        <template x-if="walkmanScanProgress.current_file">
+          <span class="statusbar-op-current" x-text="walkmanScanProgress.current_file"></span>
+        </template>
+      </span>
     </template>
     <!-- Scan progress (visible any time a source is scanning) -->
     <template x-if="sources.some(s => s.scan_status === 'scanning')">
