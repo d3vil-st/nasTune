@@ -15,7 +15,7 @@
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/utils.js"></script>
   <script src="/static/devices.js"></script>
-  <script src="/static/browser.js"></script>
+  <script src="/static/device.js"></script>
   <script src="/static/player.js"></script>
   <script src="/static/sources.js"></script>
   <script src="/static/selection.js"></script>
@@ -142,9 +142,9 @@
         <span class="badge" x-text="(library?.total_albums || 0) + ' albums'"></span>
         <span class="badge" x-text="(library?.artists?.length || 0) + ' artists'"></span>
       </div>
-      <button class="btn-primary" x-show="viewMode === 'library' && ipodSelection.size > 0"
+      <button class="btn-primary" x-show="viewMode === 'library' && deviceSelection.size > 0"
               @click="downloadSelectedTracks()">Download</button>
-      <button class="btn-danger" x-show="viewMode === 'library' && ipodSelection.size > 0"
+      <button class="btn-danger" x-show="viewMode === 'library' && deviceSelection.size > 0"
               :disabled="currentOp?.status === 'running'"
               @click="showDeleteConfirm = true">Delete</button>
       <button class="btn-primary" x-show="viewMode === 'sources' && hasSyncChanges"
@@ -754,10 +754,10 @@
         </div>
         <div style="padding:16px 20px;color:var(--fg2);font-size:13px;line-height:1.6">
           <p style="margin:0 0 8px">
-            <strong x-text="ipodSelectedTracks.length + ' track' + (ipodSelectedTracks.length !== 1 ? 's' : '')"></strong>
+            <strong x-text="deviceSelectedTracks.length + ' track' + (deviceSelectedTracks.length !== 1 ? 's' : '')"></strong>
             will be permanently deleted from the iPod.
           </p>
-          <p style="margin:0;color:var(--muted)" x-text="'Space freed: ' + fmtSize(ipodSelectedBytes)"></p>
+          <p style="margin:0;color:var(--muted)" x-text="'Space freed: ' + fmtSize(deviceSelectedBytes)"></p>
         </div>
         <div style="padding:12px 20px;display:flex;justify-content:flex-end;gap:8px">
           <button class="btn-ghost" @click="showDeleteConfirm = false">Cancel</button>

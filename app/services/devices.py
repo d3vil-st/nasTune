@@ -405,7 +405,7 @@ class DeviceService:
                 self._cache.pop(devnode, None)
                 break
 
-    def get_ipod_uuid(self, devnode: str) -> str | None:
+    def get_device_uuid(self, devnode: str) -> str | None:
         lib = self._cache.get(devnode)
         if lib:
             return lib.get("device", {}).get("uuid") or None

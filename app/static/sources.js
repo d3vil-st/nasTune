@@ -45,7 +45,7 @@ function sourcesModule() {
       }
       if (this.srcShowUnsynced && this.library) {
         artists = artists.filter(a =>
-          a.albums.some(al => al.tracks.some(t => !this.isOnIpod(t)))
+          a.albums.some(al => al.tracks.some(t => !this.isOnDevice(t)))
         );
       }
       return artists;
@@ -80,7 +80,7 @@ function sourcesModule() {
         }
       }
       if (this.srcShowUnsynced && this.library) {
-        albums = albums.filter(al => al.tracks.some(t => !this.isOnIpod(t)));
+        albums = albums.filter(al => al.tracks.some(t => !this.isOnDevice(t)));
       }
       return albums;
     },
@@ -98,7 +98,7 @@ function sourcesModule() {
         }
       }
       if (this.srcShowUnsynced && this.library) {
-        tracks = tracks.filter(t => !this.isOnIpod(t));
+        tracks = tracks.filter(t => !this.isOnDevice(t));
       }
       return tracks;
     },
@@ -124,8 +124,8 @@ function sourcesModule() {
       this.srcAlbumArtUrl = null;
       this.sourceLibrary = null;
       this._srcKeyMap = null;
-      this._ipodIndex = null;
-      this._ipodMap = null;
+      this._deviceIndex = null;
+      this._deviceMap = null;
       await this._loadSourceLibrary(id);
       this._startSrcPoll();
     },

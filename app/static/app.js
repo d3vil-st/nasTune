@@ -2,7 +2,7 @@ function app() {
   const mods = [
     utilsModule(),
     devicesModule(),
-    browserModule(),
+    deviceModule(),
     playerModule(),
     sourcesModule(),
     selectionModule(),

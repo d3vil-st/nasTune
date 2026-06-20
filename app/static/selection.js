@@ -1,7 +1,7 @@
 function selectionModule() {
   return {
     // Selection & operations state
-    ipodSelection: new Set(),
+    deviceSelection: new Set(),
     srcChecked: new Set(),
     srcInitialOnIpod: new Set(),
     showDeleteConfirm: false,
@@ -23,21 +23,21 @@ function selectionModule() {
 
     // ── Storage bar ──────────────────────────────────────────────────
 
-    get ipodSelectedTracks() {
+    get deviceSelectedTracks() {
       const out = [];
       for (const artist of (this.library?.artists || []))
         for (const album of artist.albums)
           for (const t of album.tracks)
-            if (this.ipodSelection.has(t.id)) out.push(t);
+            if (this.deviceSelection.has(t.id)) out.push(t);
       return out;
     },
 
-    get ipodSelectedBytes() {
-      return this.ipodSelectedTracks.reduce((s, t) => s + (t.size || 0), 0);
+    get deviceSelectedBytes() {
+      return this.deviceSelectedTracks.reduce((s, t) => s + (t.size || 0), 0);
     },
 
     get storageRemoveBytes() {
-      if (this.viewMode === 'library') return this.ipodSelectedBytes;
+      if (this.viewMode === 'library') return this.deviceSelectedBytes;
       if (this.viewMode === 'sources') return this.syncDeleteBytes;
       return 0;
     },
@@ -95,16 +95,16 @@ function selectionModule() {
 
     // ── iPod selection ───────────────────────────────────────────────
 
-    isTrackSelected(t) { return this.ipodSelection.has(t.id); },
+    isTrackSelected(t) { return this.deviceSelection.has(t.id); },
 
     isAlbumSelected(al) {
       if (!al) return false;
-      return al.tracks.length > 0 && al.tracks.every(t => this.ipodSelection.has(t.id));
+      return al.tracks.length > 0 && al.tracks.every(t => this.deviceSelection.has(t.id));
     },
 
     isAlbumIndeterminate(al) {
       if (!al) return false;
-      const n = al.tracks.filter(t => this.ipodSelection.has(t.id)).length;
+      const n = al.tracks.filter(t => this.deviceSelection.has(t.id)).length;
       return n > 0 && n < al.tracks.length;
     },
 
@@ -112,74 +112,74 @@ function selectionModule() {
       const artist = this.library?.artists.find(a => a.name === name);
       if (!artist) return false;
       const all = artist.albums.flatMap(al => al.tracks);
-      return all.length > 0 && all.every(t => this.ipodSelection.has(t.id));
+      return all.length > 0 && all.every(t => this.deviceSelection.has(t.id));
     },
 
     isArtistIndeterminate(name) {
       const artist = this.library?.artists.find(a => a.name === name);
       if (!artist) return false;
       const all = artist.albums.flatMap(al => al.tracks);
-      const n = all.filter(t => this.ipodSelection.has(t.id)).length;
+      const n = all.filter(t => this.deviceSelection.has(t.id)).length;
       return n > 0 && n < all.length;
     },
 
     toggleTrack(t, checked) {
-      const s = new Set(this.ipodSelection);
+      const s = new Set(this.deviceSelection);
       checked ? s.add(t.id) : s.delete(t.id);
-      this.ipodSelection = s;
+      this.deviceSelection = s;
     },
 
     toggleAlbum(al, checked) {
       if (!al) return;
-      const s = new Set(this.ipodSelection);
+      const s = new Set(this.deviceSelection);
       al.tracks.forEach(t => checked ? s.add(t.id) : s.delete(t.id));
-      this.ipodSelection = s;
+      this.deviceSelection = s;
     },
 
     toggleArtist(name, checked) {
       const artist = this.library?.artists.find(a => a.name === name);
       if (!artist) return;
-      const s = new Set(this.ipodSelection);
+      const s = new Set(this.deviceSelection);
       artist.albums.flatMap(al => al.tracks).forEach(t => checked ? s.add(t.id) : s.delete(t.id));
-      this.ipodSelection = s;
+      this.deviceSelection = s;
     },
 
     allCurrentTracksSelected() {
-      return this.currentTracks.length > 0 && this.currentTracks.every(t => this.ipodSelection.has(t.id));
+      return this.currentTracks.length > 0 && this.currentTracks.every(t => this.deviceSelection.has(t.id));
     },
     someCurrentTracksSelected() {
-      return this.currentTracks.some(t => this.ipodSelection.has(t.id));
+      return this.currentTracks.some(t => this.deviceSelection.has(t.id));
     },
     toggleAllCurrentTracks(checked) {
-      const s = new Set(this.ipodSelection);
+      const s = new Set(this.deviceSelection);
       this.currentTracks.forEach(t => checked ? s.add(t.id) : s.delete(t.id));
-      this.ipodSelection = s;
+      this.deviceSelection = s;
     },
 
     allCurrentAlbumsSelected() {
       return this.currentAlbums.length > 0 &&
-        this.currentAlbums.every(al => al.tracks.length > 0 && al.tracks.every(t => this.ipodSelection.has(t.id)));
+        this.currentAlbums.every(al => al.tracks.length > 0 && al.tracks.every(t => this.deviceSelection.has(t.id)));
     },
     someCurrentAlbumsSelected() {
-      return this.currentAlbums.some(al => al.tracks.some(t => this.ipodSelection.has(t.id)));
+      return this.currentAlbums.some(al => al.tracks.some(t => this.deviceSelection.has(t.id)));
     },
     toggleAllCurrentAlbums(checked) {
-      const s = new Set(this.ipodSelection);
+      const s = new Set(this.deviceSelection);
       this.currentAlbums.flatMap(al => al.tracks).forEach(t => checked ? s.add(t.id) : s.delete(t.id));
-      this.ipodSelection = s;
+      this.deviceSelection = s;
     },
 
     allFilteredArtistsSelected() {
       const tracks = this.filteredArtists.flatMap(a => a.albums.flatMap(al => al.tracks));
-      return tracks.length > 0 && tracks.every(t => this.ipodSelection.has(t.id));
+      return tracks.length > 0 && tracks.every(t => this.deviceSelection.has(t.id));
     },
     someFilteredArtistsSelected() {
-      return this.filteredArtists.some(a => a.albums.some(al => al.tracks.some(t => this.ipodSelection.has(t.id))));
+      return this.filteredArtists.some(a => a.albums.some(al => al.tracks.some(t => this.deviceSelection.has(t.id))));
     },
     toggleAllFilteredArtists(checked) {
-      const s = new Set(this.ipodSelection);
+      const s = new Set(this.deviceSelection);
       this.filteredArtists.flatMap(a => a.albums.flatMap(al => al.tracks)).forEach(t => checked ? s.add(t.id) : s.delete(t.id));
-      this.ipodSelection = s;
+      this.deviceSelection = s;
     },
 
     async downloadSelectedTracks() {
@@ -187,7 +187,7 @@ function selectionModule() {
       for (const artist of (this.library?.artists || []))
         for (const album of artist.albums)
           for (const t of album.tracks)
-            if (this.ipodSelection.has(t.id))
+            if (this.deviceSelection.has(t.id))
               tracks.push({
                 ipod_path:   t.ipod_path,
                 artist:      t.artist || artist.name,
@@ -209,7 +209,7 @@ function selectionModule() {
         const url  = URL.createObjectURL(blob);
         const a    = document.createElement('a');
         a.href     = url;
-        a.download = 'ipod_export.tar';
+        a.download = 'device_export.tar';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -219,7 +219,7 @@ function selectionModule() {
 
     async deleteSelectedTracks() {
       this.showDeleteConfirm = false;
-      const ids = this.ipodSelectedTracks.map(t => t.id);
+      const ids = this.deviceSelectedTracks.map(t => t.id);
       if (!ids.length || !this.selectedDevnode) return;
       this._opDeleteCount = ids.length;
       this._opCopyCount = 0;
@@ -230,19 +230,19 @@ function selectionModule() {
           body: JSON.stringify({ devnode: this.selectedDevnode, track_ids: ids }),
         });
         if (!r.ok) { const d = await r.json().catch(()=>({})); alert(d.detail || 'Delete failed'); return; }
-        this.ipodSelection = new Set();
+        this.deviceSelection = new Set();
       } catch (e) { if (e.message !== 'auth_expired') alert('Delete failed: ' + e.message); }
     },
 
     // ── Sources selection ────────────────────────────────────────────
 
     _initSrcChecked() {
-      this._buildIpodMap();  // always rebuild — library may have changed since last cache fill
+      this._buildDeviceMap();  // always rebuild — library may have changed since last cache fill
       const checked = new Set();
       for (const artist of (this.sourceLibrary?.artists || [])) {
         for (const album of artist.albums) {
           for (const t of album.tracks) {
-            if (this._ipodMap.has(this._trackKey(t.artist || artist.name, t.album || album.name, t.track_nr, t.title, t.disc_nr))) {
+            if (this._deviceMap.has(this._trackKey(t.artist || artist.name, t.album || album.name, t.track_nr, t.title, t.disc_nr))) {
               checked.add(t.id);
             }
           }
@@ -361,9 +361,9 @@ function selectionModule() {
     async confirmSync() {
       this.showSyncConfirm = false;
       if (!this.selectedDevnode) return;
-      if (!this._ipodMap) this._buildIpodMap();
+      if (!this._deviceMap) this._buildDeviceMap();
       const deleteIds = this.syncDeleteTracks
-        .map(t => { const k = this._trackKey(t.artist || t.albumartist, t.album, t.track_nr, t.title, t.disc_nr); const ipodT = this._ipodMap.get(k); return ipodT?.id; })
+        .map(t => { const k = this._trackKey(t.artist || t.albumartist, t.album, t.track_nr, t.title, t.disc_nr); const ipodT = this._deviceMap.get(k); return ipodT?.id; })
         .filter(id => id !== undefined);
       const copyPaths = this._buildCopyPaths(this.syncCopyTracks);
       this._opDeleteCount = deleteIds.length;
@@ -426,10 +426,10 @@ function selectionModule() {
           if (justFinished) {
             this._opDeleteCount = 0;
             this._opCopyCount = 0;
-            this._ipodMap = null;
+            this._deviceMap = null;
             this.selectedTrack = null;
             this.srcSelectedTrack = null;
-            this.ipodSelection = new Set();
+            this.deviceSelection = new Set();
             await this._fetchLibrary(true);
             if (this.selectedSourceId) this._initSrcChecked();
             await this.loadOpHistory(this.selectedDevnode);
