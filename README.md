@@ -28,8 +28,9 @@ iPod support is built around [gpod-utils](https://github.com/d3vil-st/gpod-utils
 - **Browse** your iPod or WALKMAN library in a 3-pane iTunes-style view (artists → albums → tracks)
 - **All Artists** — select the top row in the artist column to browse all albums across every artist in a single flat view
 - **Sony WALKMAN support** — detected automatically via `default-capability.xml`; tag-based scan (mutagen) indexes the device into SQLite; delete and sync use direct file operations with immediate DB update — no rescan needed
+- **Force full rescan** — WALKMAN devices and NAS sources each have a full-rescan button that clears all existing library data and re-reads every file from scratch; useful after tag corrections or large file moves (confirmation dialog shown before starting)
 - **Sync** tracks from a NAS music source to the device — add missing tracks, remove ones no longer in the source; sync confirmation dialog appears when deletes are involved or free space is insufficient
-- **Source comparison** — tracks in the iPod/WALKMAN pane appear in blue when they are absent from the selected NAS source, making gaps immediately visible at a glance
+- **Source comparison** — tracks in the iPod/WALKMAN pane appear in blue when they are absent from the selected NAS source; parent album and artist rows turn blue as soon as even a single track is missing
 - **Unsynced filter** — one-click toggle in the Sources bar to show only tracks not yet on the device; state saved per browser
 - **Delete** selected tracks from the device
 - **Download** selected tracks as a `.tar` archive with restored directory structure (`Artist/[Year] - Album/NN - Title.ext`)

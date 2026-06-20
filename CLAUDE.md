@@ -53,11 +53,12 @@ nasTune/
 └── app/
     ├── main.py                # FastAPI app factory; mounts /static; core iPod endpoints
     ├── routers/
-    │   ├── ipod.py            # /library/delete, /library/sync, /library/download, /operations
+    │   ├── device.py          # /library/delete, /library/sync, /library/download, /operations
     │   ├── walkman.py         # /walkman/scan, /walkman/scan_status
     │   └── sources.py         # /sources/* — CRUD, scan, browse, library, audio, artwork
     ├── services/
     │   ├── devices.py         # DeviceService: lsblk polling, mount/unmount, library cache, eject
+    │   ├── ipod.py            # iPod detection: IPOD_SENTINEL, is_ipod(), log_mount_contents()
     │   ├── gpod.py            # Runs gpod-ls, parses JSON → nested artist/album/track dicts
     │   ├── walkman.py         # WALKMAN detection, SQLite scan, library build, delete/copy ops
     │   ├── artwork.py         # mutagen-based artwork extractor (M4A/MP3/FLAC)
@@ -71,7 +72,7 @@ nasTune/
         ├── style.css          # All CSS; CSS var token system, light/dark theme
         ├── utils.js           # Format helpers, gradients, _normStr/_trackKey, source format/quality, theme state
         ├── devices.js         # Device list, SSE, library fetch/refresh, eject
-        ├── browser.js         # iPod 3-pane browser, artUrl, _buildIpodMap, isOnIpod
+        ├── device.js          # Device 3-pane browser, artUrl, _buildDeviceMap, isOnDevice
         ├── player.js          # Audio queue, play/pause/skip, iPod + source playback
         ├── sources.js         # Source CRUD, scan polling, folder browser, _buildCopyPaths
         ├── selection.js       # Checkboxes, select-all, delete/sync/download ops, storage bar
@@ -128,7 +129,7 @@ Key docker-compose volumes:
 | `GET` | `/artwork?path=&devnode=` | Extracts embedded album art via mutagen; cached 24 h |
 | `GET` | `/audio?path=&devnode=` | Serves audio from iPod mount; ALAC M4A is transcoded to FLAC on-the-fly |
 
-### iPod operations (app/routers/ipod.py)
+### iPod/WALKMAN operations (app/routers/device.py)
 
 | Method | Path | Description |
 |---|---|---|
@@ -143,7 +144,7 @@ Key docker-compose volumes:
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/walkman/scan?devnode=` | Trigger a background library scan (mutagen tag read into SQLite) |
+| `POST` | `/walkman/scan?devnode=&full=` | Trigger a background library scan; `full=true` clears all tracks first (full rescan) |
 | `GET` | `/walkman/scan_status?devnode=` | Live scan progress: status, processed, total, current_file, error |
 
 WALKMAN delete and sync go through the same `/library/delete` and `/library/sync` endpoints as iPod — the router dispatches to `walkman.py` based on `device_info.is_walkman`. Operations use `shutil.copy2` / `os.remove` and update the SQLite library immediately on completion without a rescan.
@@ -166,7 +167,7 @@ The archive restores the original directory structure:
 | `GET` | `/sources` | List all registered sources |
 | `POST` | `/sources` | `{ name, path, type }` — add source and start scan |
 | `DELETE` | `/sources/{id}` | Remove source and all its track data |
-| `POST` | `/sources/{id}/scan` | Trigger a rescan |
+| `POST` | `/sources/{id}/scan?full=` | Trigger a rescan; `full=true` clears all tracks first (full rescan) |
 | `GET` | `/sources/browse?path=` | Directory browser for adding sources |
 | `GET` | `/sources/{id}/library` | Source library as artist → album → track hierarchy |
 | `GET` | `/sources/audio?path=` | Serve audio file from source; ALAC → FLAC transcode |
@@ -184,7 +185,7 @@ The UI is a single-page app built from server-rendered HTML (Jinja2) with Alpine
 
 ```js
 function app() {
-  const mods = [utilsModule(), devicesModule(), browserModule(),
+  const mods = [utilsModule(), devicesModule(), deviceModule(),
                 playerModule(), sourcesModule(), selectionModule()];
   const state = {};
   for (const mod of mods) {
@@ -241,17 +242,18 @@ A clear (×) button appears inside the search input (`.search-clear`) when the f
 
 The sources bar (`.sources-bar`) contains quick-action buttons that are only shown when relevant:
 
-- **Unsynced only** (`srcShowUnsynced`) — filters all three source panes to artists/albums/tracks not yet on the iPod, using `isOnIpod()`. Only visible when both iPod library and source library are loaded. Persisted in `localStorage` under key `nastune-src-unsynced`. Active state indicated by blue border (`.manage-btn.active`).
+- **Unsynced only** (`srcShowUnsynced`) — filters all three source panes to artists/albums/tracks not yet on the device, using `isOnDevice()`. Only visible when both device library and source library are loaded. Persisted in `localStorage` under key `nastune-src-unsynced`. Active state indicated by blue border (`.manage-btn.active`).
+- **Full rescan** — available for WALKMAN devices (magnifying-glass icon in the device header) and for NAS sources (in the Manage Sources modal and the sources bar). Calls `triggerWalkmanScan(true)` / `rescanSource(id, true)` which send `?full=true` to the backend, clearing all existing DB rows before re-reading every file. A `confirm()` dialog is shown before starting since full rescans can take minutes.
 
 ### Source presence highlighting (iPod/WALKMAN pane)
 
 When a source is selected, items in the device pane that are **absent from the source** are highlighted in blue text via the `.not-in-src` CSS class (color `#4a9eff`), applied to `.artist-name`, `.album-name`, and `.t-title`.
 
-`browser.js` maintains `_srcKeyMap` — a `Map<trackKey, true>` built from the source library using the same `_trackKey` formula as `_ipodMap`. It is built lazily on first use and cleared whenever `sourceLibrary` changes (source switch, source removed, source rescan completes). Three derived helpers:
+`device.js` maintains `_srcKeyMap` — a `Map<trackKey, true>` built from the source library using the same `_trackKey` formula as `_deviceMap`. It is built lazily on first use and cleared whenever `sourceLibrary` changes (source switch, source removed, source rescan completes). Three derived helpers:
 
 - `isTrackInSrc(track, artistName, albumName)` — returns `true` if the track's key exists in `_srcKeyMap`; returns `true` when no source is selected
-- `isAlbumInSrc(al, artistName)` — `true` if any track in the album is in the source
-- `isArtistInSrc(artist)` — `true` if any album of the artist has at least one track in the source
+- `isAlbumInSrc(al, artistName)` — `true` only if **all** tracks in the album are in the source (uses `.every()` with a `length > 0` guard — a single missing track turns the album blue)
+- `isArtistInSrc(artist)` — `true` only if **all** albums of the artist satisfy `isAlbumInSrc` (uses `.every()` — a single partially-missing album turns the artist blue)
 
 The `:class` binding on artist/album/track rows adds `not-in-src` when the corresponding `isXxxInSrc` returns `false`.
 
@@ -274,7 +276,7 @@ During an operation (`opRunning && (_opDeleteCount > 0 || _opCopyCount > 0)`), a
 
 The status bar uses `display:flex`. The right section (scan progress, operation progress, last-op summary) is wrapped in `.statusbar-op` which has `width: min(480px, 55%)` — a CSS-declared width, not content-driven. This prevents layout reflow when the N/M counter or track name changes, which would otherwise cause the left-side text to jump. `overflow: hidden` clips content that doesn't fit. The N/M counter uses `font-variant-numeric: tabular-nums` for stable digit widths within the fixed box.
 
-### Track matching (sync / isOnIpod)
+### Track matching (sync / isOnDevice)
 
 Tracks are matched across iPod and source library by a normalized key:
 
@@ -286,7 +288,7 @@ _normStr(artist) + '|||' + _normStr(album) + '|||' + (disc_nr+'.' if disc_nr>1 e
 
 `disc_nr` prefix (e.g. `2.`) is only added when `disc_nr > 1`. Tracks with `disc_nr` of 0, 1, or absent are treated identically, so single-disc albums match regardless of whether disc number is tagged.
 
-The `_ipodMap` (`Map<key, track>`) is built lazily on first use and **always rebuilt** in `_initSrcChecked()` (not skipped when already cached) to avoid stale data after Alpine reactive re-renders during async library fetches. `_srcTrackMap` (`Map<id, track>`) is built on source library load for O(1) ID → track resolution.
+The `_deviceMap` (`Map<key, track>`) is built lazily on first use and **always rebuilt** in `_initSrcChecked()` (not skipped when already cached) to avoid stale data after Alpine reactive re-renders during async library fetches. `_srcTrackMap` (`Map<id, track>`) is built on source library load for O(1) ID → track resolution.
 
 ### gpod-cp path collapsing (`_buildCopyPaths`)
 
@@ -355,6 +357,7 @@ The DB schema includes `disc_nr INTEGER` on `source_tracks`. The library respons
 - **Incremental scan**: existing DB rows are fetched first; only files not yet in the DB have tags read with mutagen. Stale DB rows (files removed from disk) are bulk-deleted. Progress is written per-file to `walkman_devices.scan_processed / scan_total / scan_current_file`.
 - **Library format**: `fetch_library()` builds the same `artists[].albums[].tracks[]` nested dict as `gpod.py`, plus `walkman: True` and `walkman_db_id` flags used by the router to dispatch operations.
 - **Operations**: delete enqueues `os.remove()` for each file; sync enqueues `shutil.copy2()` for each source file into the WALKMAN music directory. Both update the `walkman_tracks` table immediately after each file so the library is consistent without a rescan.
+- **Full rescan**: `POST /walkman/scan?devnode=&full=true` clears all `walkman_tracks` rows for the device and resets `track_count=0` before starting the scan, forcing every file to be re-read. Used to pick up tag corrections or filesystem changes that the incremental scan would miss.
 
 ---
 
@@ -423,6 +426,9 @@ The `mode='w|'` flag enables streaming (no seeking). The OS pipe provides natura
 - **WALKMAN NTFS/exFAT**: `devices.py` accepts `vfat`, `ntfs`, `exfat`, and `fuseblk` fstypes when detecting WALKMAN mounts. VFAT mounts get `utf8` / `iocharset=utf8` mount options to handle non-ASCII filenames correctly.
 - **SSE connectedAt guard**: `_connectOpEvents()` stamps `connectedAt = Date.now() / 1000` when the EventSource opens. The `justFinished` condition uses `op.started_at >= connectedAt` instead of `prevStartedAt != null` — the latter fails (JS `undefined == null` is true) when no prior op exists in the session, causing WALKMAN fast ops to never trigger a library refresh.
 - **`_srcKeyMap` invalidation**: `_srcKeyMap` must be set to `null` wherever `sourceLibrary` is reassigned (source switch, source removal, library reload). Missing an invalidation point causes stale source-presence highlighting in the device pane.
+- **iPod service module**: `app/services/ipod.py` owns `IPOD_SENTINEL`, `is_ipod(mount)`, and `log_mount_contents(mount)` — parallel to `app/services/walkman.py` for WALKMAN. `devices.py` imports these as `detect_ipod` / `log_ipod_mount_contents` to avoid shadowing the local `is_ipod` variable that holds the boolean result.
+- **Source switch flash prevention**: `pickSource()` does NOT null out `sourceLibrary` before fetching the new library. The old library stays visible while the fetch is in flight; `_loadSourceLibrary` replaces it atomically on success. Setting `sourceLibrary = null` before the fetch causes a blank flash (two separate Alpine render batches across `await` boundaries). The stale-response guard `if (this.selectedSourceId !== id) return` inside `_loadSourceLibrary` handles rapid source switching.
+- **`_startSrcPoll` wasScanning guard**: `_startSrcPoll` records `wasScanning` before calling `loadSources`. On the tick where scanning transitions to done, the library is reloaded only when `wasScanning && !scanning`. Without this guard, `_loadSourceLibrary` would fire spuriously on the first tick after `pickSource()` even if the source was never scanning.
 - **Sync confirmation bypass**: `syncNeedsConfirm` being `false` means the Sync button calls `confirmSync()` directly without opening the modal. The modal is still rendered in the DOM but only shown when `showSyncConfirm` is set to `true`. Do not add `showSyncConfirm = true` to the Sync button click handler unconditionally — it will break the fast-path.
 - **Track library structure**: The nested library response (`artists[].albums[].tracks[]`) does not embed `album` or `albumartist` on individual track objects — those fields live at the parent level. Code that needs full track context (e.g. download, display) must walk the nested structure to obtain them.
 - **`__ALL__` sentinel in album checkboxes**: `isAlbumSelected`, `isAlbumIndeterminate`, `toggleAlbum` (and source equivalents) accept an album object, not `(artistName, albumName)`. Do not change to string-based lookup — it breaks when `selectedArtist === '__ALL__'` because no library artist has that name.
