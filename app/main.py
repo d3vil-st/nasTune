@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 
 logging.basicConfig(
@@ -34,6 +35,8 @@ from app.routers.device import router as device_router
 from app.routers.walkman import router as walkman_router
 
 log = logging.getLogger(__name__)
+
+BUILD_VERSION = os.getenv("BUILD_VERSION", "dev")
 
 
 async def _cache_cleanup_loop():
@@ -70,7 +73,7 @@ templates.env.filters["tojson"] = lambda v: Markup(json.dumps(v, ensure_ascii=Fa
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse(request, "index.html", {})
+    return templates.TemplateResponse(request, "index.html", {"build_version": BUILD_VERSION})
 
 
 @app.get("/devices")
