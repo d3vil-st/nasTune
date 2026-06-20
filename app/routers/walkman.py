@@ -1,9 +1,11 @@
 import logging
 from pathlib import Path
 
+import aiosqlite
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 
+from app.services.db import DB_PATH
 from app.services.devices import device_service
 import app.services.walkman as wm_svc
 
@@ -21,7 +23,7 @@ def _get_walkman(devnode: str):
 
 
 @router.post("/scan")
-async def trigger_scan(devnode: str = Query(...)):
+async def trigger_scan(devnode: str = Query(...), full: bool = Query(False)):
     info = _get_walkman(devnode)
     if not info.mounted or not info.mount:
         raise HTTPException(400, "Device is not mounted")
@@ -29,6 +31,12 @@ async def trigger_scan(devnode: str = Query(...)):
     if not meta:
         raise HTTPException(500, "WALKMAN metadata not available")
     cap = meta["cap"]
+    if full:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("DELETE FROM walkman_tracks WHERE device_id=?", (info.walkman_db_id,))
+            await db.execute("UPDATE walkman_devices SET track_count=0 WHERE id=?", (info.walkman_db_id,))
+            await db.commit()
+        log.info("Full rescan requested for WALKMAN db_id=%d — tracks cleared", info.walkman_db_id)
     wm_svc.start_scan(info.walkman_db_id, Path(info.mount), cap["music_path"])
     return {"ok": True, "db_id": info.walkman_db_id}
 

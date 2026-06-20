@@ -122,24 +122,29 @@ function sourcesModule() {
       this.srcArtist = null;
       this.srcAlbum = null;
       this.srcAlbumArtUrl = null;
-      this.sourceLibrary = null;
+      // Keep sourceLibrary visible while the new one loads — avoids the blank flash.
+      // _loadSourceLibrary replaces it atomically when the fetch completes.
       this._srcKeyMap = null;
       this._deviceIndex = null;
       this._deviceMap = null;
       await this._loadSourceLibrary(id);
-      this._startSrcPoll();
+      // Only poll if the source is actually scanning; polling an already-done source
+      // unconditionally caused a spurious _loadSourceLibrary call 2 s later.
+      if (this.sources.some(s => s.scan_status === 'scanning')) this._startSrcPoll();
     },
 
     async _loadSourceLibrary(id) {
       this.sourceLibraryLoading = true;
       try {
         const r = await this.apiFetch('/sources/' + id + '/library');
-        if (r.ok) {
-          this.sourceLibrary = await r.json();
-          this._srcKeyMap = null;
-          this._buildSrcTrackMap();
-          this._initSrcChecked();
-        }
+        if (!r.ok) return;
+        const data = await r.json();
+        // Guard: user may have switched away while this fetch was in flight.
+        if (this.selectedSourceId !== id) return;
+        this.sourceLibrary = data;
+        this._srcKeyMap = null;
+        this._buildSrcTrackMap();
+        this._initSrcChecked();
       } catch (e) { console.error('loadSourceLibrary:', e); }
       finally { this.sourceLibraryLoading = false; }
     },
@@ -147,12 +152,14 @@ function sourcesModule() {
     _startSrcPoll() {
       if (this._srcPollTimer) return;
       this._srcPollTimer = setInterval(async () => {
+        const wasScanning = this.sources.some(s => s.scan_status === 'scanning');
         await this.loadSources();
         const scanning = this.sources.some(s => s.scan_status === 'scanning');
         if (!scanning) {
           clearInterval(this._srcPollTimer);
           this._srcPollTimer = null;
-          if (this.selectedSourceId) await this._loadSourceLibrary(this.selectedSourceId);
+          // Only reload the library if a scan actually finished this tick.
+          if (wasScanning && this.selectedSourceId) await this._loadSourceLibrary(this.selectedSourceId);
         }
       }, 2000);
     },
@@ -191,9 +198,10 @@ function sourcesModule() {
       } catch (e) { alert('Delete failed: ' + e.message); }
     },
 
-    async rescanSource(id) {
+    async rescanSource(id, full = false) {
+      if (full && !confirm('Re-read all tags in this source? Existing track data will be cleared and the full scan may take several minutes.')) return;
       try {
-        await this.apiFetch('/sources/' + id + '/scan', { method: 'POST' });
+        await this.apiFetch('/sources/' + id + '/scan' + (full ? '?full=true' : ''), { method: 'POST' });
         await this.loadSources();
         this._startSrcPoll();
       } catch (e) { alert('Rescan failed: ' + e.message); }

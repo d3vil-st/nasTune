@@ -7,44 +7,14 @@ from pathlib import Path
 from typing import Any
 
 from app.services.fs_utils import FS_LABELS, fs_type, fs_usage
+from app.services.ipod import is_ipod as detect_ipod, log_mount_contents as log_ipod_mount_contents
 
 log = logging.getLogger(__name__)
 
 MOUNT_BASE = Path(os.environ.get("IPOD_MOUNT_BASE", "/mnt/ipods"))
 AUTOMOUNT = os.environ.get("IPOD_AUTOMOUNT", "0").strip().lower() in ("1", "true", "yes")
-_IPOD_SENTINEL = "iPod_Control/iTunes/iTunesDB"
 # Expanded to include NTFS (Sony WALKMAN internal storage) and common SD card formats
 _IPOD_FSTYPES = {"vfat", "hfsplus", "hfs", "exfat", "msdos", "ntfs"}
-
-
-def _log_mount_contents(mount: Path) -> None:
-    """Log the top two levels of a mount point to diagnose missing sentinel."""
-    try:
-        top = sorted(mount.iterdir(), key=lambda p: p.name.lower())
-    except Exception as exc:
-        log.warning("  Cannot list %s: %s", mount, exc)
-        return
-
-    if not top:
-        log.warning("  Mount point is empty — iPod may not be mounted")
-        return
-
-    log.warning("  Contents of %s: %s", mount, [p.name for p in top])
-
-    ipod_ctrl = next((p for p in top if p.name.lower() == "ipod_control"), None)
-    if ipod_ctrl:
-        log.warning("  Found control dir as '%s' (expected 'iPod_Control')", ipod_ctrl.name)
-        try:
-            sub = sorted(ipod_ctrl.iterdir(), key=lambda p: p.name.lower())
-            log.warning("  Contents of %s: %s", ipod_ctrl, [p.name for p in sub])
-            itunes_dir = next((p for p in sub if p.name.lower() == "itunes"), None)
-            if itunes_dir:
-                db = sorted(itunes_dir.iterdir(), key=lambda p: p.name.lower())
-                log.warning("  Contents of %s: %s", itunes_dir, [p.name for p in db])
-        except Exception as exc:
-            log.warning("  Cannot list %s: %s", ipod_ctrl, exc)
-    else:
-        log.warning("  No 'iPod_Control' directory found (case-insensitive search also failed)")
 
 
 @dataclass
@@ -118,15 +88,13 @@ class DeviceService:
             log.info("Debug device: WALKMAN detected (%s %s, db_id=%d)",
                      cap['model'], cap['storage_type'], walkman_db_id)
         else:
-            sentinel = mount / _IPOD_SENTINEL
-            is_ipod = sentinel.exists()
-            if is_ipod:
-                log.info("Debug device: iPod sentinel found at %s", sentinel)
+            if detect_ipod(mount):
+                log.info("Debug device: iPod sentinel found at %s", mount)
             else:
-                log.warning("Debug device: iPod sentinel NOT found at %s — treating as non-iPod", sentinel)
-                _log_mount_contents(mount)
+                log.warning("Debug device: iPod sentinel NOT found at %s — treating as non-iPod", mount)
+                log_ipod_mount_contents(mount)
 
-        is_ipod = not is_walkman and (mount / _IPOD_SENTINEL).exists()
+        is_ipod = not is_walkman and detect_ipod(mount)
         log.info("Debug device registered: mount=%s fstype=%s size=%.1f GB is_ipod=%s is_walkman=%s",
                  mount_str, fst, total / 1024 ** 3, is_ipod, is_walkman)
 
@@ -282,10 +250,9 @@ class DeviceService:
                      cap['model'], cap['storage_type'], walkman_db_id, serial or "(none)")
             is_ipod = False
         else:
-            sentinel = mount / _IPOD_SENTINEL
-            is_ipod = sentinel.exists()
+            is_ipod = detect_ipod(mount)
             if is_ipod:
-                log.info("  iPod confirmed: sentinel found at %s", sentinel)
+                log.info("  iPod confirmed: sentinel found at %s", mount)
             else:
                 log.info("  Not an iPod or WALKMAN: no sentinels found at %s", mount)
 
@@ -499,7 +466,7 @@ class DeviceService:
             self._walkman_meta[devnode] = {"serial": serial, "cap": cap}
             is_ipod = False
         else:
-            is_ipod = (mount / _IPOD_SENTINEL).exists()
+            is_ipod = detect_ipod(mount)
 
         log.info("Mounted %s at %s (is_ipod=%s, is_walkman=%s)", devnode, mount_path, is_ipod, is_walkman)
         updated = DeviceInfo(

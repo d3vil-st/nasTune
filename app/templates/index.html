@@ -100,6 +100,10 @@
           </svg>
         </span>
       </button>
+      <button class="icon-btn" x-show="selectedDevice?.is_walkman"
+              @click="triggerWalkmanScan(true)"
+              :disabled="walkmanScanning || currentOp?.status === 'running'"
+              title="Force full rescan — re-reads all tags">&#x21BB;&#xFE0E;</button>
       <button class="icon-btn" x-show="library && !selectedDevice?.is_walkman"
               @click="refreshLibrary" :disabled="libraryRefreshing || currentOp?.status === 'running'" title="Reload library"><span :class="{ spinning: libraryRefreshing }">&#x21BB;&#xFE0E;</span></button>
       <button class="icon-btn danger" x-show="selectedDevnode" @click="ejectDevice"
@@ -221,6 +225,10 @@
     <button class="manage-btn" x-show="selectedSourceId"
             :disabled="selectedSourceObj?.scan_status === 'scanning'"
             @click="rescanSource(selectedSourceId)">Rescan</button>
+    <button class="manage-btn" x-show="selectedSourceId"
+            :disabled="selectedSourceObj?.scan_status === 'scanning'"
+            @click="rescanSource(selectedSourceId, true)"
+            title="Re-read all tags from disk">Full rescan</button>
     <button class="manage-btn" @click="showManageSources = true">Manage Sources</button>
   </div>
 
@@ -679,6 +687,10 @@
                       @click="rescanSource(s.id)"
                       :disabled="s.scan_status === 'scanning'"
                       title="Rescan">&#x21BB;&#xFE0E;</button>
+              <button class="src-action-btn"
+                      @click="rescanSource(s.id, true)"
+                      :disabled="s.scan_status === 'scanning'"
+                      title="Force full rescan — re-reads all tags">&#x21BA;&#xFE0E;</button>
               <button class="src-action-btn danger"
                       @click="deleteSource(s.id)"
                       title="Remove source">&#x2715;</button>

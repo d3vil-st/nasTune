@@ -144,12 +144,12 @@ function deviceModule() {
 
     isAlbumInSrc(al, artistName) {
       if (!this.selectedSourceId || !this.sourceLibrary) return true;
-      return al.tracks.some(t => this.isTrackInSrc(t, artistName, al.name));
+      return al.tracks.length > 0 && al.tracks.every(t => this.isTrackInSrc(t, artistName, al.name));
     },
 
     isArtistInSrc(artist) {
       if (!this.selectedSourceId || !this.sourceLibrary) return true;
-      return artist.albums.some(al => this.isAlbumInSrc(al, artist.name));
+      return artist.albums.length > 0 && artist.albums.every(al => this.isAlbumInSrc(al, artist.name));
     },
   };
 }

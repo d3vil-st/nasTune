@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 
 import aiosqlite
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
@@ -89,7 +89,7 @@ async def delete_source(source_id: int):
 
 
 @router.post("/{source_id}/scan")
-async def trigger_scan(source_id: int):
+async def trigger_scan(source_id: int, full: bool = Query(False)):
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT path, scan_status FROM sources WHERE id=?", (source_id,)) as cur:
@@ -99,6 +99,13 @@ async def trigger_scan(source_id: int):
         raise HTTPException(404, "Source not found")
     if row["scan_status"] == "scanning":
         raise HTTPException(409, "Scan already in progress")
+
+    if full:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("DELETE FROM source_tracks WHERE source_id=?", (source_id,))
+            await db.execute("UPDATE sources SET track_count=0 WHERE id=?", (source_id,))
+            await db.commit()
+        log.info("Full rescan requested for source %d — tracks cleared", source_id)
 
     _start_scan(source_id, row["path"])
     return {"ok": True}

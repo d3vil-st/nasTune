@@ -175,10 +175,12 @@ function devicesModule() {
       }
     },
 
-    async triggerWalkmanScan() {
+    async triggerWalkmanScan(full = false) {
       if (!this.selectedDevnode || !this.selectedDevice?.is_walkman) return;
+      if (full && !confirm('Re-read all tags on this device? Existing library data will be cleared and the full scan may take several minutes.')) return;
       try {
-        const r = await this.apiFetch(`/walkman/scan?devnode=${encodeURIComponent(this.selectedDevnode)}`, { method: 'POST' });
+        const url = `/walkman/scan?devnode=${encodeURIComponent(this.selectedDevnode)}${full ? '&full=true' : ''}`;
+        const r = await this.apiFetch(url, { method: 'POST' });
         if (!r.ok) { const d = await r.json().catch(() => ({})); alert(d.detail || 'Scan failed'); return; }
         this.walkmanScanning = true;
         this.walkmanScanProgress = {};
