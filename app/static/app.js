@@ -17,6 +17,7 @@ function app() {
   state._syncUrl = function () {
     const p = new URLSearchParams();
     p.set('tab', this.viewMode);
+    if (this.selectedDevnode) p.set('dev', this.selectedDevnode);
     if (this.viewMode === 'library') {
       if (this.selectedArtist) p.set('artist', this.selectedArtist);
       if (this.selectedAlbum)  p.set('album',  this.selectedAlbum);
@@ -35,7 +36,16 @@ function app() {
     const url = hash ? new URLSearchParams(hash) : null;
     if (url?.get('tab')) this.viewMode = url.get('tab');
 
+    const urlDev = url?.get('dev') || null;
+
     await this.loadDevices();
+
+    // Restore device from URL if it differs from what the server auto-selected
+    if (urlDev && urlDev !== this.selectedDevnode) {
+      const found = this.devices.find(d => d.devnode === urlDev);
+      if (found) await this.selectDevice(urlDev);
+    }
+
     this.startSSE();
     this._connectOpEvents();
 
@@ -77,6 +87,7 @@ function app() {
     this.$watch('srcShowUnsynced', v => localStorage.setItem('nastune-src-unsynced', v ? '1' : '0'));
 
     // Keep URL in sync with navigation state
+    this.$watch('selectedDevnode', () => this._syncUrl());
     this.$watch('viewMode',        () => this._syncUrl());
     this.$watch('selectedArtist',  () => this._syncUrl());
     this.$watch('selectedAlbum',   () => this._syncUrl());

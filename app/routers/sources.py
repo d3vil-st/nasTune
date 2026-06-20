@@ -190,13 +190,13 @@ async def source_artwork(path: str):
 
     try:
         from mutagen import File as MFile
-        from app.services.artwork import _mp4, _id3, _vorbis
+        from app.services.artwork import _flac, _mp4, _id3, _vorbis
 
         audio = MFile(str(full), easy=False)
-        if not audio or not audio.tags:
+        if not audio:
             return Response(status_code=404, headers={"Cache-Control": "no-store"})
 
-        result = _mp4(audio.tags) or _id3(audio.tags) or _vorbis(audio.tags)
+        result = _flac(audio) or (audio.tags and (_mp4(audio.tags) or _id3(audio.tags) or _vorbis(audio.tags)))
         if not result:
             return Response(status_code=404, headers={"Cache-Control": "no-store"})
 

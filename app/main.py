@@ -51,6 +51,12 @@ async def lifespan(_app):
     await device_service.start()
     asyncio.create_task(_cache_cleanup_loop())
     yield
+    from app.services.operations import op_service
+    if op_service.is_busy():
+        log.warning("SIGTERM received — operation in progress, delaying shutdown…")
+        while op_service.is_busy():
+            await asyncio.sleep(1)
+        log.info("Operation finished, shutting down.")
 
 
 app = FastAPI(lifespan=lifespan)

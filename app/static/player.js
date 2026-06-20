@@ -32,7 +32,7 @@ function playerModule() {
       this.queueIndex = this.queue.findIndex(t => t.id === track.id);
       if (this.queueIndex < 0) this.queueIndex = 0;
       this.playerSource = 'ipod';
-      this.playerContext = { artist: this.selectedArtist || '', album: this.selectedAlbum || '' };
+      this.playerContext = { artist: this.selectedArtist === '__ALL__' ? (track.artist || '') : (this.selectedArtist || ''), album: this.selectedAlbum || '' };
       const artAlbum = album || (this.currentAlbums[0] || null);
       this.playerArtUrl = artAlbum ? this.artUrl(artAlbum) : null;
       this._loadAndPlay();
@@ -114,7 +114,7 @@ function playerModule() {
       this.queue = playable;
       this.queueIndex = 0;
       this.playerSource = 'ipod';
-      this.playerContext = { artist: this.selectedArtist || '', album: al.name };
+      this.playerContext = { artist: this.selectedArtist === '__ALL__' ? (al.tracks[0]?.artist || '') : (this.selectedArtist || ''), album: al.name };
       this.playerArtUrl = this.artUrl(al);
       this._loadAndPlay();
     },
@@ -147,7 +147,7 @@ function playerModule() {
       this.queueIndex = this.queue.findIndex(t => t.id === track.id);
       if (this.queueIndex < 0) this.queueIndex = 0;
       this.playerSource = 'sources';
-      this.playerContext = { artist: this.srcArtist || '', album: this.srcAlbum || '' };
+      this.playerContext = { artist: this.srcArtist === '__ALL__' ? (track.artist || '') : (this.srcArtist || ''), album: this.srcAlbum || '' };
       this.playerArtUrl = this.srcAlbumArtUrl;
       this._loadAndPlay();
     },
@@ -157,7 +157,7 @@ function playerModule() {
       this.queue = al.tracks;
       this.queueIndex = 0;
       this.playerSource = 'sources';
-      this.playerContext = { artist: this.srcArtist || '', album: al.name };
+      this.playerContext = { artist: this.srcArtist === '__ALL__' ? (al.tracks[0]?.artist || '') : (this.srcArtist || ''), album: al.name };
       this.playerArtUrl = this.sourceArtUrl(al);
       this._loadAndPlay();
     },
