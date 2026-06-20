@@ -109,6 +109,7 @@ Key docker-compose volumes:
 | `IPOD_AUTOMOUNT` | `0` | Set to `1`/`true`/`yes` to enable automatic mounting of USB block devices found by lsblk. Disabled by default — devices already mounted by the host are always detected regardless. |
 | `DB_PATH` | `/data/nastune.db` | Path to the SQLite database file for source library index. |
 | `GPOD_DRY_RUN` | `0` | Set to `1`/`true`/`yes` to log all `gpod-rm` and `gpod-cp` commands without executing them. `gpod-ls` always runs (read-only). |
+| `BUILD_VERSION` | `dev` | Version string shown in the UI header. Set automatically by the Docker build via `ARG BUILD_VERSION`; the CI workflow computes it with `git describe --tags --always --dirty=-dirty`. |
 
 ---
 
@@ -309,6 +310,14 @@ The app supports Auto / Light / Dark modes via a 3-segment pill switcher in the 
 - `html.light` is set immediately via an inline `<script>` in `<head>` (before the CSS `<link>`) to prevent flash of wrong theme (FOUC).
 - `initTheme()` (called from `app.js`'s `init()`) attaches a `prefers-color-scheme` media-query listener so Auto mode reacts to OS-level theme changes without a page reload.
 - Placeholder album art gradients (set as inline styles via Alpine's `:style` binding) are overridden in light mode via `html.light .album-thumb / .abar-art / .player-art / .detail-art { background: ... !important; }` CSS rules.
+
+### Build version display
+
+A `<span class="build-ver">` in `.header-right` (between the theme pill and the search box) shows the `BUILD_VERSION` env var injected by the server into the Jinja2 template. The full string is also in the element's `title` tooltip for long SHA-suffixed versions.
+
+- `BUILD_VERSION` is read in `app/main.py` at startup (`os.getenv("BUILD_VERSION", "dev")`) and passed to every `/` template render.
+- The Dockerfile declares `ARG BUILD_VERSION=dev` → `ENV BUILD_VERSION=${BUILD_VERSION}`, so local `docker build` without the arg defaults to `dev`.
+- The CI workflow (`release.yml`) computes `git describe --tags --always --dirty=-dirty` in the "Set build env" step and forwards it as `--build-arg BUILD_VERSION=...`. Tagged release builds show the bare tag (e.g. `v0.2.9`); builds from commits after a tag show `v0.2.9-3-ga8f200d`; dirty trees append `-dirty`.
 
 ---
 
