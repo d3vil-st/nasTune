@@ -172,7 +172,6 @@
       </div>
     </div>
   </header>
-  <span class="build-ver" title="{{ build_version }}">{{ build_version }}</span>
 
 
   <!-- ── Tab bar ── -->
@@ -844,6 +843,7 @@
     <template x-if="viewMode === 'sources' && !srcArtist && sourceLibrary">
       <span x-text="search ? filteredSrcArtists.length + ' / ' + (sourceLibrary.artists?.length || 0) + ' artists' : (sourceLibrary.total_tracks || 0).toLocaleString() + ' songs · ' + (sourceLibrary.artists?.length || 0) + ' artists'"></span>
     </template>
+    <div class="statusbar-right">
     <!-- WALKMAN scan progress -->
     <template x-if="walkmanScanning">
       <span class="statusbar-op">
@@ -898,11 +898,13 @@
         <span style="flex-shrink:0"
               :style="lastOp.status === 'done' ? 'color:#30d158' : 'color:#ff453a'"
               x-text="lastOp.status === 'done' ? '✓' : '✗'"></span>
-        <span style="color:var(--muted);flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1 1 0"
+        <span style="color:var(--muted);flex-shrink:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px"
               x-text="(lastOp.kind === 'sync' ? 'Sync' : 'Delete') + ' · ' + lastOp.total + ' tracks' + (fmtOpDuration(lastOp) ? ' · ' + fmtOpDuration(lastOp) : '')"></span>
         <span style="color:var(--dim);flex-shrink:0;font-variant-numeric:tabular-nums" x-text="fmtAgo(lastOp.finished_at)"></span>
       </span>
     </template>
+    <span class="build-ver" title="{{ build_version }}">{{ build_version }}</span>
+    </div>
   </div>
 
   <!-- ── Operation log popup ── -->

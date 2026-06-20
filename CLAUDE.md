@@ -275,7 +275,11 @@ During an operation (`opRunning && (_opDeleteCount > 0 || _opCopyCount > 0)`), a
 
 ### Status bar right section
 
-The status bar uses `display:flex`. The right section (scan progress, operation progress, last-op summary) is wrapped in `.statusbar-op` which has `width: min(480px, 55%)` — a CSS-declared width, not content-driven. This prevents layout reflow when the N/M counter or track name changes, which would otherwise cause the left-side text to jump. `overflow: hidden` clips content that doesn't fit. The N/M counter uses `font-variant-numeric: tabular-nums` for stable digit widths within the fixed box.
+The status bar uses `display:flex`. The right section is wrapped in `.statusbar-right` which has a CSS-declared `width: min(440px, 54%)` — fixed, not content-driven. This prevents layout reflow when the N/M counter or track name changes, which would otherwise cause the left-side text to jump. `justify-content: flex-end` keeps all items stacked against the right edge so only active indicators appear; inactive ones simply aren't rendered, and the remaining items shift right without artificial gaps.
+
+Inside `.statusbar-right`, each `.statusbar-op` span is naturally sized (no `flex-grow`) with `flex-shrink: 1` and `overflow: hidden`. Text elements use `max-width` + `text-overflow: ellipsis` instead of `flex: 1 1 0` — this eliminates the dead space that used to appear between short op text and the timestamp. `.statusbar-op-current` (the track name during a running op) is capped at `max-width: 160px`. The N/M counter uses `font-variant-numeric: tabular-nums` for stable digit widths.
+
+The **build version** (`<span class="build-ver">`) is the last (rightmost) child of `.statusbar-right`, always visible.
 
 ### Track matching (sync / isOnDevice)
 
@@ -313,7 +317,7 @@ The app supports Auto / Light / Dark modes via a 3-segment pill switcher in the 
 
 ### Build version display
 
-A `<span class="build-ver">` in `.header-right` (between the theme pill and the search box) shows the `BUILD_VERSION` env var injected by the server into the Jinja2 template. The full string is also in the element's `title` tooltip for long SHA-suffixed versions.
+A `<span class="build-ver">` at the far right of `.statusbar-right` (the status bar's right section) shows the `BUILD_VERSION` env var injected by the server into the Jinja2 template. The full string is also in the element's `title` tooltip for long SHA-suffixed versions.
 
 - `BUILD_VERSION` is read in `app/main.py` at startup (`os.getenv("BUILD_VERSION", "dev")`) and passed to every `/` template render.
 - The Dockerfile declares `ARG BUILD_VERSION=dev` → `ENV BUILD_VERSION=${BUILD_VERSION}`, so local `docker build` without the arg defaults to `dev`.
@@ -442,7 +446,7 @@ The `mode='w|'` flag enables streaming (no seeking). The OS pipe provides natura
 - **Track library structure**: The nested library response (`artists[].albums[].tracks[]`) does not embed `album` or `albumartist` on individual track objects — those fields live at the parent level. Code that needs full track context (e.g. download, display) must walk the nested structure to obtain them.
 - **`__ALL__` sentinel in album checkboxes**: `isAlbumSelected`, `isAlbumIndeterminate`, `toggleAlbum` (and source equivalents) accept an album object, not `(artistName, albumName)`. Do not change to string-based lookup — it breaks when `selectedArtist === '__ALL__'` because no library artist has that name.
 - **`_normStr` empty fallback**: `_normStr` returns `norm || raw` so that symbol-only strings like `#####` (which normalize to `''`) don't collide with each other or with null/empty artist names.
-- **Status bar `.statusbar-op` width**: declared as `width: min(480px, 55%)` (CSS value, not content-driven). Never change to `width: auto` or remove the declaration — the right section will grow/shrink with text and cause the left content to jump during N/M counter updates.
+- **Status bar `.statusbar-right` width**: declared as `width: min(440px, 54%)` (CSS value, not content-driven). Never change to `width: auto` or remove the declaration — the right section will grow/shrink with text and cause the left content to jump during N/M counter updates. Do not add `flex-grow` to `.statusbar-op` children — that re-introduces artificial gaps between op text and timestamps.
 
 ---
 
