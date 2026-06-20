@@ -11,6 +11,11 @@ function devicesModule() {
     libraryRefreshing: false,
     libraryError: null,
 
+    // WALKMAN scan state
+    walkmanScanning: false,
+    walkmanScanProgress: {},
+    _walkmanPollTimer: null,
+
     async loadDevices() {
       try {
         const r = await this.apiFetch('/devices');
@@ -46,6 +51,9 @@ function devicesModule() {
         }
         await new Promise(r => setTimeout(r, 500));
       }
+      this._stopWalkmanPoll();
+      this.walkmanScanning = false;
+      this.walkmanScanProgress = {};
       this.selectedDevnode = devnode;
       this.library = null;
       this._ipodMap = null;
@@ -164,6 +172,45 @@ function devicesModule() {
       } catch (e) {
         alert('Eject failed: ' + e.message);
       }
+    },
+
+    async triggerWalkmanScan() {
+      if (!this.selectedDevnode || !this.selectedDevice?.is_walkman) return;
+      try {
+        const r = await this.apiFetch(`/walkman/scan?devnode=${encodeURIComponent(this.selectedDevnode)}`, { method: 'POST' });
+        if (!r.ok) { const d = await r.json().catch(() => ({})); alert(d.detail || 'Scan failed'); return; }
+        this.walkmanScanning = true;
+        this.walkmanScanProgress = {};
+        this._startWalkmanPoll();
+      } catch (e) { alert('Scan failed: ' + e.message); }
+    },
+
+    _startWalkmanPoll() {
+      if (this._walkmanPollTimer) return;
+      this._walkmanPollTimer = setInterval(async () => {
+        if (!this.selectedDevnode || !this.selectedDevice?.is_walkman) {
+          this._stopWalkmanPoll(); return;
+        }
+        try {
+          const r = await this.apiFetch(`/walkman/scan_status?devnode=${encodeURIComponent(this.selectedDevnode)}`);
+          if (!r.ok) return;
+          const s = await r.json();
+          this.walkmanScanProgress = s;
+          if (s.status !== 'scanning') {
+            this.walkmanScanning = false;
+            this._stopWalkmanPoll();
+            if (s.status === 'done') {
+              this._ipodMap = null;
+              await this.refreshLibrary();
+              if (this.selectedSourceId) this._initSrcChecked();
+            }
+          }
+        } catch (_) {}
+      }, 2000);
+    },
+
+    _stopWalkmanPoll() {
+      if (this._walkmanPollTimer) { clearInterval(this._walkmanPollTimer); this._walkmanPollTimer = null; }
     },
 
     get ipodDevices() {

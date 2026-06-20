@@ -13,7 +13,8 @@ log = logging.getLogger(__name__)
 MOUNT_BASE = Path(os.environ.get("IPOD_MOUNT_BASE", "/mnt/ipods"))
 AUTOMOUNT = os.environ.get("IPOD_AUTOMOUNT", "0").strip().lower() in ("1", "true", "yes")
 _IPOD_SENTINEL = "iPod_Control/iTunes/iTunesDB"
-_IPOD_FSTYPES = {"vfat", "hfsplus", "hfs", "exfat", "msdos"}
+# Expanded to include NTFS (Sony WALKMAN internal storage) and common SD card formats
+_IPOD_FSTYPES = {"vfat", "hfsplus", "hfs", "exfat", "msdos", "ntfs"}
 
 
 def _log_mount_contents(mount: Path) -> None:
@@ -56,6 +57,8 @@ class DeviceInfo:
     is_ipod: bool
     manual: bool = False
     mounted: bool = True
+    is_walkman: bool = False
+    walkman_db_id: int | None = None
 
 
 class DeviceService:
@@ -66,8 +69,9 @@ class DeviceService:
         self._cache: dict[str, dict] = {}          # devnode -> parsed library
         self._subscribers: set[asyncio.Queue] = set()
         self._active_streams: dict[str, int] = {}  # devnode -> open stream count
-        self._loading: set[str] = set()            # devnodes currently running gpod-ls
+        self._loading: set[str] = set()            # devnodes currently running gpod-ls / walkman fetch
         self._ejected: set[str] = set()            # devnodes explicitly ejected by user; skip auto-mount until physical disconnect
+        self._walkman_meta: dict[str, dict] = {}   # devnode -> {serial, cap} for walkman devices
 
     # ── Stream tracking ──────────────────────────────────────────────
 
@@ -96,20 +100,35 @@ class DeviceService:
     # ── Debug / manual mode ──────────────────────────────────────────
 
     async def _init_debug(self, mount_str: str) -> None:
+        from app.services.walkman import parse_capability, get_serial, get_or_create_db_device
         mount = Path(mount_str)
-        sentinel = mount / _IPOD_SENTINEL
-        is_ipod = sentinel.exists()
         total, _ = await asyncio.to_thread(fs_usage, mount)
         fst = fs_type(mount)
 
-        if is_ipod:
-            log.info("Debug device: iPod sentinel found at %s", sentinel)
-        else:
-            log.warning("Debug device: iPod sentinel NOT found at %s — treating as non-iPod", sentinel)
-            _log_mount_contents(mount)
+        cap = await asyncio.to_thread(parse_capability, mount)
+        is_walkman = cap is not None
+        walkman_db_id: int | None = None
 
-        log.info("Debug device registered: mount=%s fstype=%s size=%.1f GB is_ipod=%s",
-                 mount_str, fst, total / 1024 ** 3, is_ipod)
+        if is_walkman:
+            serial = await get_serial("manual")
+            if not serial:
+                serial = f"manual_{cap['storage_type']}"
+            walkman_db_id = await get_or_create_db_device(serial, cap)
+            self._walkman_meta["manual"] = {"serial": serial, "cap": cap}
+            log.info("Debug device: WALKMAN detected (%s %s, db_id=%d)",
+                     cap['model'], cap['storage_type'], walkman_db_id)
+        else:
+            sentinel = mount / _IPOD_SENTINEL
+            is_ipod = sentinel.exists()
+            if is_ipod:
+                log.info("Debug device: iPod sentinel found at %s", sentinel)
+            else:
+                log.warning("Debug device: iPod sentinel NOT found at %s — treating as non-iPod", sentinel)
+                _log_mount_contents(mount)
+
+        is_ipod = not is_walkman and (mount / _IPOD_SENTINEL).exists()
+        log.info("Debug device registered: mount=%s fstype=%s size=%.1f GB is_ipod=%s is_walkman=%s",
+                 mount_str, fst, total / 1024 ** 3, is_ipod, is_walkman)
 
         info = DeviceInfo(
             devnode="manual",
@@ -119,6 +138,8 @@ class DeviceService:
             size_bytes=total,
             is_ipod=is_ipod,
             manual=True,
+            is_walkman=is_walkman,
+            walkman_db_id=walkman_db_id,
         )
         async with self._lock:
             self.devices["manual"] = info
@@ -243,14 +264,30 @@ class DeviceService:
             log.info("  Mounted %s → %s", devnode, mount_str)
 
         mount = Path(mount_str)
-        sentinel = mount / _IPOD_SENTINEL
-        is_ipod = sentinel.exists()
         total, _ = await asyncio.to_thread(fs_usage, mount)
 
-        if is_ipod:
-            log.info("  iPod confirmed: sentinel found at %s", sentinel)
+        # Detect device type: WALKMAN takes priority (has default-capability.xml)
+        from app.services.walkman import parse_capability, get_serial, get_or_create_db_device
+        cap = await asyncio.to_thread(parse_capability, mount)
+        is_walkman = cap is not None
+        walkman_db_id: int | None = None
+
+        if is_walkman:
+            serial = await get_serial(devnode)
+            if not serial:
+                serial = f"{devname}_{cap['storage_type']}"
+            walkman_db_id = await get_or_create_db_device(serial, cap)
+            self._walkman_meta[devnode] = {"serial": serial, "cap": cap}
+            log.info("  WALKMAN confirmed: %s %s (db_id=%d, serial=%s)",
+                     cap['model'], cap['storage_type'], walkman_db_id, serial or "(none)")
+            is_ipod = False
         else:
-            log.info("  Not an iPod: sentinel missing at %s", sentinel)
+            sentinel = mount / _IPOD_SENTINEL
+            is_ipod = sentinel.exists()
+            if is_ipod:
+                log.info("  iPod confirmed: sentinel found at %s", sentinel)
+            else:
+                log.info("  Not an iPod or WALKMAN: no sentinels found at %s", mount)
 
         info = DeviceInfo(
             devnode=devnode,
@@ -259,11 +296,13 @@ class DeviceService:
             fstype=FS_LABELS.get(fstype_raw, fstype_raw.upper()),
             size_bytes=total,
             is_ipod=is_ipod,
+            is_walkman=is_walkman,
+            walkman_db_id=walkman_db_id,
         )
 
         async with self._lock:
             self.devices[devnode] = info
-            if is_ipod and self.selected is None:
+            if (is_ipod or is_walkman) and self.selected is None:
                 self.selected = devnode
                 log.info("  Auto-selected %s as active device", devnode)
 
@@ -272,25 +311,61 @@ class DeviceService:
         return True
 
     async def _do_mount(self, devnode: str, mountpoint: str) -> bool:
+        # Probe fstype to add UTF-8 options — WALKMAN uses UTF-8 filenames
+        fstype_raw = ""
+        try:
+            p = await asyncio.create_subprocess_exec(
+                "lsblk", "-no", "FSTYPE", devnode,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            out, _ = await p.communicate()
+            fstype_raw = out.decode().strip().lower()
+        except Exception:
+            pass
+
+        if fstype_raw in ("vfat", "msdos"):
+            # utf8=1 makes the kernel present filenames as UTF-8 regardless of codepage
+            opts = "sync,utf8=1"
+        elif fstype_raw == "ntfs":
+            # ntfs-3g defaults to UTF-8; nls=utf8 for kernel ntfs3 driver
+            opts = "sync,nls=utf8"
+        else:
+            opts = "sync"
+
         proc = await asyncio.create_subprocess_exec(
-            "mount", "-o", "sync", devnode, mountpoint,
+            "mount", "-o", opts, devnode, mountpoint,
             stderr=asyncio.subprocess.PIPE,
         )
         _, stderr = await proc.communicate()
         if proc.returncode != 0:
-            log.error("  mount %s → %s failed (rc=%d): %s",
-                      devnode, mountpoint, proc.returncode, stderr.decode().strip())
-            return False
-        log.info("  mount %s → %s OK", devnode, mountpoint)
+            err = stderr.decode().strip()
+            # Retry without charset hint if the driver rejected the option
+            if fstype_raw and ("invalid option" in err.lower() or "unknown" in err.lower()):
+                log.warning("  mount with opts=%r failed (%s), retrying with sync only", opts, err)
+                proc = await asyncio.create_subprocess_exec(
+                    "mount", "-o", "sync", devnode, mountpoint,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, stderr = await proc.communicate()
+                if proc.returncode != 0:
+                    log.error("  mount %s → %s failed (rc=%d): %s",
+                              devnode, mountpoint, proc.returncode, stderr.decode().strip())
+                    return False
+            else:
+                log.error("  mount %s → %s failed (rc=%d): %s",
+                          devnode, mountpoint, proc.returncode, err)
+                return False
+        log.info("  mount %s → %s OK (opts=%s)", devnode, mountpoint, opts)
         return True
 
     async def _remove(self, devnode: str) -> None:
         async with self._lock:
             info = self.devices.pop(devnode, None)
             self._cache.pop(devnode, None)
+            self._walkman_meta.pop(devnode, None)
             if self.selected == devnode:
-                ipods = [d for d in self.devices.values() if d.is_ipod]
-                self.selected = ipods[0].devnode if ipods else None
+                known = [d for d in self.devices.values() if d.is_ipod or d.is_walkman]
+                self.selected = known[0].devnode if known else None
 
         if not info:
             return
@@ -318,6 +393,17 @@ class DeviceService:
 
     def get_device_info(self, devnode: str) -> DeviceInfo | None:
         return self.devices.get(devnode)
+
+    def get_walkman_meta(self, devnode: str) -> dict | None:
+        """Returns {serial, cap} for a WALKMAN device, or None."""
+        return self._walkman_meta.get(devnode)
+
+    def invalidate_walkman_cache(self, walkman_db_id: int) -> None:
+        """Drop the cached library for the WALKMAN device with this DB id."""
+        for devnode, info in self.devices.items():
+            if info.walkman_db_id == walkman_db_id:
+                self._cache.pop(devnode, None)
+                break
 
     def get_ipod_uuid(self, devnode: str) -> str | None:
         lib = self._cache.get(devnode)
@@ -359,14 +445,24 @@ class DeviceService:
         if not info:
             log.warning("_load_library: unknown devnode %s", devnode)
             return
-        if not info.is_ipod:
-            log.warning("_load_library: %s is not an iPod, skipping", devnode)
+        if not info.is_ipod and not info.is_walkman:
+            log.warning("_load_library: %s is neither iPod nor WALKMAN, skipping", devnode)
             return
         log.info("Loading library for %s from %s", devnode, info.mount)
-        from app.services.gpod import fetch_library
         self._loading.add(devnode)
         try:
-            lib = await fetch_library(info.mount)
+            if info.is_walkman:
+                from app.services.walkman import fetch_library as wm_fetch
+                meta = self._walkman_meta.get(devnode, {})
+                lib = await wm_fetch(
+                    info.mount,
+                    info.walkman_db_id,
+                    meta.get("serial", ""),
+                    meta.get("cap", {}),
+                )
+            else:
+                from app.services.gpod import fetch_library
+                lib = await fetch_library(info.mount)
             self._cache[devnode] = lib
             log.info("Library loaded for %s: %d tracks, %d artists",
                      devnode, lib.get("total_tracks", 0), len(lib.get("artists", [])))
@@ -388,9 +484,24 @@ class DeviceService:
         if not ok:
             raise RuntimeError(f"Failed to mount {devnode}")
         mount = mount_path
-        sentinel = mount / _IPOD_SENTINEL
-        is_ipod = sentinel.exists()
         total, _ = await asyncio.to_thread(fs_usage, mount)
+
+        from app.services.walkman import parse_capability, get_serial, get_or_create_db_device
+        cap = await asyncio.to_thread(parse_capability, mount)
+        is_walkman = cap is not None
+        walkman_db_id: int | None = None
+
+        if is_walkman:
+            serial = await get_serial(devnode)
+            if not serial:
+                serial = f"{info.devname}_{cap['storage_type']}"
+            walkman_db_id = await get_or_create_db_device(serial, cap)
+            self._walkman_meta[devnode] = {"serial": serial, "cap": cap}
+            is_ipod = False
+        else:
+            is_ipod = (mount / _IPOD_SENTINEL).exists()
+
+        log.info("Mounted %s at %s (is_ipod=%s, is_walkman=%s)", devnode, mount_path, is_ipod, is_walkman)
         updated = DeviceInfo(
             devnode=devnode,
             devname=info.devname,
@@ -399,13 +510,14 @@ class DeviceService:
             size_bytes=total,
             is_ipod=is_ipod,
             mounted=True,
+            is_walkman=is_walkman,
+            walkman_db_id=walkman_db_id,
         )
-        log.info("Mounted %s at %s (is_ipod=%s)", devnode, mount_path, is_ipod)
         async with self._lock:
             self.devices[devnode] = updated
-            if is_ipod and self.selected is None:
+            if (is_ipod or is_walkman) and self.selected is None:
                 self.selected = devnode
-        if is_ipod:
+        if is_ipod or is_walkman:
             await self._load_library(devnode)
         self._broadcast()
 

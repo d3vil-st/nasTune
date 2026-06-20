@@ -7,3 +7,6 @@ __pycache__/
 *.tar.gz
 ipod/
 *.db
+data/
+walkman-sd-carddefault-capability.xml
+walkman-internal-default-capability.xml

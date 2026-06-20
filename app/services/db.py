@@ -9,6 +9,52 @@ _SCHEMA = """
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
 
+CREATE TABLE IF NOT EXISTS walkman_devices (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    serial           TEXT    NOT NULL,
+    storage_type     TEXT    NOT NULL,
+    model            TEXT,
+    marketing_name   TEXT,
+    vendor           TEXT,
+    firmware         TEXT,
+    music_path       TEXT    NOT NULL DEFAULT 'MUSIC',
+    scan_status      TEXT    NOT NULL DEFAULT 'idle',
+    scan_processed   INTEGER NOT NULL DEFAULT 0,
+    scan_total       INTEGER NOT NULL DEFAULT 0,
+    scan_current_file TEXT,
+    scan_error       TEXT,
+    last_scanned_at  INTEGER,
+    track_count      INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(serial, storage_type)
+);
+
+CREATE TABLE IF NOT EXISTS walkman_tracks (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id       INTEGER NOT NULL REFERENCES walkman_devices(id) ON DELETE CASCADE,
+    path            TEXT    NOT NULL,
+    title           TEXT,
+    artist          TEXT,
+    albumartist     TEXT,
+    album           TEXT,
+    disc_nr         INTEGER,
+    track_nr        INTEGER,
+    duration_ms     INTEGER,
+    bitrate         INTEGER,
+    samplerate      INTEGER,
+    bits_per_sample INTEGER,
+    year            INTEGER,
+    genre           TEXT,
+    composer        TEXT,
+    size            INTEGER,
+    filetype        TEXT,
+    has_artwork     INTEGER NOT NULL DEFAULT 0,
+    scanned_at      INTEGER NOT NULL,
+    UNIQUE(device_id, path)
+);
+
+CREATE INDEX IF NOT EXISTS idx_wt_device  ON walkman_tracks(device_id);
+CREATE INDEX IF NOT EXISTS idx_wt_artist  ON walkman_tracks(device_id, albumartist, artist);
+
 CREATE TABLE IF NOT EXISTS sources (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     type             TEXT    NOT NULL DEFAULT 'folder',
@@ -75,4 +121,10 @@ async def init_db() -> None:
         ]:
             if col not in existing_cols:
                 await db.execute(ddl)
+
+        async with db.execute("PRAGMA table_info(walkman_tracks)") as cur:
+            wt_cols = {row[1] for row in await cur.fetchall()}
+        if "has_artwork" not in wt_cols:
+            await db.execute("ALTER TABLE walkman_tracks ADD COLUMN has_artwork INTEGER NOT NULL DEFAULT 0")
+
         await db.commit()

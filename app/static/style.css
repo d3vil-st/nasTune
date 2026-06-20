@@ -166,11 +166,11 @@
     }
 
     .icon-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      background: none;
+      width: 30px;
+      height: 30px;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
       color: var(--muted);
       cursor: pointer;
       display: flex;
@@ -178,11 +178,13 @@
       justify-content: center;
       flex-shrink: 0;
       font-size: 17px;
-      transition: color .15s, border-color .15s, transform .3s;
+      transition: color .15s, background .15s;
     }
-    .icon-btn:hover { color: var(--text); border-color: var(--dim); }
-    .icon-btn.danger:hover { color: #e06c6c; border-color: #e06c6c; }
+    .icon-btn:hover { color: var(--text); background: var(--hover-surface); }
+    .icon-btn.danger:hover { color: #e06c6c; background: rgba(224,108,108,.12); }
+    .icon-btn:disabled { opacity: .35; cursor: not-allowed; pointer-events: none; }
     .icon-btn .spinning { display: inline-block; animation: spin .7s linear infinite; }
+    .icon-btn .pulsing  { animation: scan-pulse 1s ease-in-out infinite; }
 
     .divider {
       width: 1px;
