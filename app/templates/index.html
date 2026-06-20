@@ -111,17 +111,9 @@
     <div class="storage-wrap" x-show="library">
       <div class="storage-labels">
         <span x-text="(library?.fs_used_gb || 0).toFixed(2) + ' GB used'"></span>
-        <template x-if="storageRemoveBytes > 0 && storageAddBytes > 0">
-          <span style="display:contents">
-            <span style="color:#ff453a" x-text="'− ' + fmtSize(storageRemoveBytes)"></span>
-            <span style="color:#30d158" x-text="'+ ' + fmtSize(storageAddBytes)"></span>
-          </span>
-        </template>
-        <template x-if="storageRemoveBytes > 0 && !storageAddBytes">
-          <span style="color:#ff453a" x-text="'− ' + fmtSize(storageRemoveBytes)"></span>
-        </template>
-        <template x-if="storageAddBytes > 0 && !storageRemoveBytes">
-          <span style="color:#30d158" x-text="'+ ' + fmtSize(storageAddBytes)"></span>
+        <template x-if="storageRemoveBytes > 0 || storageAddBytes > 0">
+          <span :style="'color:' + (storageAddBytes >= storageRemoveBytes ? '#30d158' : '#ff453a')"
+                x-text="(storageAddBytes >= storageRemoveBytes ? '+ ' : '− ') + fmtSize(Math.abs(storageAddBytes - storageRemoveBytes))"></span>
         </template>
         <span x-text="storageFreePct.toFixed(2) + ' GB free'"></span>
       </div>
@@ -130,6 +122,16 @@
         <div class="storage-fill-remove" :style="'width:' + storageRemovePct + '%'"></div>
         <div class="storage-fill-add" :style="'width:' + storageAddPct + '%'"></div>
         <div class="storage-bar-stripe" :class="{ running: opRunning }"></div>
+        <template x-if="opRunning && (_opDeleteCount > 0 || _opCopyCount > 0)">
+          <div class="storage-bar-delta">
+            <template x-if="_opDeleteCount > 0">
+              <span style="color:#ff6b6b" x-text="'−' + _opDeleteCount"></span>
+            </template>
+            <template x-if="_opCopyCount > 0">
+              <span style="color:#5ef08a" x-text="'+' + _opCopyCount"></span>
+            </template>
+          </div>
+        </template>
       </div>
     </div>
 
@@ -147,7 +149,7 @@
               @click="showDeleteConfirm = true">Delete</button>
       <button class="btn-primary" x-show="viewMode === 'sources' && hasSyncChanges"
               :disabled="currentOp?.status === 'running'"
-              @click="showSyncConfirm = true">Sync</button>
+              @click="syncNeedsConfirm ? (showSyncConfirm = true) : confirmSync()">Sync</button>
     </div>
 
     <!-- Theme switcher + search (right side) -->
@@ -272,7 +274,7 @@
           </div>
           <template x-for="a in filteredArtists" :key="a.name">
             <div class="artist-row"
-                 :class="{ selected: selectedArtist === a.name }"
+                 :class="{ selected: selectedArtist === a.name, 'not-in-src': !isArtistInSrc(a) }"
                  @click="pickArtist(a.name)">
               <input type="checkbox" class="row-cb" @click.stop
                      :checked="isArtistSelected(a.name)"
@@ -305,7 +307,7 @@
             <div>
               <template x-for="al in currentAlbums" :key="al.name">
                 <div class="album-row"
-                     :class="{ selected: selectedAlbum === al.name }"
+                     :class="{ selected: selectedAlbum === al.name, 'not-in-src': !isAlbumInSrc(al, selectedArtist === '__ALL__' ? '' : selectedArtist) }"
                      @click="pickAlbum(al.name)">
                   <input type="checkbox" class="row-cb" @click.stop
                          :checked="isAlbumSelected(al)"
@@ -377,7 +379,7 @@
               <template x-for="(t, i) in currentTracks" :key="t.id">
                 <div class="track-row"
                      style="grid-template-columns: 16px 36px 1fr 54px 50px 66px 72px;"
-                     :class="{ active: selectedTrack?.id === t.id, missing: t.missing, 'now-playing': isCurrentTrack(t), 'disc-sep-before': t.disc_nr > 0 && (i === 0 ? currentTracks.some(x => x.disc_nr > 0 && x.disc_nr !== t.disc_nr) : t.disc_nr !== currentTracks[i-1].disc_nr) }"
+                     :class="{ active: selectedTrack?.id === t.id, missing: t.missing, 'not-in-src': !isTrackInSrc(t, selectedArtist === '__ALL__' ? '' : selectedArtist, selectedAlbum), 'now-playing': isCurrentTrack(t), 'disc-sep-before': t.disc_nr > 0 && (i === 0 ? currentTracks.some(x => x.disc_nr > 0 && x.disc_nr !== t.disc_nr) : t.disc_nr !== currentTracks[i-1].disc_nr) }"
                      :data-disc-nr="t.disc_nr || ''"
                      @click="openDetail(t)">
                   <input type="checkbox" class="row-cb" @click.stop
@@ -793,10 +795,16 @@
               <span style="color:var(--muted)" x-text="'(' + fmtSize(syncCopyBytes) + ')'"></span>
             </p>
           </template>
+          <template x-if="syncSpaceWarning">
+            <p style="margin:10px 0 0;padding:8px 10px;background:rgba(255,69,58,.12);border-radius:6px;color:#ff453a;font-size:12px;line-height:1.5">
+              &#x26A0;&#xFE0E; Not enough free space on device for selected tracks.
+            </p>
+          </template>
         </div>
         <div style="padding:12px 20px;display:flex;justify-content:flex-end;gap:8px">
           <button class="btn-ghost" @click="showSyncConfirm = false">Cancel</button>
-          <button class="btn-primary" @click="confirmSync()">Sync</button>
+          <button :class="syncSpaceWarning ? 'btn-danger' : 'btn-primary'" @click="confirmSync()"
+                  x-text="syncSpaceWarning ? 'Sync anyway' : 'Sync'"></button>
         </div>
       </div>
     </div>

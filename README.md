@@ -2,9 +2,9 @@
 
 # nasTune
 
-A self-hosted web UI for managing iPod Classic and iPod 5th generation devices from a headless NAS. Runs as a Docker container; access it from any browser on your local network — no iTunes, no display required.
+A self-hosted web UI for managing iPod Classic, iPod 5th generation, and Sony WALKMAN devices from a headless NAS. Runs as a Docker container; access it from any browser on your local network — no iTunes, no display required.
 
-Built around [gpod-utils](https://github.com/d3vil-st/gpod-utils), which wraps libgpod for reading and writing the iPod's iTunesDB format.
+iPod support is built around [gpod-utils](https://github.com/d3vil-st/gpod-utils), which wraps libgpod for reading and writing the iPod's iTunesDB format. WALKMAN devices are detected via `default-capability.xml` and managed with direct file operations.
 
 ---
 
@@ -25,28 +25,31 @@ Built around [gpod-utils](https://github.com/d3vil-st/gpod-utils), which wraps l
 
 ## Features
 
-- **Browse** your iPod library in a 3-pane iTunes-style view (artists → albums → tracks)
+- **Browse** your iPod or WALKMAN library in a 3-pane iTunes-style view (artists → albums → tracks)
 - **All Artists** — select the top row in the artist column to browse all albums across every artist in a single flat view
-- **Sync** tracks from a NAS music source to the iPod — add missing tracks, remove ones no longer in the source
-- **Unsynced filter** — one-click toggle in the Sources bar to show only tracks not yet on the iPod; state saved per browser
-- **Delete** selected tracks from the iPod
+- **Sony WALKMAN support** — detected automatically via `default-capability.xml`; tag-based scan (mutagen) indexes the device into SQLite; delete and sync use direct file operations with immediate DB update — no rescan needed
+- **Sync** tracks from a NAS music source to the device — add missing tracks, remove ones no longer in the source; sync confirmation dialog appears when deletes are involved or free space is insufficient
+- **Source comparison** — tracks in the iPod/WALKMAN pane appear in blue when they are absent from the selected NAS source, making gaps immediately visible at a glance
+- **Unsynced filter** — one-click toggle in the Sources bar to show only tracks not yet on the device; state saved per browser
+- **Delete** selected tracks from the device
 - **Download** selected tracks as a `.tar` archive with restored directory structure (`Artist/[Year] - Album/NN - Title.ext`)
-- **Play** tracks directly in the browser (iPod and NAS source), with ALAC→FLAC transcoding on the fly for Firefox compatibility
-- **Compare** iPod contents against your NAS library — checkboxes show what's already synced
-- **Operation log** — click the status bar progress indicator to view live gpod stdout in a terminal popup; last operation result and log persist across page reloads
+- **Play** tracks directly in the browser (iPod/WALKMAN and NAS source), with ALAC→FLAC transcoding on the fly for Firefox compatibility
+- **Compare** device contents against your NAS library — checkboxes show what's already synced
+- **Storage bar** — shows used / net change / free with a live delete/add counter overlay during operations
+- **Operation log** — click the status bar progress indicator to view live output in a terminal popup; last operation result and log persist across page reloads
 - **Multi-disc album** support with CD separators and disc-aware track matching
 - **Search** with smart navigation — click an artist from results to see all their albums (when the artist name matched) or only relevant albums (when an album or track matched); clear button in the search field
-- **Auto-discover** connected iPods via USB polling; optional auto-mount
+- **Auto-discover** connected devices via USB polling; optional auto-mount
 - **Light / Dark / Auto** theme with system preference detection
 - **Mobile-friendly** responsive 3-pane layout that collapses to a single-pane slide view on small screens
-- **URL state** — navigation (tab, artist, album) is encoded in the hash so reloads and bookmarks work
+- **URL state** — navigation (tab, artist, album, device) is encoded in the hash so reloads and bookmarks work
 
 ---
 
 ## Requirements
 
 - Docker + Docker Compose
-- iPod Classic (1st–6th gen) or iPod 5th generation (Video)
+- iPod Classic (1st–6th gen), iPod 5th generation (Video), or Sony WALKMAN (NWZ/NW series with `default-capability.xml`)
 - USB connection to the NAS host
 - NAS music library mounted at a known path (optional, for sync)
 
@@ -99,9 +102,10 @@ Supported formats: MP3, FLAC, AAC/M4A (including ALAC), AIFF, WAV, OGG.
 ## Sync behaviour
 
 - **Sync** button appears when there are changes (tracks to add or remove)
+- A confirmation dialog is shown automatically when the sync includes deletes or when the files to copy exceed available free space (accounting for space freed by deletes); the dialog shows a warning and offers "Sync anyway" for the space-insufficient case
 - Tracks are matched by normalized `artist + album + track_nr` (or title if no track number), with disc number awareness for multi-disc albums
-- When syncing a complete album or artist, the directory path is passed to `gpod-cp` rather than individual files — faster and avoids path-length issues
-- Progress is tracked per-track from `gpod-cp`'s streaming output and displayed in real time
+- **iPod**: when syncing a complete album or artist, the directory path is passed to `gpod-cp` rather than individual files — faster and avoids path-length issues; progress is tracked per-track from streaming output
+- **WALKMAN**: sync uses `shutil.copy2` / `os.remove`; the SQLite library is updated immediately on completion without a rescan
 
 ---
 
@@ -127,8 +131,9 @@ The archive is streamed directly from the iPod to your browser — no temporary 
 | Backend | FastAPI + Uvicorn (Python 3.12) |
 | Frontend | Alpine.js 3.15 (vendored) + Jinja2 templates + plain CSS |
 | iPod I/O | gpod-utils CLI (libgpod wrapper) |
+| WALKMAN I/O | shutil file operations + SQLite library cache |
 | Tag reading | mutagen |
-| Audio transcode | ffmpeg (ALAC→FLAC, streaming) |
+| Audio transcode | ffmpeg (ALAC→FLAC, streaming + seekable tmpfs cache) |
 | Library index | SQLite + aiosqlite |
 | Device discovery | lsblk polling every 3 s |
 

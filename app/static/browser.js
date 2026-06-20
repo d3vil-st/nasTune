@@ -9,6 +9,7 @@ function browserModule() {
     coverPopupUrl: null,
     _ipodIndex: null,
     _ipodMap: null,
+    _srcKeyMap: null,
 
     get filteredArtists() {
       const artists = this.library?.artists || [];
@@ -117,6 +118,38 @@ function browserModule() {
       if (!this.library) return false;
       if (!this._ipodMap) this._buildIpodMap();
       return this._ipodMap.has(this._trackKey(track.artist || track.albumartist, track.album, track.track_nr, track.title, track.disc_nr));
+    },
+
+    _buildSrcKeyMap() {
+      this._srcKeyMap = new Map();
+      for (const artist of (this.sourceLibrary?.artists || [])) {
+        for (const album of artist.albums) {
+          for (const t of album.tracks) {
+            this._srcKeyMap.set(
+              this._trackKey(t.artist || artist.name, t.album || album.name, t.track_nr, t.title, t.disc_nr),
+              true
+            );
+          }
+        }
+      }
+    },
+
+    isTrackInSrc(track, artistName, albumName) {
+      if (!this.selectedSourceId || !this.sourceLibrary) return true;
+      if (!this._srcKeyMap) this._buildSrcKeyMap();
+      return this._srcKeyMap.has(
+        this._trackKey(track.artist || artistName, albumName, track.track_nr, track.title, track.disc_nr)
+      );
+    },
+
+    isAlbumInSrc(al, artistName) {
+      if (!this.selectedSourceId || !this.sourceLibrary) return true;
+      return al.tracks.some(t => this.isTrackInSrc(t, artistName, al.name));
+    },
+
+    isArtistInSrc(artist) {
+      if (!this.selectedSourceId || !this.sourceLibrary) return true;
+      return artist.albums.some(al => this.isAlbumInSrc(al, artist.name));
     },
   };
 }
