@@ -26,7 +26,16 @@ def extract_artwork(ipod_path: str, mount: str) -> tuple[bytes, str] | None:
     if audio is None or audio.tags is None:
         return None
 
-    return _mp4(audio.tags) or _id3(audio.tags) or _vorbis(audio.tags)
+    return _flac(audio) or _mp4(audio.tags) or _id3(audio.tags) or _vorbis(audio.tags)
+
+
+def _flac(audio) -> tuple[bytes, str] | None:
+    """Extract from native FLAC picture blocks (audio.pictures, not tags)."""
+    pics = getattr(audio, "pictures", None)
+    if not pics:
+        return None
+    pic = pics[0]
+    return pic.data, pic.mime or "image/jpeg"
 
 
 def _mp4(tags) -> tuple[bytes, str] | None:

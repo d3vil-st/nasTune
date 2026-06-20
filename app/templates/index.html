@@ -36,7 +36,8 @@
          @keydown.escape.window="showDevicePicker = false">
 
       <div class="ds-icon">
-        <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- iPod icon (click wheel) -->
+        <svg x-show="!selectedDevice?.is_walkman" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
           <rect x="5" y="2" width="18" height="24" rx="3.5" stroke="#aaa" stroke-width="1.5" fill="none"/>
           <rect x="8" y="4.5" width="12" height="8" rx="1" fill="#444"/>
           <circle cx="14" cy="19" r="4" stroke="#888" stroke-width="1.2" fill="none"/>
@@ -45,6 +46,15 @@
           <line x1="14" y1="23.5" x2="14" y2="22.5" stroke="#888" stroke-width="1.2" stroke-linecap="round"/>
           <line x1="10.5" y1="19" x2="11.5" y2="19" stroke="#888" stroke-width="1.2" stroke-linecap="round"/>
           <line x1="16.5" y1="19" x2="17.5" y2="19" stroke="#888" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+        <!-- WALKMAN icon (large screen, skip buttons, headphone jack) -->
+        <svg x-show="selectedDevice?.is_walkman" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="7" y="2" width="14" height="24" rx="3" stroke="#aaa" stroke-width="1.5" fill="none"/>
+          <rect x="9" y="4" width="10" height="14" rx="1" fill="#444"/>
+          <path d="M12 8.5 L12 13.5 L17 11 Z" fill="#777"/>
+          <path d="M10 20 L10 23 M10 21.5 L12.5 20 L12.5 23 Z" stroke="#888" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M18 20 L18 23 M18 21.5 L15.5 20 L15.5 23 Z" stroke="#888" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="11" cy="3" r="0.9" fill="#888"/>
         </svg>
       </div>
 
@@ -91,9 +101,9 @@
         </span>
       </button>
       <button class="icon-btn" x-show="library && !selectedDevice?.is_walkman"
-              @click="refreshLibrary" :disabled="libraryRefreshing || currentOp?.status === 'running'" title="Reload library"><span :class="{ spinning: libraryRefreshing }">&#x21BB;</span></button>
+              @click="refreshLibrary" :disabled="libraryRefreshing || currentOp?.status === 'running'" title="Reload library"><span :class="{ spinning: libraryRefreshing }">&#x21BB;&#xFE0E;</span></button>
       <button class="icon-btn danger" x-show="selectedDevnode" @click="ejectDevice"
-              :disabled="currentOp?.status === 'running'" title="Eject device">&#x23CF;</button>
+              :disabled="currentOp?.status === 'running'" title="Eject device">&#x23CF;&#xFE0E;</button>
     </div>
 
     <!-- Storage bar (only when library loaded) -->
@@ -347,7 +357,7 @@
             </div>
             <div class="abar-info">
               <div class="abar-title" x-text="selectedAlbum"></div>
-              <div class="abar-artist" x-text="selectedArtist"></div>
+              <div class="abar-artist" x-text="selectedArtist === '__ALL__' ? '' : selectedArtist"></div>
               <div class="abar-stats" x-text="currentTracks.length + ' tracks · ' + fmtTotalDur(currentTracks)"></div>
             </div>
           </div>
@@ -359,7 +369,7 @@
               <span class="empty-icon">&#x266A;</span>
               <span class="empty-label">Select an album</span>
               <span class="empty-sub" x-show="selectedArtist"
-                    x-text="currentAlbums.length + ' albums by ' + selectedArtist"></span>
+                    x-text="currentAlbums.length + ' albums by ' + (selectedArtist === '__ALL__' ? 'All Artists' : selectedArtist)"></span>
             </div>
           </template>
           <template x-if="selectedAlbum">
@@ -375,9 +385,10 @@
                          @change="toggleTrack(t, $event.target.checked)">
                   <span class="t-play-cell" @click.stop="!t.missing && playTrack(t)">
                     <span class="t-nr-text" x-show="!isCurrentTrack(t)" x-text="t.track_nr || '·'"></span>
-                    <span class="t-nr-play">&#x25B6;</span>
+                    <span class="t-nr-play">&#x25B6;&#xFE0E;</span>
                     <span class="t-nr-playing" x-show="isCurrentTrack(t)"
-                          x-text="playing ? '⏸' : '▶'"></span>
+                          @click.stop="togglePlay()"
+                          x-text="playing ? '⏸︎' : '▶︎'"></span>
                   </span>
                   <span class="t-title" x-text="t.title"></span>
                   <span class="t-rating" :class="{ unrated: !t.rating }" x-text="fmtRating(t.rating)"></span>
@@ -406,7 +417,7 @@
           <div class="detail-body">
             <div class="detail-track-info">
               <div class="d-title" x-text="selectedTrack?.title"></div>
-              <div class="d-artist" x-text="selectedArtist"></div>
+              <div class="d-artist" x-text="selectedArtist === '__ALL__' ? (selectedTrack?.artist || '') : selectedArtist"></div>
               <div class="d-album" x-text="selectedAlbum + (selectedTrack?.year > 0 ? ' · ' + selectedTrack.year : '')"></div>
             </div>
 
@@ -553,7 +564,7 @@
             </div>
             <div class="abar-info">
               <div class="abar-title" x-text="srcAlbum"></div>
-              <div class="abar-artist" x-text="srcArtist"></div>
+              <div class="abar-artist" x-text="srcArtist === '__ALL__' ? '' : srcArtist"></div>
               <div class="abar-stats" x-text="srcCurrentTracks.length + ' tracks · ' + fmtTotalDur(srcCurrentTracks)"></div>
             </div>
           </div>
@@ -579,9 +590,10 @@
                          @change="toggleSrcTrack(t, $event.target.checked)">
                   <span class="t-play-cell" @click.stop="playSrcTrack(t)">
                     <span class="t-nr-text" x-show="!isSrcCurrentTrack(t)" x-text="t.track_nr || '·'"></span>
-                    <span class="t-nr-play">&#x25B6;</span>
+                    <span class="t-nr-play">&#x25B6;&#xFE0E;</span>
                     <span class="t-nr-playing" x-show="isSrcCurrentTrack(t)"
-                          x-text="playing ? '⏸' : '▶'"></span>
+                          @click.stop="togglePlay()"
+                          x-text="playing ? '⏸︎' : '▶︎'"></span>
                   </span>
                   <span class="t-title" x-text="t.title"></span>
                   <span class="t-dur" x-text="fmtDur(t.duration_ms)"></span>
@@ -607,7 +619,7 @@
           <div class="detail-body">
             <div class="detail-track-info">
               <div class="d-title" x-text="srcSelectedTrack?.title"></div>
-              <div class="d-artist" x-text="srcArtist"></div>
+              <div class="d-artist" x-text="srcArtist === '__ALL__' ? (srcSelectedTrack?.artist || '') : srcArtist"></div>
               <div class="d-album" x-text="srcAlbum + (srcSelectedTrack?.year > 0 ? ' · ' + srcSelectedTrack.year : '')"></div>
             </div>
             <div class="detail-sep">Audio</div>
@@ -664,7 +676,7 @@
               <button class="src-action-btn"
                       @click="rescanSource(s.id)"
                       :disabled="s.scan_status === 'scanning'"
-                      title="Rescan">&#x21BB;</button>
+                      title="Rescan">&#x21BB;&#xFE0E;</button>
               <button class="src-action-btn danger"
                       @click="deleteSource(s.id)"
                       title="Remove source">&#x2715;</button>
@@ -941,16 +953,16 @@
     </div>
 
     <div class="player-controls">
-      <button class="ctrl-btn" :class="{ active: shuffle }" @click="toggleShuffle" title="Shuffle">&#x21C4;</button>
-      <button class="ctrl-btn" @click="prevTrack" title="Previous">&#x23EE;</button>
+      <button class="ctrl-btn" :class="{ active: shuffle }" @click="toggleShuffle" title="Shuffle">&#x21C4;&#xFE0E;</button>
+      <button class="ctrl-btn" @click="prevTrack" title="Previous">&#x23EE;&#xFE0E;</button>
       <button class="ctrl-btn play-btn" @click="togglePlay"
-              x-text="playing ? '⏸' : '▶'" title="Play/Pause"></button>
-      <button class="ctrl-btn" @click="nextTrack" title="Next">&#x23ED;</button>
+              x-text="playing ? '⏸︎' : '▶︎'" title="Play/Pause"></button>
+      <button class="ctrl-btn" @click="nextTrack" title="Next">&#x23ED;&#xFE0E;</button>
       <button class="ctrl-btn" :class="{ active: repeat !== 'none' }" @click="toggleRepeat"
               :title="repeat === 'one' ? 'Repeat one' : repeat === 'all' ? 'Repeat all' : 'Repeat off'">
-        &#x21BB;<sup x-show="repeat === 'one'" style="font-size:8px;line-height:1">1</sup>
+        &#x21BB;&#xFE0E;<sup x-show="repeat === 'one'" style="font-size:8px;line-height:1">1</sup>
       </button>
-      <button class="ctrl-btn" @click="stopPlayback" title="Stop" style="margin-left:8px">&#x25A0;</button>
+      <button class="ctrl-btn" @click="stopPlayback" title="Stop" style="margin-left:8px">&#x25A0;&#xFE0E;</button>
     </div>
 
     <div class="player-progress">

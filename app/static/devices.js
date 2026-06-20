@@ -73,6 +73,7 @@ function devicesModule() {
         if (!r.ok) { this.libraryError = await r.text(); return; }
         await this._fetchLibrary();
         await this.loadOpHistory(devnode);
+        if (this.selectedSourceId) this._initSrcChecked();
       } catch (e) {
         this.libraryError = e.message;
       } finally {

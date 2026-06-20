@@ -64,6 +64,7 @@ class _Op:
             "current": self.current,
             "error": self.error,
             "log": self.log,
+            "started_at": self.started_at,
         }
 
 

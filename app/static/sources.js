@@ -212,6 +212,7 @@ function sourcesModule() {
       this.srcArtist = name;
       this.srcAlbum = null;
       this.srcAlbumArtUrl = null;
+      this.srcSelectedTrack = null;
       if (name !== '__ALL__' && window.innerWidth > 768) {
         const first = this.srcCurrentAlbums[0];
         if (first) this.pickSrcAlbum(first.name);
@@ -221,6 +222,7 @@ function sourcesModule() {
     pickSrcAlbum(name) {
       this.srcAlbum = name;
       this.srcAlbumArtUrl = null;
+      this.srcSelectedTrack = null;
       const al = this.srcCurrentAlbums.find(a => a.name === name);
       const url = this.sourceArtUrl(al);
       if (url) this.srcAlbumArtUrl = url;

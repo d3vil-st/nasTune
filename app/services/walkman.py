@@ -261,23 +261,51 @@ async def _scan(db_device_id: int, mount: Path, music_path: str) -> None:
         if not music_root.exists():
             raise FileNotFoundError(f"Music directory not found: {music_root}")
 
+        # Paths already indexed in the DB (relative to mount)
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                'SELECT id, path FROM walkman_tracks WHERE device_id=?', (db_device_id,)
+            ) as cur:
+                db_rows = {row[1]: row[0] for row in await cur.fetchall()}  # path -> id
+
+        # Files currently on disk (relative path -> absolute path)
         files = await asyncio.to_thread(_find_files, music_root)
-        total = len(files)
-        log.info("WALKMAN %d: %d audio files found", db_device_id, total)
+        disk_files: dict[str, Path] = {str(f.relative_to(mount)): f for f in files}
+        total = len(disk_files)
+        log.info("WALKMAN %d: %d on disk, %d in DB", db_device_id, total, len(db_rows))
         await _write_progress(db_device_id, 0, total, '')
 
+        # Remove DB rows whose files are gone
+        removed = set(db_rows) - set(disk_files)
+        if removed:
+            removed_ids = [db_rows[p] for p in removed]
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute(
+                    f'DELETE FROM walkman_tracks WHERE id IN ({",".join("?" * len(removed_ids))})',
+                    removed_ids,
+                )
+                await db.commit()
+            log.info("WALKMAN %d: removed %d stale entries", db_device_id, len(removed_ids))
+
+        # Read tags only for files not yet in the DB
+        new_paths = set(disk_files) - set(db_rows)
         batch: list[dict] = []
         processed = 0
 
-        for fpath in files:
+        for rel_path, fpath in disk_files.items():
+            processed += 1
+            if processed % 10 == 0 or processed == 1:
+                await _write_progress(db_device_id, processed, total, fpath.name)
+
+            if rel_path not in new_paths:
+                continue  # already indexed — existence confirmed above
+
             track = await asyncio.to_thread(_read_track, fpath, mount)
             if track:
                 track['device_id'] = db_device_id
                 track['scanned_at'] = now
                 batch.append(track)
-            processed += 1
-            if processed % 10 == 0 or processed == 1:
-                await _write_progress(db_device_id, processed, total, fpath.name)
+
             if len(batch) >= 100:
                 await _flush_batch(batch)
                 batch.clear()
@@ -286,10 +314,6 @@ async def _scan(db_device_id: int, mount: Path, music_path: str) -> None:
             await _flush_batch(batch)
 
         async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                'DELETE FROM walkman_tracks WHERE device_id=? AND scanned_at < ?',
-                (db_device_id, now),
-            )
             async with db.execute(
                 'SELECT COUNT(*) FROM walkman_tracks WHERE device_id=?', (db_device_id,)
             ) as cur:
@@ -301,7 +325,8 @@ async def _scan(db_device_id: int, mount: Path, music_path: str) -> None:
             )
             await db.commit()
 
-        log.info("WALKMAN %d scan done: %d tracks", db_device_id, count)
+        log.info("WALKMAN %d scan done: %d tracks (%d new, %d removed)",
+                 db_device_id, count, len(new_paths), len(removed))
 
     except Exception as exc:
         log.error("WALKMAN %d scan failed: %s", db_device_id, exc)
@@ -358,20 +383,20 @@ def _read_track(file_path: Path, mount: Path) -> dict | None:
         try:
             from mutagen import File as MFileRaw
             raw = MFileRaw(str(file_path), easy=False)
-            if raw is not None and raw.tags is not None:
-                tags = raw.tags
-                # MP4/M4A: covr tag
-                # ID3 (MP3): APIC frame
-                # Vorbis/FLAC: metadata_block_picture
-                apic = False
-                if hasattr(tags, 'values'):
-                    apic = any(getattr(v, 'FrameID', None) == 'APIC' for v in tags.values())
-                has_artwork = bool(
-                    tags.get('covr') or
-                    apic or
-                    tags.get('metadata_block_picture') or
-                    tags.get('METADATA_BLOCK_PICTURE')
-                )
+            if raw is not None:
+                # FLAC: pictures are in audio.pictures, not in tags
+                if getattr(raw, 'pictures', None):
+                    has_artwork = True
+                elif raw.tags is not None:
+                    tags = raw.tags
+                    apic = hasattr(tags, 'values') and any(
+                        getattr(v, 'FrameID', None) == 'APIC' for v in tags.values()
+                    )
+                    has_artwork = bool(
+                        tags.get('covr') or apic or
+                        tags.get('metadata_block_picture') or
+                        tags.get('METADATA_BLOCK_PICTURE')
+                    )
         except Exception:
             pass
 

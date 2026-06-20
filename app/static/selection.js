@@ -399,6 +399,7 @@ function selectionModule() {
         es.onmessage = async (evt) => {
           const op = JSON.parse(evt.data);
           const prevStatus = this.currentOp?.status;
+          const prevStartedAt = this.currentOp?.started_at;
           this.currentOp = op;
           if (this.showOpLog && !this.historyViewOp) {
             this.$nextTick(() => {
@@ -406,10 +407,19 @@ function selectionModule() {
               if (el) el.scrollTop = el.scrollHeight;
             });
           }
-          if (prevStatus === 'running' && op?.status !== 'running') {
+          // Trigger on running→done transition, OR on a new op that completed so fast
+          // we never saw it as 'running' (started_at differs from any previously seen op).
+          const justFinished = op?.status !== 'running' && (
+            prevStatus === 'running' ||
+            (op?.started_at != null && op.started_at !== prevStartedAt && prevStartedAt != null)
+          );
+          if (justFinished) {
             this._opDeleteCount = 0;
             this._opCopyCount = 0;
             this._ipodMap = null;
+            this.selectedTrack = null;
+            this.srcSelectedTrack = null;
+            this.ipodSelection = new Set();
             await this._fetchLibrary(true);
             if (this.selectedSourceId) this._initSrcChecked();
             await this.loadOpHistory(this.selectedDevnode);
