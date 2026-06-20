@@ -3,10 +3,8 @@ FROM ubuntu:26.04
 ARG TARGETARCH=amd64
 ARG GPOD_VERSION=1.4.6
 ARG DISTRO=ubuntu26.04
-ARG BUILD_VERSION=dev
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV BUILD_VERSION=${BUILD_VERSION}
 
 RUN apt-get update && apt-get install -y --no-install-recommends --no-install-suggests \
     python3 \
@@ -38,6 +36,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ app/
+
+ARG BUILD_VERSION=dev
+ENV BUILD_VERSION=${BUILD_VERSION}
 
 EXPOSE 8080
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

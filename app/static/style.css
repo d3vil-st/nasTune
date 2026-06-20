@@ -1366,12 +1366,15 @@
       box-shadow: 0 1px 3px rgba(0,0,0,.25);
     }
     .build-ver {
+      position: fixed;
+      top: 4px;
+      right: 8px;
       font-size: 10px;
       color: var(--dim);
       font-family: ui-monospace, monospace;
       white-space: nowrap;
       pointer-events: none;
-      flex-shrink: 0;
+      z-index: 10;
     }
 
     /* ── Light theme ─────────────────────────────────────────────────── */
