@@ -4,6 +4,20 @@ All notable changes to nasTune are documented here, newest first.
 
 ---
 
+## [v0.4.0] — 2026-06-23
+
+### Added
+- **Track rating persistence** — iPod track ratings (1–5 stars) are read from `gpod-ls` output on every library load and upserted into a new `ipod_track_ratings` SQLite table; highest rating seen across multiple reads wins on conflict
+- **Rating sync during sync** — after copy/delete, `gpod-ls` is run to get fresh track IDs, then `gpod-tag --rating <stars> <id…>` is called for every iPod track whose stored rating is higher than its current iPod rating; skipped entirely (no `gpod-ls`) when no ratings are stored
+- **Inline star picker** — both the iPod and NAS source track lists now show a clickable 1–5 star picker directly in the track row; hover previews which stars will be set; clicking the active star clears the rating; `@click.stop` prevents the row click from opening the detail panel
+- **Source tab ratings** — the source library (`GET /sources/{id}/library`) now includes a `rating` field (0–5) for each track, populated from `ipod_track_ratings` by normalized track key; the rating column is shown in the source track list and detail panel
+- **`POST /library/rate`** — sets an iPod track rating in `ipod_track_ratings` and updates the in-memory library cache; `gpod-tag` is deferred to the next sync (no immediate iTunesDB write)
+- **`POST /sources/rate`** — sets a rating for a NAS source track by file path; computes the normalized key from `source_tracks` metadata and upserts `ipod_track_ratings`; the same table is shared with the iPod tab so a rating set in one view carries over to the other
+- **`services/track_key.py`** — Python port of the JS `_normStr` / `_trackKey` normalization used by sync matching; shared by rating persistence, rating sync, and both rate endpoints
+- **`services/ratings.py`** — `persist_ratings(lib)` and `ipod_rating_to_stars(r)` helpers called after every successful `gpod-ls` run
+
+---
+
 ## [v0.3.2] — 2026-06-21
 
 ### Fixed

@@ -372,6 +372,18 @@ class DeviceService:
                 self._cache.pop(devnode, None)
                 break
 
+    def update_cached_track_rating(self, devnode: str, track_id: int, rating_100: int) -> None:
+        """Mutate rating in the in-memory library cache (avoids full gpod-ls for a single-track change)."""
+        lib = self._cache.get(devnode)
+        if not lib:
+            return
+        for artist in lib.get('artists', []):
+            for album in artist.get('albums', []):
+                for track in album.get('tracks', []):
+                    if track.get('id') == track_id:
+                        track['rating'] = rating_100
+                        return
+
     def get_device_uuid(self, devnode: str) -> str | None:
         lib = self._cache.get(devnode)
         if lib:
@@ -429,7 +441,9 @@ class DeviceService:
                 )
             else:
                 from app.services.gpod import fetch_library
+                from app.services.ratings import persist_ratings
                 lib = await fetch_library(info.mount)
+                asyncio.create_task(persist_ratings(lib))
             self._cache[devnode] = lib
             log.info("Library loaded for %s: %d tracks, %d artists",
                      devnode, lib.get("total_tracks", 0), len(lib.get("artists", [])))

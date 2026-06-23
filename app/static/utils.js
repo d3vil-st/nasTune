@@ -41,6 +41,11 @@ function utilsModule() {
       return '★'.repeat(stars) + '☆'.repeat(5 - stars);
     },
 
+    fmtRatingStars(s) {
+      if (!s) return '—';
+      return '★'.repeat(s) + '☆'.repeat(5 - s);
+    },
+
     fmtQuality(t) {
       const fmt = this.fmtShort(t.filetype);
       if (['ALAC', 'WAV', 'AIFF', 'FLAC'].includes(fmt))

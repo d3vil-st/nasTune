@@ -63,8 +63,10 @@ nasTune/
     │   ├── walkman.py         # WALKMAN detection, SQLite scan, library build, delete/copy ops
     │   ├── artwork.py         # mutagen-based artwork extractor (M4A/MP3/FLAC)
     │   ├── fs_utils.py        # os.statvfs capacity + /proc/mounts FS-type label
-    │   ├── db.py              # SQLite schema + migrations (sources, source_tracks, walkman_devices, walkman_tracks)
+    │   ├── db.py              # SQLite schema + migrations (sources, source_tracks, walkman_devices, walkman_tracks, ipod_track_ratings)
     │   ├── scanner.py         # Async file scanner: walks dirs, reads tags via mutagen
+    │   ├── track_key.py       # Python port of JS _normStr/_trackKey; shared by ratings + operations
+    │   ├── ratings.py         # persist_ratings(): upserts iPod ratings into ipod_track_ratings (max wins)
     │   └── operations.py      # OperationService: gpod-rm / gpod-cp / WALKMAN shutil with progress tracking
     ├── templates/
     │   └── index.html         # iTunes-like 3-pane dark UI + bottom player bar
@@ -135,7 +137,8 @@ Key docker-compose volumes:
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/library/delete` | `{ devnode, track_ids[] }` — enqueues gpod-rm for each track ID |
-| `POST` | `/library/sync` | `{ devnode, copy_paths[], delete_ids[], copy_track_count }` — delete then copy |
+| `POST` | `/library/sync` | `{ devnode, copy_paths[], delete_ids[], copy_track_count }` — delete then copy then rating sync |
+| `POST` | `/library/rate` | `{ devnode, track_id, rating }` — set track rating (0–5); updates cache + ipod_track_ratings; gpod-tag applied on next sync |
 | `POST` | `/library/download` | `{ devnode, tracks[] }` — streams selected tracks as a `.tar` archive |
 | `GET` | `/operations` | Current operation status: kind, status, processed, total, current, error, started_at |
 | `GET` | `/operations/events` | SSE stream; pushes full op state on any change (250 ms server-side diff-poll) |
@@ -173,6 +176,7 @@ The archive restores the original directory structure:
 | `GET` | `/sources/{id}/library` | Source library as artist → album → track hierarchy |
 | `GET` | `/sources/audio?path=` | Serve audio file from source; ALAC → FLAC transcode |
 | `GET` | `/sources/artwork?path=` | Extract artwork from source file via mutagen |
+| `POST` | `/sources/rate` | `{ path, rating }` — set rating (0–5) for a source track by file path; updates ipod_track_ratings |
 
 ---
 
@@ -325,9 +329,32 @@ A `<span class="build-ver">` at the far right of `.statusbar-right` (the status 
 
 ---
 
+## Track rating system
+
+Ratings (1–5 stars) are stored in `ipod_track_ratings` and flow in two directions:
+
+**iPod → DB** (`persist_ratings` in `services/ratings.py`):
+- Called as a background task after every successful `gpod-ls` run (library load or refresh)
+- Converts iPod's 0–100 rating to 0–5 stars (`round(r / 20)`); unrated tracks (0) are skipped
+- Upserts with `MAX(stored, new)` — highest rating seen across multiple reads wins on conflict
+- Track identity uses the same normalized key as sync: `_norm_str(artist) + '|||' + _norm_str(album) + '|||' + disc_prefix + track_nr_or_title`; implemented in `services/track_key.py`, mirroring `_normStr` / `_trackKey` in JS
+
+**DB → iPod** (rating sync step in `_do_sync`, `services/operations.py`):
+- Runs on every sync (delete-only and copy); skipped entirely via a `COUNT(*)` pre-check when `ipod_track_ratings` is empty
+- Runs `gpod-ls` to get fresh track IDs, builds key→(id, current_stars) map, queries stored ratings
+- Calls `gpod-tag --rating <stars> <id…>` grouped by rating value for tracks where `stored_stars > current_ipod_stars`; failure is non-fatal (logged as warning, sync still completes)
+
+**UI → DB** (`POST /library/rate` and `POST /sources/rate`):
+- Writing a rating from the track-row star picker updates `ipod_track_ratings` immediately and mutates the in-memory library cache so the UI reflects the change without a page reload
+- For iPod tracks, `gpod-tag` is **not** called at this point — it is deferred to the next sync
+- Explicit UI writes overwrite the DB value (no max-wins); setting 0 deletes the row
+- Source track ratings use the file `path` to look up metadata in `source_tracks`, compute the key, and upsert `ipod_track_ratings` — the same table used for iPod tracks
+
+---
+
 ## gpod-utils CLI reference
 
-All interaction with the iPod goes through these three commands. The `IPOD_MOUNT_POINT` environment variable is read natively by gpod-utils — no explicit path argument needed.
+All interaction with the iPod goes through these commands. The `IPOD_MOUNT_POINT` environment variable is read natively by gpod-utils — no explicit path argument needed.
 
 ```bash
 # List all tracks on iPod as JSON (IPOD_MOUNT_POINT must be set)
@@ -339,6 +366,9 @@ gpod-cp /music/Artist/Album/
 
 # Remove tracks from iPod by persistent ID (accepts multiple IDs)
 gpod-rm <id1> <id2> ...
+
+# Set track rating (0 = unrated, 1–5 = stars); accepts multiple IDs
+gpod-tag --rating <0-5> <id1> <id2> ...
 ```
 
 Every invocation is logged at INFO level as `exec: IPOD_MOUNT_POINT=<mount> <cmd> <args>`. Set `GPOD_DRY_RUN=1` to skip execution while preserving logs.
@@ -358,6 +388,8 @@ Every invocation is logged at INFO level as `exec: IPOD_MOUNT_POINT=<mount> <cmd
 Progress is written to `sources.scan_processed / scan_total / scan_current_file` and polled by the frontend every 2 s. Files removed from disk since the last scan are deleted from the DB (tracked by `scanned_at` timestamp).
 
 The DB schema includes `disc_nr INTEGER` on `source_tracks`. The library response includes `last_scanned_at` (Unix timestamp) which is appended as `?_v=` to artwork URLs to bust the browser cache after each rescan.
+
+The `ipod_track_ratings` table (`track_key TEXT PRIMARY KEY, rating INTEGER, updated_at INTEGER`) stores 0–5 star ratings keyed by normalized track key. It is shared between the iPod and source tabs — the same key formula is used in both so a rating set in the source view applies to the matching iPod track and vice versa.
 
 ---
 
@@ -447,6 +479,11 @@ The `mode='w|'` flag enables streaming (no seeking). The OS pipe provides natura
 - **`__ALL__` sentinel in album checkboxes**: `isAlbumSelected`, `isAlbumIndeterminate`, `toggleAlbum` (and source equivalents) accept an album object, not `(artistName, albumName)`. Do not change to string-based lookup — it breaks when `selectedArtist === '__ALL__'` because no library artist has that name.
 - **`_normStr` empty fallback**: `_normStr` returns `norm || raw` so that symbol-only strings like `#####` (which normalize to `''`) don't collide with each other or with null/empty artist names.
 - **Status bar `.statusbar-right` width**: declared as `width: min(440px, 54%)` (CSS value, not content-driven). Never change to `width: auto` or remove the declaration — the right section will grow/shrink with text and cause the left content to jump during N/M counter updates. Do not add `flex-grow` to `.statusbar-op` children — that re-introduces artificial gaps between op text and timestamps.
+- **Rating sync runs `gpod-ls`**: `_gpod_rating_sync` re-reads the full iPod library after copy/delete to get fresh track IDs. This adds a few seconds to sync time on large libraries. It is skipped via a `COUNT(*)` pre-check when `ipod_track_ratings` is empty, so new installs with no rated tracks pay no cost.
+- **Star picker uses nested `x-data` in `x-for`**: each track row's `.t-rating` span carries `x-data="{ hov: 0 }"` to manage per-row hover state. Alpine v3 correctly scopes nested `x-data` inside `x-for` iterations. `@click.stop` on the container prevents the click from bubbling to the row's `openDetail` handler.
+- **iPod rating deferred to sync**: `POST /library/rate` writes to `ipod_track_ratings` and mutates the in-memory cache, but does **not** call `gpod-tag` immediately. The actual iTunesDB write happens during the next sync's rating-sync step. This means ratings set via UI are not written to the iPod until the next sync operation completes.
+- **`ipod_track_ratings` shared across tabs**: the same normalized key is used by both the iPod library (via `persist_ratings` and `POST /library/rate`) and the source library (via `POST /sources/rate` and `GET /sources/{id}/library`). A rating set in one view is visible in the other after the next library load.
+- **Rating scale**: `ipod_track_ratings` stores 0–5 stars. The iPod library cache stores the iPod-native 0–100 scale (`rating * 20`). `fmtRating(r)` in `utils.js` takes 0–100; `fmtRatingStars(s)` takes 0–5. Use the correct formatter for each tab.
 
 ---
 

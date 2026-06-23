@@ -134,6 +134,8 @@ async def browse_fs(path: str = "/"):
 
 @router.get("/{source_id}/library")
 async def get_source_library(source_id: int):
+    from app.services.track_key import track_key as _tk
+
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT last_scanned_at FROM sources WHERE id=?", (source_id,)) as cur:
@@ -150,6 +152,23 @@ async def get_source_library(source_id: int):
             (source_id,),
         ) as cur:
             tracks = [dict(t) for t in await cur.fetchall()]
+
+    # Attach ratings from ipod_track_ratings (keyed by normalised track key, 0-5 stars)
+    if tracks:
+        key_map: dict[str, int] = {}  # track_key -> index in tracks
+        for i, t in enumerate(tracks):
+            artist = t.get('artist') or t.get('albumartist') or ''
+            key = _tk(artist, t.get('album') or '', t.get('track_nr'), t.get('disc_nr'), t.get('title') or '')
+            key_map[key] = i
+
+        async with aiosqlite.connect(DB_PATH) as db:
+            placeholders = ','.join('?' * len(key_map))
+            async with db.execute(
+                f'SELECT track_key, rating FROM ipod_track_ratings WHERE track_key IN ({placeholders})',
+                list(key_map.keys()),
+            ) as cur:
+                for row in await cur.fetchall():
+                    tracks[key_map[row[0]]]['rating'] = row[1]
 
     result = _build_library(tracks)
     result["last_scanned_at"] = last_scanned_at
@@ -178,6 +197,50 @@ async def source_audio(path: str, background_tasks: BackgroundTasks = None):
 
     mime = _AUDIO_MIMES.get(ext, "application/octet-stream")
     return FileResponse(str(full), media_type=mime)
+
+
+class RateSourceBody(BaseModel):
+    path: str
+    rating: int  # 0-5 stars
+
+
+@router.post("/rate")
+async def rate_source_track(body: RateSourceBody):
+    if not 0 <= body.rating <= 5:
+        raise HTTPException(400, "Rating must be 0-5")
+
+    full = Path(body.path).resolve()
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT path FROM sources") as cur:
+            roots = [row[0] for row in await cur.fetchall()]
+    if not any(str(full).startswith(r) for r in roots):
+        raise HTTPException(403, "Path is not in any registered source")
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT artist, albumartist, album, title, track_nr, disc_nr FROM source_tracks WHERE path=?",
+            (str(full),),
+        ) as cur:
+            row = await cur.fetchone()
+    if not row:
+        raise HTTPException(404, "Track not found in source library")
+
+    from app.services.track_key import track_key as _tk
+    artist_tag = row[0] or row[1] or ''
+    key = _tk(artist_tag, row[2] or '', row[4], row[5], row[3] or '')
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        if body.rating > 0:
+            await db.execute(
+                "INSERT INTO ipod_track_ratings(track_key, rating, updated_at) VALUES(?,?,?) "
+                "ON CONFLICT(track_key) DO UPDATE SET rating=excluded.rating, updated_at=excluded.updated_at",
+                (key, body.rating, int(time.time())),
+            )
+        else:
+            await db.execute("DELETE FROM ipod_track_ratings WHERE track_key=?", (key,))
+        await db.commit()
+
+    return {"ok": True}
 
 
 @router.post("/audio/cache/evict")
@@ -248,6 +311,7 @@ def _build_library(tracks: list[dict]) -> dict:
             "size": t.get("size") or 0,
             "codec": t.get("codec") or "",
             "bits_per_sample": t.get("bits_per_sample") or 0,
+            "rating": t.get("rating") or 0,
         })
 
     result_artists = []

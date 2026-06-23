@@ -94,6 +94,16 @@ function deviceModule() {
       this.selectedTrack = this.selectedTrack?.id === t.id ? null : t;
     },
 
+    async setIpodRating(track, stars) {
+      if (!track || !this.selectedDevnode) return;
+      const r = await fetch('/library/rate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ devnode: this.selectedDevnode, track_id: track.id, rating: stars }),
+      });
+      if (r.ok) track.rating = stars * 20;
+    },
+
     artUrl(album) {
       if (!album) return null;
       const t = album.tracks.find(t => t.artwork && t.ipod_path);

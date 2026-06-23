@@ -94,6 +94,12 @@ CREATE TABLE IF NOT EXISTS source_tracks (
 
 CREATE INDEX IF NOT EXISTS idx_st_source   ON source_tracks(source_id);
 CREATE INDEX IF NOT EXISTS idx_st_artist   ON source_tracks(source_id, albumartist, artist);
+
+CREATE TABLE IF NOT EXISTS ipod_track_ratings (
+    track_key   TEXT PRIMARY KEY,
+    rating      INTEGER NOT NULL DEFAULT 0,
+    updated_at  INTEGER NOT NULL
+);
 """
 
 
