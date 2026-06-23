@@ -601,14 +601,9 @@
       gap: 3px;
     }
 
-    .t-rating {
-      font-size: 11px;
-      color: #ffd60a;
-      text-align: right;
-      letter-spacing: -1px;
-      white-space: nowrap;
-    }
-    .t-rating.unrated { color: var(--dim); letter-spacing: 0; }
+    .t-rating { display: inline-flex; align-items: center; justify-content: flex-end; gap: 0; white-space: nowrap; }
+    .sp-s { cursor: pointer; color: var(--dim); font-size: 10px; line-height: 1; letter-spacing: 0; transition: color 0.08s; user-select: none; }
+    .sp-s.lit { color: #ffd60a; }
 
     .t-quality {
       font-size: 11px;

@@ -401,7 +401,7 @@
                           x-text="playing ? '⏸︎' : '▶︎'"></span>
                   </span>
                   <span class="t-title" x-text="t.title"></span>
-                  <span class="t-rating" :class="{ unrated: !t.rating }" x-text="fmtRating(t.rating)"></span>
+                  <span class="t-rating" @click.stop x-data="{ hov: 0 }" @mouseleave="hov = 0"><template x-for="s in [1,2,3,4,5]" :key="s"><span class="sp-s" :class="{ lit: s <= (hov || Math.round((t.rating||0)/20)) }" @mouseenter="hov = s" @click.stop="setIpodRating(t, s === Math.round((t.rating||0)/20) ? 0 : s)">★</span></template></span>
                   <span class="t-dur" x-text="fmtDur(t.duration_ms)"></span>
                   <span class="t-fmt-cell">
                     <span class="t-fmt" :class="fmtClass(t.filetype)" x-text="fmtShort(t.filetype)"></span>
@@ -591,7 +591,7 @@
             <div>
               <template x-for="(t, i) in srcCurrentTracks" :key="t.id">
                 <div class="track-row"
-                     style="grid-template-columns: 16px 36px 1fr 50px 66px 72px;"
+                     style="grid-template-columns: 16px 36px 1fr 54px 50px 66px 72px;"
                      :class="{ active: srcSelectedTrack?.id === t.id, 'now-playing': isSrcCurrentTrack(t), 'disc-sep-before': t.disc_nr > 0 && (i === 0 ? srcCurrentTracks.some(x => x.disc_nr > 0 && x.disc_nr !== t.disc_nr) : t.disc_nr !== srcCurrentTracks[i-1].disc_nr) }"
                      :data-disc-nr="t.disc_nr || ''"
                      @click="openSrcDetail(t)">
@@ -606,6 +606,7 @@
                           x-text="playing ? '⏸︎' : '▶︎'"></span>
                   </span>
                   <span class="t-title" x-text="t.title"></span>
+                  <span class="t-rating" @click.stop x-data="{ hov: 0 }" @mouseleave="hov = 0"><template x-for="s in [1,2,3,4,5]" :key="s"><span class="sp-s" :class="{ lit: s <= (hov || (t.rating||0)) }" @mouseenter="hov = s" @click.stop="setSrcRating(t, s === (t.rating||0) ? 0 : s)">★</span></template></span>
                   <span class="t-dur" x-text="fmtDur(t.duration_ms)"></span>
                   <span class="t-fmt-cell">
                     <span class="t-fmt" :class="srcFmtClass(t)" x-text="srcFmtShort(t)"></span>
@@ -638,6 +639,7 @@
             <div class="detail-row"><span class="dr-l">Sample Rate</span><span class="dr-v" x-text="srcSelectedTrack?.samplerate ? (srcSelectedTrack.samplerate / 1000).toFixed(1) + ' kHz' : '—'"></span></div>
             <div class="detail-row"><span class="dr-l">Duration</span>   <span class="dr-v" x-text="fmtDur(srcSelectedTrack?.duration_ms)"></span></div>
             <div class="detail-row"><span class="dr-l">File Size</span>  <span class="dr-v" x-text="srcSelectedTrack ? (srcSelectedTrack.size / 1048576).toFixed(1) + ' MB' : ''"></span></div>
+            <div class="detail-row"><span class="dr-l">Rating</span>    <span class="dr-v" x-text="fmtRatingStars(srcSelectedTrack?.rating)"></span></div>
             <div class="detail-sep">File</div>
             <div class="detail-row"><span class="dr-l">Track #</span>    <span class="dr-v" x-text="srcSelectedTrack?.track_nr || '—'"></span></div>
             <div class="detail-path" x-text="srcSelectedTrack?.path"></div>

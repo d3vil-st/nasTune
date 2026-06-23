@@ -46,6 +46,12 @@ class DownloadBody(BaseModel):
     tracks: list[DownloadTrack]
 
 
+class RateBody(BaseModel):
+    devnode: str
+    track_id: int
+    rating: int  # 0-5 stars
+
+
 def _get_mount(devnode: str) -> str:
     """For iPod-only operations (gpod-rm/gpod-cp). Raises for WALKMAN."""
     info = device_service.get_device_info(devnode)
@@ -177,6 +183,44 @@ async def sync_tracks(body: SyncBody):
             body.copy_paths, body.delete_ids, info.mount,
             device_id=device_id, copy_track_count=body.copy_track_count,
         )
+    return {"ok": True}
+
+
+@router.post("/library/rate")
+async def rate_track(body: RateBody):
+    if not 0 <= body.rating <= 5:
+        raise HTTPException(400, "Rating must be 0-5")
+    info = device_service.get_device_info(body.devnode)
+    if not info or not info.is_ipod:
+        raise HTTPException(404, "iPod not found")
+
+    # Update in-memory cache so the track row reflects the change immediately
+    device_service.update_cached_track_rating(body.devnode, body.track_id, body.rating * 20)
+
+    # Persist to ipod_track_ratings — gpod-tag is applied on the next sync via _gpod_rating_sync
+    import aiosqlite, time as _time
+    from app.services.db import DB_PATH
+    from app.services.track_key import track_key as _tk
+    lib = device_service._cache.get(body.devnode)
+    if lib:
+        for artist in lib.get('artists', []):
+            for album in artist.get('albums', []):
+                for track in album.get('tracks', []):
+                    if track.get('id') == body.track_id:
+                        artist_tag = track.get('artist') or artist['name']
+                        key = _tk(artist_tag, album['name'], track.get('track_nr'), track.get('disc_nr'), track.get('title', ''))
+                        async with aiosqlite.connect(DB_PATH) as db:
+                            if body.rating > 0:
+                                await db.execute(
+                                    "INSERT INTO ipod_track_ratings(track_key, rating, updated_at) VALUES(?,?,?) "
+                                    "ON CONFLICT(track_key) DO UPDATE SET rating=excluded.rating, updated_at=excluded.updated_at",
+                                    (key, body.rating, int(_time.time())),
+                                )
+                            else:
+                                await db.execute("DELETE FROM ipod_track_ratings WHERE track_key=?", (key,))
+                            await db.commit()
+                        break
+
     return {"ok": True}
 
 

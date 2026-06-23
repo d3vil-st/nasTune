@@ -200,6 +200,95 @@ class OperationService:
             if device_id:
                 _save_op_history(op, device_id)
 
+    async def _gpod_rating_sync(self, mount: str, op: _Op) -> None:
+        """Run gpod-ls then apply stored DB ratings to iPod tracks that need updating."""
+        import aiosqlite
+        from app.services.db import DB_PATH
+        from app.services.gpod import fetch_library
+        from app.services.ratings import ipod_rating_to_stars
+        from app.services.track_key import track_key as _tk
+
+        # Skip the expensive gpod-ls entirely when no ratings are stored
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute('SELECT COUNT(*) FROM ipod_track_ratings') as cur:
+                if (await cur.fetchone())[0] == 0:
+                    return
+
+        op.current = "Rating sync: reading library…"
+        op.log.append("$ gpod-ls  # rating sync")
+        try:
+            lib = await fetch_library(mount)
+        except Exception as exc:
+            log.warning("rating sync: gpod-ls failed, skipping: %s", exc)
+            op.log.append(f"  WARN: rating sync skipped ({exc})")
+            return
+
+        # Build {track_key -> (id, current_stars)} from fresh library
+        track_map: dict[str, tuple[int, int]] = {}
+        for artist in lib.get('artists', []):
+            artist_name = artist['name']
+            for album in artist.get('albums', []):
+                album_name = album['name']
+                for track in album.get('tracks', []):
+                    artist_tag = track.get('artist') or artist_name
+                    key = _tk(
+                        artist_tag, album_name,
+                        track.get('track_nr'), track.get('disc_nr'),
+                        track.get('title', ''),
+                    )
+                    track_map[key] = (track['id'], ipod_rating_to_stars(track.get('rating') or 0))
+
+        if not track_map:
+            return
+
+        keys = list(track_map.keys())
+        async with aiosqlite.connect(DB_PATH) as db:
+            placeholders = ','.join('?' * len(keys))
+            async with db.execute(
+                f'SELECT track_key, rating FROM ipod_track_ratings WHERE track_key IN ({placeholders})',
+                keys,
+            ) as cur:
+                stored = {row[0]: row[1] for row in await cur.fetchall()}
+
+        # Group by rating value; only update tracks where stored rating > current iPod rating
+        by_rating: dict[int, list[int]] = {}
+        for key, stored_stars in stored.items():
+            if key not in track_map:
+                continue
+            track_id, current_stars = track_map[key]
+            if stored_stars > 0 and stored_stars > current_stars:
+                by_rating.setdefault(stored_stars, []).append(track_id)
+
+        if not by_rating:
+            log.info("rating sync: no tracks need rating update")
+            op.log.append("  rating sync: nothing to update")
+            return
+
+        total = sum(len(ids) for ids in by_rating.values())
+        log.info("rating sync: applying ratings to %d track(s)", total)
+
+        for stars, track_ids in sorted(by_rating.items()):
+            ids_str = [str(i) for i in track_ids]
+            op.current = f"Rating sync: {stars}★ × {len(track_ids)}"
+            op.log.append(f"$ gpod-tag --rating {stars} {' '.join(ids_str)}")
+            if GPOD_DRY_RUN:
+                op.log.append("[dry-run] skipped")
+                continue
+            env = {**os.environ, "IPOD_MOUNT_POINT": mount}
+            proc = await asyncio.create_subprocess_exec(
+                "gpod-tag", "--rating", str(stars), *ids_str,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                env=env,
+            )
+            async for raw in proc.stdout:
+                op.log.append(raw.decode().rstrip())
+            await proc.wait()
+            if proc.returncode != 0:
+                log.warning("gpod-tag --rating %d exited %d", stars, proc.returncode)
+            else:
+                log.info("gpod-tag --rating %d applied to %d track(s)", stars, len(track_ids))
+
     async def _do_sync(self, op: _Op, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "") -> None:
         async with self._lock:
             # Delete highest IDs first so lower IDs don't shift after each batch commit
@@ -231,6 +320,8 @@ class OperationService:
                         _save_op_history(op, device_id)
                     return
                 i += BATCH_SIZE
+
+            await self._gpod_rating_sync(mount, op)
 
             op.status = "done"
             op.current = ""

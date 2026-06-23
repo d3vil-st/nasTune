@@ -243,6 +243,16 @@ function sourcesModule() {
       this.srcSelectedTrack = this.srcSelectedTrack?.id === t.id ? null : t;
     },
 
+    async setSrcRating(track, stars) {
+      if (!track) return;
+      const r = await fetch('/sources/rate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ path: track.path, rating: stars }),
+      });
+      if (r.ok) track.rating = stars;
+    },
+
     sourceArtUrl(album) {
       if (!album) return '';
       const t = album.tracks && album.tracks[0];
