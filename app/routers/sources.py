@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -171,6 +172,7 @@ async def get_source_library(source_id: int):
                     tracks[key_map[row[0]]]['rating'] = row[1]
 
     result = _build_library(tracks)
+    _annotate_dir_file_counts(result)
     result["last_scanned_at"] = last_scanned_at
     return JSONResponse(result)
 
@@ -280,6 +282,22 @@ async def source_artwork(path: str):
         raise
     except Exception as exc:
         raise HTTPException(500, f"Failed to read artwork: {exc}")
+
+
+def _annotate_dir_file_counts(result: dict) -> None:
+    """Add dir_file_count to each track: total files in its parent directory.
+    Used by the frontend to avoid collapsing album dirs that contain cover art etc."""
+    dir_counts: dict[str, int] = {}
+    for artist in result["artists"]:
+        for album in artist["albums"]:
+            for track in album["tracks"]:
+                d = os.path.dirname(track["path"])
+                if d not in dir_counts:
+                    try:
+                        dir_counts[d] = sum(1 for e in os.scandir(d) if e.is_file())
+                    except OSError:
+                        dir_counts[d] = 0
+                track["dir_file_count"] = dir_counts[d]
 
 
 def _build_library(tracks: list[dict]) -> dict:
