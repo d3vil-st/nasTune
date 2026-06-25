@@ -43,6 +43,43 @@ _PROGRESS_RE = re.compile(r'^\[\s*\d+/\d+\]')
 _PROGRESS_NM_RE = re.compile(r'^\[\s*(\d+)/(\d+)\]')
 _TITLE_ARTIST_RE = re.compile(r"title='(.*?)'\s+artist='(.*?)'")
 
+_LOSSLESS_EXTS = frozenset({'.flac', '.wav', '.aiff', '.aif', '.ape', '.wv'})
+
+
+async def _load_sync_settings() -> tuple[bool, int]:
+    """Returns (force_aac, max_threads). max_threads=0 means let gpod-cp use its default."""
+    try:
+        import aiosqlite
+        async with aiosqlite.connect(_DB_PATH) as db:
+            async with db.execute("SELECT key, value FROM settings") as cur:
+                stored = {k: v for k, v in await cur.fetchall()}
+        force_aac = stored.get("force_aac", "false") == "true"
+        max_threads = int(stored.get("max_threads", "0") or "0")
+        return force_aac, max_threads
+    except Exception:
+        return False, 0
+
+
+def _classify_audio_path(path: str) -> str:
+    """Return 'lossless' or 'lossy' for a file or directory path."""
+    p = Path(path.rstrip('/'))
+    if p.is_dir():
+        for f in sorted(p.rglob('*')):
+            if f.is_file() and f.suffix.lower() in _LOSSLESS_EXTS | {'.mp3', '.m4a', '.aac', '.ogg', '.wma', '.opus'}:
+                return _classify_audio_path(str(f))
+        return 'lossy'
+    ext = p.suffix.lower()
+    if ext in _LOSSLESS_EXTS:
+        return 'lossless'
+    if ext == '.m4a':
+        try:
+            from mutagen.mp4 import MP4
+            if 'alac' in (MP4(str(p)).info.codec or '').lower():
+                return 'lossless'
+        except Exception:
+            pass
+    return 'lossy'
+
 
 class _Op:
     def __init__(self, kind: str, total: int):
@@ -128,18 +165,44 @@ class OperationService:
                 return msg
         return None
 
-    async def _gpod_cp_batch(self, paths: list[str], mount: str, op: _Op, proc_offset: int = 0) -> tuple[str | None, int]:
-        """Returns (error, batch_track_count). Updates op.processed live via [N/M] lines."""
+    _LOSSLESS_ARGS = ['--encoder', 'alac', '--disable-encoder-fallback']
+    _LOSSY_ARGS    = ['--encoder', 'fdk-aac', '--encoder-quality', '9', '--disable-encoder-fallback']
+
+    async def _gpod_cp_batch(self, paths: list[str], mount: str, op: _Op, proc_offset: int = 0,
+                              *, force_aac: bool = False, threads: int = 0) -> tuple[str | None, int]:
+        """Split paths by lossless/lossy and dispatch with the appropriate encoder."""
         paths = list(dict.fromkeys(paths))
-        log.info("exec: IPOD_MOUNT_POINT=%s gpod-cp %s", mount, " ".join(paths))
-        op.log.append(f"$ gpod-cp {' '.join(paths)}")
+        if force_aac:
+            lossless, lossy = [], paths
+        else:
+            lossless, lossy = [], []
+            for p in paths:
+                (lossless if _classify_audio_path(p) == 'lossless' else lossy).append(p)
+
+        total = 0
+        for group, extra_args in ((lossless, self._LOSSLESS_ARGS), (lossy, self._LOSSY_ARGS)):
+            if not group:
+                continue
+            err, n = await self._gpod_cp_exec(group, extra_args, mount, op, proc_offset + total, threads=threads)
+            total += n
+            if err:
+                return err, total
+        return None, total
+
+    async def _gpod_cp_exec(self, paths: list[str], extra_args: list[str], mount: str, op: _Op,
+                             proc_offset: int = 0, *, threads: int = 0) -> tuple[str | None, int]:
+        """Execute gpod-cp with given extra args. Returns (error, track_count)."""
+        thread_args = ['--threads', str(threads)] if threads > 0 else []
+        cmd_str = f"gpod-cp {' '.join(extra_args + thread_args)} {' '.join(paths)}"
+        log.info("exec: IPOD_MOUNT_POINT=%s %s", mount, cmd_str)
+        op.log.append(f"$ {cmd_str}")
         if GPOD_DRY_RUN:
             log.info("[dry-run] skipping gpod-cp (%d path(s))", len(paths))
             op.log.append("[dry-run] skipped")
             return None, 0
         env = {**os.environ, "IPOD_MOUNT_POINT": mount}
         proc = await asyncio.create_subprocess_exec(
-            "gpod-cp", *paths,
+            "gpod-cp", *extra_args, *thread_args, *paths,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             env=env,
@@ -290,6 +353,7 @@ class OperationService:
                 log.info("gpod-tag --rating %d applied to %d track(s)", stars, len(track_ids))
 
     async def _do_sync(self, op: _Op, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "") -> None:
+        force_aac, threads = await _load_sync_settings()
         async with self._lock:
             # Delete highest IDs first so lower IDs don't shift after each batch commit
             delete_ids = sorted(delete_ids, key=lambda x: int(x), reverse=True)
@@ -309,7 +373,10 @@ class OperationService:
             i = 0
             while i < len(copy_paths):
                 batch = copy_paths[i:i + BATCH_SIZE]
-                err, batch_tracks = await self._gpod_cp_batch(batch, mount, op, proc_offset=len(delete_ids) + copy_offset)
+                err, batch_tracks = await self._gpod_cp_batch(
+                    batch, mount, op, proc_offset=len(delete_ids) + copy_offset,
+                    force_aac=force_aac, threads=threads,
+                )
                 copy_offset += batch_tracks
                 op.processed = len(delete_ids) + copy_offset
                 if err:

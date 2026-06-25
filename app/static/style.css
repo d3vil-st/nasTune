@@ -1087,6 +1087,70 @@
       padding: 12px 20px;
       border-top: 1px solid var(--border);
     }
+    /* ── Settings modal ── */
+    .setting-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .setting-toggle {
+      width: 38px;
+      height: 22px;
+      border-radius: 11px;
+      background: var(--fill-bg);
+      position: relative;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background .2s;
+      outline: none;
+    }
+    .setting-toggle.active { background: #0a84ff; }
+    .setting-toggle-thumb {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      top: 2px;
+      left: 2px;
+      transition: left .2s;
+      pointer-events: none;
+    }
+    .setting-toggle.active .setting-toggle-thumb { left: 18px; }
+    .settings-slider {
+      flex: 1;
+      height: 4px;
+      appearance: none;
+      background: var(--fill-bg);
+      border-radius: 2px;
+      cursor: pointer;
+      outline: none;
+    }
+    .settings-slider::-webkit-slider-thumb {
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #0a84ff;
+      cursor: pointer;
+    }
+    .settings-slider::-moz-range-thumb {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #0a84ff;
+      cursor: pointer;
+      border: none;
+    }
+    .setting-thread-val {
+      font-size: 20px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+      min-width: 28px;
+      text-align: right;
+    }
+
     .src-row {
       display: flex; align-items: center; gap: 10px;
       padding: 10px 0; border-bottom: 1px solid var(--border2);
