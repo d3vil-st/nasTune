@@ -1,29 +1,71 @@
+# ── Stage 1: rebuild Ubuntu's ffmpeg with fdk-aac enabled ────────────────────
+FROM ubuntu:26.04 AS ffmpeg-builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Enable universe (for libfdk-aac-dev) and deb-src (for apt-get source)
+RUN sed -i \
+      -e 's/^Types: deb$/Types: deb deb-src/' \
+      -e 's/^Components: main restricted$/Components: main restricted universe/' \
+      /etc/apt/sources.list.d/ubuntu.sources \
+    && apt-get update
+
+RUN apt-get install -y --no-install-recommends \
+      libfdk-aac-dev \
+      dpkg-dev \
+    && apt-get build-dep -y ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+RUN apt-get update \
+    && apt-get source ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Inject --enable-nonfree --enable-libfdk-aac into the existing --enable-gpl flag
+RUN cd /build/ffmpeg-* \
+    && sed -i 's/--enable-gpl/--enable-gpl --enable-nonfree --enable-libfdk-aac/' debian/rules \
+    && dpkg-buildpackage -us -uc -b -j$(nproc)
+
+# ── Stage 2: runtime image ────────────────────────────────────────────────────
 FROM ubuntu:26.04
 
 ARG TARGETARCH=amd64
-ARG GPOD_VERSION=1.4.7
+ARG GPOD_VERSION=1.4.8
 ARG DISTRO=ubuntu26.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends --no-install-suggests \
-    python3 \
-    python3-venv \
-    curl \
-    udev \
-    util-linux \
-    mount \
-    ffmpeg \
+# Enable universe for libfdk-aac2 runtime lib
+RUN sed -i \
+      -e 's/^Components: main restricted$/Components: main restricted universe/' \
+      /etc/apt/sources.list.d/ubuntu.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends --no-install-suggests \
+        python3 \
+        python3-venv \
+        curl \
+        jq \
+        less \
+        udev \
+        util-linux \
+        mount \
+        libfdk-aac2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install pre-built gpod-utils deb (apt resolves libgpod and glib deps automatically)
+# Install rebuilt ffmpeg debs + gpod-utils in one apt pass so apt resolves all
+# runtime dependencies (libaom, libmp3lame, etc.) from the Ubuntu repos.
+# Exclude -dev/-dbg/-doc packages; everything else (libs + ffmpeg binary) is needed.
+COPY --from=ffmpeg-builder /build/*.deb /tmp/ffmpeg-debs/
 RUN curl -fsSL \
       "https://github.com/d3vil-st/gpod-utils/releases/download/v${GPOD_VERSION}/gpod-utils_${GPOD_VERSION}.${DISTRO}_${TARGETARCH}.deb" \
       -o /tmp/gpod-utils.deb \
     && apt-get update \
-    && apt-get install -y --no-install-recommends --no-install-suggests /tmp/gpod-utils.deb \
-    && rm /tmp/gpod-utils.deb \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends --no-install-suggests \
+         $(find /tmp/ffmpeg-debs -name '*.deb' \
+             ! -name '*-dev_*' ! -name '*-dbg_*' ! -name '*-doc_*' \
+             ! -name '*-extra*') \
+         /tmp/gpod-utils.deb \
+    && rm -rf /tmp/ffmpeg-debs /tmp/gpod-utils.deb /var/lib/apt/lists/*
 
 WORKDIR /app
 

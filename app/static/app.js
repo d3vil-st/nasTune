@@ -6,6 +6,7 @@ function app() {
     playerModule(),
     sourcesModule(),
     selectionModule(),
+    settingsModule(),
   ];
 
   // Use defineProperties to preserve getters across module boundaries
@@ -31,6 +32,7 @@ function app() {
 
   state.init = async function () {
     this.initTheme();
+    await this.loadSettings();
 
     const hash = location.hash.slice(1);
     const url = hash ? new URLSearchParams(hash) : null;

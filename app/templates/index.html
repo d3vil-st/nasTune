@@ -19,6 +19,7 @@
   <script src="/static/player.js"></script>
   <script src="/static/sources.js"></script>
   <script src="/static/selection.js"></script>
+  <script src="/static/settings.js"></script>
   <script src="/static/app.js"></script>
   <script defer src="/static/alpine.min.js"></script>
 </head>
@@ -158,6 +159,11 @@
 
     <!-- Theme switcher + search (right side) -->
     <div class="header-right">
+      <button class="icon-btn" @click="openSettings()" title="Settings" style="margin-right:2px">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 0 1-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 0 1 .947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 0 1 2.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 0 1 2.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 0 1 .947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 0 1-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 0 1-2.287-.947zM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" clip-rule="evenodd"/>
+        </svg>
+      </button>
       <div class="theme-switcher">
         <button class="theme-btn" :class="{ active: themeMode === 'auto' }"  @click="setTheme('auto')"  title="Follow system">Auto</button>
         <button class="theme-btn" :class="{ active: themeMode === 'light' }" @click="setTheme('light')" title="Light theme">☀</button>
@@ -906,6 +912,60 @@
       </span>
     </template>
     <span class="build-ver" title="{{ build_version }}">{{ build_version }}</span>
+    </div>
+  </div>
+
+  <!-- ── Settings modal ── -->
+  <div class="modal-overlay"
+       x-show="showSettings"
+       x-transition.opacity
+       @click.self="showSettings = false"
+       @keydown.escape.window="showSettings = false"
+       style="display:none">
+    <div class="modal" style="max-width:420px">
+      <div class="modal-header">
+        <h2>Settings</h2>
+        <button class="modal-close" @click="showSettings = false">&#x2715;</button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:20px">
+
+        <!-- Force AAC toggle -->
+        <label class="setting-row" style="cursor:pointer">
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:500;color:var(--text)">Force encode to AAC</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px">Convert all files to AAC during sync, ignoring lossless detection</div>
+          </div>
+          <div class="setting-toggle" :class="{ active: settingsDraft.force_aac }"
+               @click.stop="settingsDraft.force_aac = !settingsDraft.force_aac" role="switch"
+               :aria-checked="settingsDraft.force_aac" tabindex="0"
+               @keydown.space.prevent="settingsDraft.force_aac = !settingsDraft.force_aac">
+            <div class="setting-toggle-thumb"></div>
+          </div>
+        </label>
+
+        <!-- CPU threads slider -->
+        <div class="setting-row" style="flex-direction:column;gap:8px;align-items:stretch">
+          <div style="display:flex;justify-content:space-between;align-items:baseline">
+            <div>
+              <div style="font-size:13px;font-weight:500;color:var(--text)">Sync CPU threads</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px">Limit cores used during encode (<span x-text="settingsCpuCount"></span> available)</div>
+            </div>
+            <span class="setting-thread-val" x-text="settingsDraft.max_threads"></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:11px;color:var(--dim)">1</span>
+            <input type="range" class="settings-slider"
+                   min="1" :max="settingsCpuCount"
+                   x-model.number="settingsDraft.max_threads">
+            <span style="font-size:11px;color:var(--dim)" x-text="settingsCpuCount"></span>
+          </div>
+        </div>
+
+      </div>
+      <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn-ghost" @click="showSettings = false">Cancel</button>
+        <button class="btn-primary" @click="saveSettings()">Save</button>
+      </div>
     </div>
   </div>
 

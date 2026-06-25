@@ -33,6 +33,7 @@ from app.services.transcode_cache import transcode_cache
 from app.routers.sources import router as sources_router
 from app.routers.device import router as device_router
 from app.routers.walkman import router as walkman_router
+from app.routers.settings import router as settings_router
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(sources_router)
 app.include_router(device_router)
 app.include_router(walkman_router)
+app.include_router(settings_router)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 templates.env.filters["tojson"] = lambda v: Markup(json.dumps(v, ensure_ascii=False))
