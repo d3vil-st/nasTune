@@ -292,16 +292,22 @@ function sourcesModule() {
       if (!tracks.length) return [];
 
       const wanted = new Set(tracks.map(t => t.path));
+      const dirname = p => p.substring(0, p.lastIndexOf('/'));
 
+      // Collect all library paths and per-directory actual file counts
       const allPaths = [];
+      const dirFileCounts = new Map(); // level-1 dir -> total files on disk (incl. non-audio)
       for (const artist of (this.sourceLibrary?.artists || []))
         for (const album of artist.albums)
-          for (const t of album.tracks)
+          for (const t of album.tracks) {
             allPaths.push(t.path);
+            if (t.dir_file_count) {
+              const d = dirname(t.path);
+              if (!dirFileCounts.has(d)) dirFileCounts.set(d, t.dir_file_count);
+            }
+          }
 
       if (!allPaths.length) return [...wanted];
-
-      const dirname = p => p.substring(0, p.lastIndexOf('/'));
 
       // Build coverage map: dir -> { total, wanted } at up to 3 ancestor levels
       const coverage = new Map();
@@ -317,9 +323,22 @@ function sourcesModule() {
         }
       }
 
-      // Dirs where every track is selected; shallowest (highest in tree) first
+      // Sum actual file counts for all known level-1 dirs under a given directory
+      const subtreeFileCount = dir =>
+        [...dirFileCounts.entries()]
+          .filter(([d]) => d === dir || d.startsWith(dir + '/'))
+          .reduce((sum, [, n]) => sum + n, 0);
+
+      // Dirs where every track is selected and no extra non-audio files exist in subtree
       const completeDirs = [...coverage.entries()]
-        .filter(([, c]) => c.wanted > 0 && c.wanted === c.total)
+        .filter(([dir, c]) => {
+          if (c.wanted === 0 || c.wanted !== c.total) return false;
+          if (dirFileCounts.size > 0) {
+            const actual = subtreeFileCount(dir);
+            if (actual > 0 && actual !== c.total) return false;
+          }
+          return true;
+        })
         .map(([dir]) => dir)
         .sort((a, b) => a.split('/').length - b.split('/').length);
 
