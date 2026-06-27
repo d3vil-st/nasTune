@@ -18,6 +18,7 @@ function app() {
   state._syncUrl = function () {
     const p = new URLSearchParams();
     p.set('tab', this.viewMode);
+    if (this.mediaType && this.mediaType !== 'music') p.set('mt', this.mediaType);
     if (this.selectedDevnode) p.set('dev', this.selectedDevnode);
     if (this.viewMode === 'library') {
       if (this.selectedArtist) p.set('artist', this.selectedArtist);
@@ -33,10 +34,12 @@ function app() {
   state.init = async function () {
     this.initTheme();
     await this.loadSettings();
+    this._loadKnownDevices();  // fire-and-forget; populates picker before first open
 
     const hash = location.hash.slice(1);
     const url = hash ? new URLSearchParams(hash) : null;
     if (url?.get('tab')) this.viewMode = url.get('tab');
+    if (url?.get('mt')) this.mediaType = url.get('mt');
 
     const urlDev = url?.get('dev') || null;
 
@@ -89,6 +92,7 @@ function app() {
     this.$watch('srcShowUnsynced', v => localStorage.setItem('nastune-src-unsynced', v ? '1' : '0'));
 
     // Keep URL in sync with navigation state
+    this.$watch('mediaType',       () => this._syncUrl());
     this.$watch('selectedDevnode', () => this._syncUrl());
     this.$watch('viewMode',        () => this._syncUrl());
     this.$watch('selectedArtist',  () => this._syncUrl());

@@ -107,7 +107,18 @@ async def _write_progress(source_id: int, processed: int, total: int, current_fi
         await db.commit()
 
 
-async def scan_source(source_id: int, root: str) -> None:
+def _remap_podcast(track: dict) -> dict:
+    """Remap podcast tags: album tag = show name (artist/albumartist for key matching).
+    album is intentionally kept as the show name so the track key matches the iPod's
+    album field. Season/year grouping is done at library-build time, not in the DB."""
+    show = track.get('album') or track.get('albumartist') or track.get('artist') or 'Unknown Show'
+    track['artist'] = show
+    track['albumartist'] = show
+    # album stays as the original tag value (show name) — do NOT overwrite with year
+    return track
+
+
+async def scan_source(source_id: int, root: str, source_type: str = 'music') -> None:
     log.info("Scanning source %d: %s", source_id, root)
     root_path = Path(root)
     now = int(time.time())
@@ -135,6 +146,8 @@ async def scan_source(source_id: int, root: str) -> None:
         for fpath in files:
             track = await asyncio.to_thread(_read_track, fpath)
             if track:
+                if source_type == 'podcast':
+                    track = _remap_podcast(track)
                 track['source_id'] = source_id
                 track['scanned_at'] = now
                 batch.append(track)

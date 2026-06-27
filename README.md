@@ -26,10 +26,13 @@ iPod support is built around [gpod-utils](https://github.com/d3vil-st/gpod-utils
 ## Features
 
 - **Browse** your iPod or WALKMAN library in a 3-pane iTunes-style view (artists → albums → tracks)
+- **Media types** — separate Music, Podcasts, and Audiobooks tabs in both the device and source panes; each tab maintains its own artist/album selection and remembers the last selected source across switches
 - **All Artists** — select the top row in the artist column to browse all albums across every artist in a single flat view
 - **Sony WALKMAN support** — detected automatically via `default-capability.xml`; tag-based scan (mutagen) indexes the device into SQLite; delete and sync use direct file operations with immediate DB update — no rescan needed
 - **Force full rescan** — WALKMAN devices and NAS sources each have a full-rescan button that clears all existing library data and re-reads every file from scratch; useful after tag corrections or large file moves (confirmation dialog shown before starting)
 - **Sync** tracks from a NAS music source to the device — add missing tracks, remove ones no longer in the source; sync confirmation dialog appears when deletes are involved or free space is insufficient
+- **Device settings** — per-device gear icon opens a settings panel with a force-AAC override and per-media-type sync rules (which source to use for Music, Podcasts, Audiobooks); also available for known-but-disconnected iPods
+- **Auto-sync** — one-click button in device settings runs a full sync using configured per-type source rules, skipping tracks already on the device
 - **Rating sync** — iPod track ratings (1–5 stars) are persisted to SQLite on every library read; during sync, newly copied tracks automatically receive their stored ratings via `gpod-tag`; highest rating wins when the same track is seen on multiple iPods
 - **Source comparison** — tracks in the iPod/WALKMAN pane appear in blue when they are absent from the selected NAS source; parent album and artist rows turn blue as soon as even a single track is missing
 - **Unsynced filter** — one-click toggle in the Sources bar to show only tracks not yet on the device; state saved per browser
@@ -41,6 +44,8 @@ iPod support is built around [gpod-utils](https://github.com/d3vil-st/gpod-utils
 - **Storage bar** — shows used / net change / free with a live delete/add counter overlay during operations
 - **Operation log** — click the status bar progress indicator to view live output in a terminal popup; last operation result and log persist across page reloads
 - **Multi-disc album** support with CD separators and disc-aware track matching
+- **Podcast metadata** — podcast sources remap `album` tag → show name (artist/albumartist) for correct 3-column navigation (Shows → Seasons → Episodes); audiobooks navigate naturally as Authors → Books → Chapters
+- **Device picker** — gear icon is always visible on device rows; connected devices show the iPod/WALKMAN name alongside the block device name; unmounted iPods are matched by serial to their known DB record so settings are accessible even when disconnected
 - **Search** with smart navigation — click an artist from results to see all their albums (when the artist name matched) or only relevant albums (when an album or track matched); clear button in the search field
 - **Auto-discover** connected devices via USB polling; optional auto-mount
 - **Light / Dark / Auto** theme with system preference detection

@@ -34,6 +34,7 @@ function devicesModule() {
     async selectDevice(devnode) {
       if (this.selectedDevnode === devnode) { this.showDevicePicker = false; return; }
       this.showDevicePicker = false;
+      this._browsingOfflineDeviceId = null;
       const device = this.devices.find(d => d.devnode === devnode);
       if (device && !device.mounted) {
         this.libraryLoading = true;
@@ -105,6 +106,9 @@ function devicesModule() {
         if (!r.ok) { this.libraryError = await r.text(); return; }
         this.library = await r.json();
         if (refresh) this._validateIpodSelection();
+        // Backend registers the iPod UUID in DB during library load; refresh the
+        // known-devices list so a connected iPod no longer appears as "Disconnected".
+        this._loadKnownDevices();
       } catch (e) {
         this.libraryError = e.message;
       } finally {
@@ -132,6 +136,7 @@ function devicesModule() {
 
     startSSE() {
       const es = new EventSource('/devices/events');
+      let _prevDevnodes = '';
       es.onmessage = (e) => {
         const data = JSON.parse(e.data);
         this.devices = data.devices;
@@ -144,6 +149,13 @@ function devicesModule() {
         }
         if (!this.selectedDevnode && data.selected) {
           this.selectDevice(data.selected);
+        }
+        // Refresh the known-devices list whenever the connected set changes so the
+        // picker's "Disconnected" section stays in sync without a page reload.
+        const devnodes = data.devices.map(d => d.devnode).sort().join(',');
+        if (devnodes !== _prevDevnodes) {
+          _prevDevnodes = devnodes;
+          this._loadKnownDevices();
         }
       };
       es.onerror = () => { this._probeAuth(); };
@@ -222,6 +234,25 @@ function devicesModule() {
 
     get selectedDevice() {
       return this.devices.find(d => d.devnode === this.selectedDevnode) || null;
+    },
+
+    _connectedDeviceName(d) {
+      if (d.mounted) {
+        if (d.devnode === this.selectedDevnode && this.library?.ipod_name)
+          return this.library.ipod_name;
+        if (d.ipod_db_id && this.knownDevices?.ipods) {
+          const k = this.knownDevices.ipods.find(i => i.id === d.ipod_db_id);
+          if (k?.ipod_name) return k.ipod_name;
+        }
+        if (d.walkman_db_id && this.knownDevices?.walkmans) {
+          const k = this.knownDevices.walkmans.find(i => i.id === d.walkman_db_id);
+          if (k) return k.marketing_name || k.model || null;
+        }
+      } else if (d.usb_serial && this.knownDevices?.ipods) {
+        const k = this.knownDevices.ipods.find(i => i.uuid === d.usb_serial);
+        if (k?.ipod_name) return k.ipod_name;
+      }
+      return null;
     },
   };
 }
