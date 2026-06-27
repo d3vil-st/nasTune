@@ -109,6 +109,7 @@ Supported formats: MP3, FLAC, AAC/M4A (including ALAC), AIFF, WAV, OGG.
 - A confirmation dialog is shown automatically when the sync includes deletes or when the files to copy exceed available free space (accounting for space freed by deletes); the dialog shows a warning and offers "Sync anyway" for the space-insufficient case
 - Tracks are matched by normalized `artist + album + track_nr` (or title if no track number), with disc number awareness for multi-disc albums
 - **iPod**: when syncing a complete album or artist, the directory path is passed to `gpod-cp` rather than individual files — faster and avoids path-length issues; progress is tracked per-track from streaming output
+- **Smart encoder selection**: lossless files (FLAC, WAV, AIFF, APE, WV, ALAC) are transcoded to ALAC; MP3 and AAC M4A files are copied as-is without re-encoding; other lossy formats (OGG, WMA, etc.) are transcoded to AAC via fdk-aac; the `force_aac` setting overrides this and routes everything through fdk-aac
 - **iPod rating sync**: after copying tracks, nasTune runs `gpod-ls` to get fresh IDs, then applies any stored ratings to newly copied tracks via `gpod-tag`; only tracks where the stored rating is higher than the current iPod rating are updated
 - **WALKMAN**: sync uses `shutil.copy2` / `os.remove`; the SQLite library is updated immediately on completion without a rescan
 

@@ -63,11 +63,11 @@ nasTune/
     │   ├── walkman.py         # WALKMAN detection, SQLite scan, library build, delete/copy ops
     │   ├── artwork.py         # mutagen-based artwork extractor (M4A/MP3/FLAC)
     │   ├── fs_utils.py        # os.statvfs capacity + /proc/mounts FS-type label
-    │   ├── db.py              # SQLite schema + migrations (sources, source_tracks, walkman_devices, walkman_tracks, ipod_track_ratings)
+    │   ├── db.py              # SQLite schema + migrations (sources, source_tracks, walkman_devices, walkman_tracks, ipod_track_ratings, settings)
     │   ├── scanner.py         # Async file scanner: walks dirs, reads tags via mutagen
     │   ├── track_key.py       # Python port of JS _normStr/_trackKey; shared by ratings + operations
     │   ├── ratings.py         # persist_ratings(): upserts iPod ratings into ipod_track_ratings (max wins)
-    │   └── operations.py      # OperationService: gpod-rm / gpod-cp / WALKMAN shutil with progress tracking
+    │   └── operations.py      # OperationService: gpod-rm / gpod-cp / WALKMAN shutil; smart encoder selection; progress tracking
     ├── templates/
     │   └── index.html         # iTunes-like 3-pane dark UI + bottom player bar
     └── static/
@@ -349,6 +349,26 @@ Ratings (1–5 stars) are stored in `ipod_track_ratings` and flow in two directi
 - For iPod tracks, `gpod-tag` is **not** called at this point — it is deferred to the next sync
 - Explicit UI writes overwrite the DB value (no max-wins); setting 0 deletes the row
 - Source track ratings use the file `path` to look up metadata in `source_tracks`, compute the key, and upsert `ipod_track_ratings` — the same table used for iPod tracks
+
+---
+
+## Sync encoder selection
+
+`_classify_audio_path` in `operations.py` classifies each sync path into one of three buckets, which determine the `gpod-cp` encoder flags:
+
+| Class | Extensions | gpod-cp args |
+|---|---|---|
+| `lossless` | `.flac` `.wav` `.aiff` `.aif` `.ape` `.wv`, ALAC `.m4a` | `--encoder alac --disable-encoder-fallback` |
+| `passthrough` | `.mp3`, AAC `.m4a` | _(no encoder args — copied as-is)_ |
+| `lossy` | `.aac` `.ogg` `.wma` `.opus`, other `.m4a` | `--encoder fdk-aac --encoder-quality 9 --disable-encoder-fallback` |
+
+For directory paths (collapsed album/artist args), classification is based on the first audio file found in sorted order. For `.m4a` files, `mutagen.mp4.MP4.info.codec` is read to distinguish ALAC (→ lossless) from AAC (→ passthrough).
+
+**`force_aac` setting** (`settings` table, key `"force_aac"`, value `"true"`): routes everything through fdk-aac regardless of classification — including MP3 and AAC M4A. Useful when the target iPod is limited in storage and you want a uniform AAC library.
+
+**`max_threads` setting** (`settings` table, key `"max_threads"`, value `"N"`): forwarded as `--threads N` to each `gpod-cp` invocation. `0` means let gpod-cp use its default.
+
+Settings are loaded at the start of each sync via `_load_sync_settings()`, which falls back to `(False, 0)` if the `settings` table does not exist yet.
 
 ---
 

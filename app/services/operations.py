@@ -43,7 +43,8 @@ _PROGRESS_RE = re.compile(r'^\[\s*\d+/\d+\]')
 _PROGRESS_NM_RE = re.compile(r'^\[\s*(\d+)/(\d+)\]')
 _TITLE_ARTIST_RE = re.compile(r"title='(.*?)'\s+artist='(.*?)'")
 
-_LOSSLESS_EXTS = frozenset({'.flac', '.wav', '.aiff', '.aif', '.ape', '.wv'})
+_LOSSLESS_EXTS    = frozenset({'.flac', '.wav', '.aiff', '.aif', '.ape', '.wv'})
+_PASSTHROUGH_EXTS = frozenset({'.mp3'})
 
 
 async def _load_sync_settings() -> tuple[bool, int]:
@@ -61,21 +62,26 @@ async def _load_sync_settings() -> tuple[bool, int]:
 
 
 def _classify_audio_path(path: str) -> str:
-    """Return 'lossless' or 'lossy' for a file or directory path."""
+    """Return 'lossless', 'passthrough', or 'lossy' for a file or directory path."""
     p = Path(path.rstrip('/'))
     if p.is_dir():
         for f in sorted(p.rglob('*')):
-            if f.is_file() and f.suffix.lower() in _LOSSLESS_EXTS | {'.mp3', '.m4a', '.aac', '.ogg', '.wma', '.opus'}:
+            if f.is_file() and f.suffix.lower() in _LOSSLESS_EXTS | _PASSTHROUGH_EXTS | {'.m4a', '.aac', '.ogg', '.wma', '.opus'}:
                 return _classify_audio_path(str(f))
         return 'lossy'
     ext = p.suffix.lower()
     if ext in _LOSSLESS_EXTS:
         return 'lossless'
+    if ext in _PASSTHROUGH_EXTS:
+        return 'passthrough'
     if ext == '.m4a':
         try:
             from mutagen.mp4 import MP4
-            if 'alac' in (MP4(str(p)).info.codec or '').lower():
+            codec = (MP4(str(p)).info.codec or '').lower()
+            if 'alac' in codec:
                 return 'lossless'
+            if 'aac' in codec or 'mp4a' in codec:
+                return 'passthrough'
         except Exception:
             pass
     return 'lossy'
@@ -165,22 +171,39 @@ class OperationService:
                 return msg
         return None
 
-    _LOSSLESS_ARGS = ['--encoder', 'alac', '--disable-encoder-fallback']
-    _LOSSY_ARGS    = ['--encoder', 'fdk-aac', '--encoder-quality', '9', '--disable-encoder-fallback']
+    _LOSSLESS_ARGS    = ['--encoder', 'alac', '--disable-encoder-fallback']
+    _PASSTHROUGH_ARGS: list[str] = []
+    _LOSSY_ARGS       = ['--encoder', 'fdk-aac', '--encoder-quality', '9', '--disable-encoder-fallback']
 
     async def _gpod_cp_batch(self, paths: list[str], mount: str, op: _Op, proc_offset: int = 0,
                               *, force_aac: bool = False, threads: int = 0) -> tuple[str | None, int]:
-        """Split paths by lossless/lossy and dispatch with the appropriate encoder."""
+        """Split paths by format and dispatch with the appropriate encoder.
+
+        lossless (FLAC/WAV/…) → ALAC
+        passthrough (MP3)      → copied as-is (no encoder args)
+        lossy (AAC/OGG/…)     → fdk-aac
+        force_aac=True         → everything goes through fdk-aac (passthrough ignored)
+        """
         paths = list(dict.fromkeys(paths))
         if force_aac:
-            lossless, lossy = [], paths
+            lossless, passthrough, lossy = [], [], paths
         else:
-            lossless, lossy = [], []
+            lossless, passthrough, lossy = [], [], []
             for p in paths:
-                (lossless if _classify_audio_path(p) == 'lossless' else lossy).append(p)
+                cls = _classify_audio_path(p)
+                if cls == 'lossless':
+                    lossless.append(p)
+                elif cls == 'passthrough':
+                    passthrough.append(p)
+                else:
+                    lossy.append(p)
 
         total = 0
-        for group, extra_args in ((lossless, self._LOSSLESS_ARGS), (lossy, self._LOSSY_ARGS)):
+        for group, extra_args in (
+            (lossless,    self._LOSSLESS_ARGS),
+            (passthrough, self._PASSTHROUGH_ARGS),
+            (lossy,       self._LOSSY_ARGS),
+        ):
             if not group:
                 continue
             err, n = await self._gpod_cp_exec(group, extra_args, mount, op, proc_offset + total, threads=threads)
