@@ -11,8 +11,30 @@ function deviceModule() {
     _deviceMap: null,
     _srcKeyMap: null,
 
+    // Library filtered to tracks matching the current media type.
+    // Spreads album/artist objects so mutations don't affect the original cache.
+    get _typeFilteredLibrary() {
+      const all = this.library?.artists || [];
+      const mt = this.mediaType || 'music';
+      return all.map(a => {
+        const albums = a.albums.map(al => {
+          const tracks = al.tracks.filter(t =>
+            mt === 'music' ? (!t.mediatype || t.mediatype === 'music') : t.mediatype === mt
+          );
+          return tracks.length ? { ...al, tracks } : null;
+        }).filter(Boolean);
+        return albums.length ? { ...a, albums } : null;
+      }).filter(Boolean);
+    },
+
+    get devLabels() {
+      if (this.mediaType === 'audiobook') return { artist: 'Authors', allArtists: 'All Authors', album: 'Books', trackLabel: 'Chapters', trackSg: 'chapter', trackPl: 'chapters', selectArtist: 'Select an author', selectAlbum: 'Select a book' };
+      if (this.mediaType === 'podcast')   return { artist: 'Shows',   allArtists: 'All Shows',   album: 'Seasons', trackLabel: 'Episodes', trackSg: 'episode', trackPl: 'episodes', selectArtist: 'Select a show',   selectAlbum: 'Select a season' };
+      return                                     { artist: 'Artists', allArtists: 'All Artists', album: 'Albums',  trackLabel: 'Tracks',   trackSg: 'track',   trackPl: 'tracks',   selectArtist: 'Select an artist', selectAlbum: 'Select an album' };
+    },
+
     get filteredArtists() {
-      const artists = this.library?.artists || [];
+      const artists = this._typeFilteredLibrary;
       if (!this.search) return artists;
       const q = this.search.toLowerCase();
       return artists.filter(a =>
@@ -25,7 +47,7 @@ function deviceModule() {
     },
 
     get currentAlbums() {
-      const artists = this.library?.artists || [];
+      const artists = this._typeFilteredLibrary;
       if (this.selectedArtist === '__ALL__') {
         if (!this.search) return artists.flatMap(a => a.albums);
         const q = this.search.toLowerCase();

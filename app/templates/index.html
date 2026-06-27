@@ -31,8 +31,8 @@
 
     <!-- Device selector: icon + info unified into one clickable block -->
     <div class="device-selector"
-         :class="{ 'has-picker': devices.length > 0 }"
-         @click="devices.length > 0 && (showDevicePicker = !showDevicePicker)"
+         :class="{ 'has-picker': devices.length > 0 || hasOfflineDevices }"
+         @click="(devices.length > 0 || hasOfflineDevices) && (showDevicePicker = !showDevicePicker)"
          @click.outside="showDevicePicker = false"
          @keydown.escape.window="showDevicePicker = false">
 
@@ -62,7 +62,7 @@
       <div class="device-info">
         <div class="device-name-row">
           <h1 x-text="library ? library.ipod_name : (devices.length ? (selectedDevice?.devname || 'nasTune') : 'nasTune')"></h1>
-          <span class="ds-chevron" x-show="devices.length > 0">▾</span>
+          <span class="ds-chevron" x-show="devices.length > 0 || hasOfflineDevices">▾</span>
         </div>
         <div class="sub" x-show="library"
              x-text="library ? library.device.model_name + ' · ' + library.fs_total_gb + ' GB ' + library.fs_type : ''">
@@ -77,14 +77,64 @@
 
       <!-- Multi-device dropdown -->
       <div class="device-picker" x-show="showDevicePicker" style="display:none">
-        <template x-for="d in devices" :key="d.devnode">
-          <div class="dp-row"
-               :class="{ active: d.devnode === selectedDevnode }"
-               @click.stop="selectDevice(d.devnode)">
-            <span class="dp-name" x-text="d.devname"></span>
-            <span class="dp-meta" x-text="(d.size_bytes / 1073741824).toFixed(0) + ' GB ' + d.fstype + (d.mounted ? '' : ' — not mounted')"></span>
+
+        <!-- Connected devices -->
+        <template x-if="devices.length > 0">
+          <div>
+            <div class="dp-section-label" x-show="hasOfflineDevices">Connected</div>
+            <template x-for="d in devices" :key="d.devnode">
+              <div class="dp-row" :class="{ active: d.devnode === selectedDevnode }"
+                   @click.stop="selectDevice(d.devnode)">
+                <div class="dp-info">
+                  <span class="dp-name" x-text="_connectedDeviceName(d) ? _connectedDeviceName(d) + ' — ' + d.devname : d.devname"></span>
+                  <span class="dp-meta" x-text="(d.size_bytes / 1073741824).toFixed(0) + ' GB ' + d.fstype + (d.mounted ? '' : ' — not mounted')"></span>
+                </div>
+                <button class="dp-gear" title="Device settings"
+                        @click.stop="openDeviceSettings(d.devnode)">
+                  <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 0 1-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 0 1 .947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 0 1 2.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 0 1 2.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 0 1 .947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 0 1-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 0 1-2.287-.947zM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" clip-rule="evenodd"/>
+                  </svg>
+                </button>
+              </div>
+            </template>
           </div>
         </template>
+
+        <!-- Disconnected known devices -->
+        <template x-if="hasOfflineDevices">
+          <div>
+            <div class="dp-section-label" x-show="devices.length > 0">Disconnected</div>
+            <template x-for="d in offlineIpods" :key="'ki'+d.id">
+              <div class="dp-row dp-offline" @click.stop="d.has_cache && browseOfflineLibrary(d.id)">
+                <div class="dp-info">
+                  <span class="dp-name" x-text="d.ipod_name"></span>
+                  <span class="dp-meta" x-text="'UUID ' + d.uuid"></span>
+                </div>
+                <button class="dp-gear" title="Device settings"
+                        @click.stop="openDeviceSettingsForKnown(d.id, 'ipod')">
+                  <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 0 1-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 0 1 .947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 0 1 2.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 0 1 2.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 0 1 .947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 0 1-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 0 1-2.287-.947zM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" clip-rule="evenodd"/>
+                  </svg>
+                </button>
+              </div>
+            </template>
+            <template x-for="d in offlineWalkmans" :key="'kw'+d.id">
+              <div class="dp-row dp-offline">
+                <div class="dp-info">
+                  <span class="dp-name" x-text="d.marketing_name || d.model"></span>
+                  <span class="dp-meta">Disconnected</span>
+                </div>
+                <button class="dp-gear" title="Device settings"
+                        @click.stop="openDeviceSettingsForKnown(d.id, 'walkman')">
+                  <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 0 1-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 0 1 .947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 0 1 2.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 0 1 2.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 0 1 .947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 0 1-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 0 1-2.287-.947zM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" clip-rule="evenodd"/>
+                  </svg>
+                </button>
+              </div>
+            </template>
+          </div>
+        </template>
+
       </div>
     </div>
 
@@ -105,7 +155,7 @@
               @click="triggerWalkmanScan(true)"
               :disabled="walkmanScanning || currentOp?.status === 'running'"
               title="Force full rescan — re-reads all tags">&#x21BB;&#xFE0E;</button>
-      <button class="icon-btn" x-show="library && !selectedDevice?.is_walkman"
+      <button class="icon-btn" x-show="selectedDevnode && library && !selectedDevice?.is_walkman"
               @click="refreshLibrary" :disabled="libraryRefreshing || currentOp?.status === 'running'" title="Reload library"><span :class="{ spinning: libraryRefreshing }">&#x21BB;&#xFE0E;</span></button>
       <button class="icon-btn danger" x-show="selectedDevnode" @click="ejectDevice"
               :disabled="currentOp?.status === 'running'" title="Eject device">&#x23CF;&#xFE0E;</button>
@@ -147,12 +197,12 @@
         <span class="badge" x-text="(library?.total_albums || 0) + ' albums'"></span>
         <span class="badge" x-text="(library?.artists?.length || 0) + ' artists'"></span>
       </div>
-      <button class="btn-primary" x-show="viewMode === 'library' && deviceSelection.size > 0"
+      <button class="btn-primary" x-show="selectedDevnode && viewMode === 'library' && deviceSelection.size > 0"
               @click="downloadSelectedTracks()">Download</button>
-      <button class="btn-danger" x-show="viewMode === 'library' && deviceSelection.size > 0"
+      <button class="btn-danger" x-show="selectedDevnode && viewMode === 'library' && deviceSelection.size > 0"
               :disabled="currentOp?.status === 'running'"
               @click="showDeleteConfirm = true">Delete</button>
-      <button class="btn-primary" x-show="viewMode === 'sources' && hasSyncChanges"
+      <button class="btn-primary" x-show="selectedDevnode && viewMode === 'sources' && hasSyncChanges"
               :disabled="currentOp?.status === 'running'"
               @click="syncNeedsConfirm ? (showSyncConfirm = true) : confirmSync()">Sync</button>
     </div>
@@ -182,10 +232,25 @@
 
   <!-- ── Tab bar ── -->
   <div class="tabbar">
+
+    <!-- Media type dropdown -->
+    <div class="tab-combo" x-data="{ open: false }">
+      <button class="tab-type-btn" @click.stop="open = !open"
+              x-text="mediaType === 'music' ? 'Music' : mediaType === 'audiobook' ? 'Audiobooks' : 'Podcasts'">
+      </button>
+      <div x-show="open" @click.outside="open = false" style="display:none;position:absolute;top:calc(100% + 8px);left:0;background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:5px;z-index:500;min-width:130px;box-shadow:0 8px 28px rgba(0,0,0,.6)">
+        <div class="dp-row" :class="{ active: mediaType === 'music' }"     @click="setMediaType('music'); open = false"><div class="dp-info"><span class="dp-name">Music</span></div></div>
+        <div class="dp-row" :class="{ active: mediaType === 'audiobook' }" @click="setMediaType('audiobook'); open = false"><div class="dp-info"><span class="dp-name">Audiobooks</span></div></div>
+        <div class="dp-row" :class="{ active: mediaType === 'podcast' }"   @click="setMediaType('podcast'); open = false"><div class="dp-info"><span class="dp-name">Podcasts</span></div></div>
+      </div>
+    </div>
+
+    <!-- View mode tabs -->
     <button class="tab" :class="{ active: viewMode === 'library' }"
-            @click="viewMode = 'library'">Library</button>
+            @click="viewMode = 'library'">Device</button>
     <button class="tab" :class="{ active: viewMode === 'sources' }"
             @click="viewMode = 'sources'; loadSources()">Sources</button>
+
   </div>
 
   <!-- ── Sources bar (sources mode) ── -->
@@ -202,7 +267,7 @@
            x-show="showSourcePicker"
            @click.outside="showSourcePicker = false"
            style="display:none">
-        <template x-for="s in sources" :key="s.id">
+        <template x-for="s in filteredSources" :key="s.id">
           <div class="sp-row"
                :class="{ active: s.id === selectedSourceId }"
                @click.stop="pickSource(s.id)">
@@ -211,9 +276,9 @@
             <span class="sp-meta" x-text="s.track_count + ' tracks'"></span>
           </div>
         </template>
-        <div x-show="sources.length === 0"
-             style="padding:12px;text-align:center;color:var(--dim);font-size:12px">
-          No sources yet
+        <div x-show="filteredSources.length === 0"
+             style="padding:12px;text-align:center;color:var(--dim);font-size:12px"
+             x-text="'No ' + mediaType + ' sources yet'">
         </div>
       </div>
     </div>
@@ -277,14 +342,14 @@
                  :checked="allFilteredArtistsSelected()"
                  x-effect="$el.indeterminate = someFilteredArtistsSelected() && !allFilteredArtistsSelected()"
                  @change="toggleAllFilteredArtists($event.target.checked)">
-          <span>Artists&ensp;(<span x-text="filteredArtists.length"></span>)</span>
+          <span x-text="devLabels.artist + ' (' + filteredArtists.length + ')'"></span>
         </div>
         <div class="col-scroll">
           <div class="artist-row all-row" x-show="library"
                :class="{ selected: selectedArtist === '__ALL__' }"
                @click="pickArtist('__ALL__')">
-            <span class="artist-name">All Artists</span>
-            <span class="artist-count" x-text="library?.total_albums"></span>
+            <span class="artist-name" x-text="devLabels.allArtists"></span>
+            <span class="artist-count" x-text="filteredArtists.reduce((s, a) => s + a.albums.length, 0)"></span>
           </div>
           <template x-for="a in filteredArtists" :key="a.name">
             <div class="artist-row"
@@ -308,13 +373,13 @@
                  :checked="allCurrentAlbumsSelected()"
                  x-effect="$el.indeterminate = someCurrentAlbumsSelected() && !allCurrentAlbumsSelected()"
                  @change="toggleAllCurrentAlbums($event.target.checked)">
-          <span x-text="selectedArtist === '__ALL__' ? 'All Artists' : (selectedArtist || 'Albums')"></span>
+          <span x-text="selectedArtist === '__ALL__' ? devLabels.allArtists : (selectedArtist || devLabels.album)"></span>
         </div>
         <div class="col-scroll">
           <template x-if="!selectedArtist">
             <div class="empty">
               <span class="empty-icon">&#x266B;</span>
-              <span class="empty-label">Select an artist</span>
+              <span class="empty-label" x-text="devLabels.selectArtist"></span>
             </div>
           </template>
           <template x-if="selectedArtist">
@@ -334,7 +399,7 @@
                   <div class="album-text">
                     <div class="album-name" x-text="al.name"></div>
                     <div class="album-meta">
-                      <span x-text="al.year > 0 ? al.year + ' · ' : ''"></span><span x-text="al.tracks.length + (al.tracks.length === 1 ? ' track' : ' tracks')"></span>
+                      <span x-text="al.year > 0 ? al.year + ' · ' : ''"></span><span x-text="al.tracks.length + ' ' + (al.tracks.length === 1 ? devLabels.trackSg : devLabels.trackPl)"></span>
                     </div>
                   </div>
                 </div>
@@ -347,7 +412,7 @@
       <!-- Tracks -->
       <div class="col col-tracks">
         <div class="col-heading" @click="pickAlbum(null)">
-          <span x-text="selectedAlbum || 'Tracks'"></span>
+          <span x-text="selectedAlbum || devLabels.trackLabel"></span>
         </div>
         <div class="tracks-head">
           <input type="checkbox" class="row-cb" @click.stop x-show="selectedAlbum"
@@ -374,7 +439,7 @@
             <div class="abar-info">
               <div class="abar-title" x-text="selectedAlbum"></div>
               <div class="abar-artist" x-text="selectedArtist === '__ALL__' ? '' : selectedArtist"></div>
-              <div class="abar-stats" x-text="currentTracks.length + ' tracks · ' + fmtTotalDur(currentTracks)"></div>
+              <div class="abar-stats" x-text="currentTracks.length + ' ' + devLabels.trackPl + ' · ' + fmtTotalDur(currentTracks)"></div>
             </div>
           </div>
         </template>
@@ -383,9 +448,9 @@
           <template x-if="!selectedAlbum">
             <div class="empty">
               <span class="empty-icon">&#x266A;</span>
-              <span class="empty-label">Select an album</span>
+              <span class="empty-label" x-text="devLabels.selectAlbum"></span>
               <span class="empty-sub" x-show="selectedArtist"
-                    x-text="currentAlbums.length + ' albums by ' + (selectedArtist === '__ALL__' ? 'All Artists' : selectedArtist)"></span>
+                    x-text="currentAlbums.length + ' ' + devLabels.album.toLowerCase() + ' by ' + (selectedArtist === '__ALL__' ? devLabels.allArtists : selectedArtist)"></span>
             </div>
           </template>
           <template x-if="selectedAlbum">
@@ -470,14 +535,14 @@
                  :checked="allSrcArtistsSelected()"
                  x-effect="$el.indeterminate = someSrcArtistsSelected() && !allSrcArtistsSelected()"
                  @change="toggleAllSrcArtists($event.target.checked)">
-          <span x-text="'Artists' + (sourceLibrary ? ' (' + filteredSrcArtists.length + (search ? '/' + sourceLibrary.artists.length : '') + ')' : '')"></span>
+          <span x-text="srcLabels.artist + (sourceLibrary ? ' (' + filteredSrcArtists.length + (search ? '/' + sourceLibrary.artists.length : '') + ')' : '')"></span>
         </div>
         <div class="col-scroll">
           <template x-if="!selectedSourceId">
             <div class="empty">
               <span class="empty-icon">&#x1F4C1;</span>
               <span class="empty-label">No source selected</span>
-              <span class="empty-sub">Add a source via Manage Sources</span>
+              <span class="empty-sub" x-text="'Add a ' + mediaType + ' source via Manage Sources'"></span>
             </div>
           </template>
           <template x-if="selectedSourceId && sourceLibraryLoading">
@@ -488,7 +553,7 @@
               <div class="artist-row all-row"
                    :class="{ selected: srcArtist === '__ALL__' }"
                    @click="pickSrcArtist('__ALL__')">
-                <span class="artist-name">All Artists</span>
+                <span class="artist-name" x-text="srcLabels.allArtists"></span>
                 <span class="artist-count" x-text="(sourceLibrary?.artists || []).reduce((s,a) => s + a.albums.length, 0)"></span>
               </div>
               <template x-for="a in filteredSrcArtists" :key="a.name">
@@ -515,13 +580,13 @@
                  :checked="allSrcCurrentAlbumsSelected()"
                  x-effect="$el.indeterminate = someSrcCurrentAlbumsSelected() && !allSrcCurrentAlbumsSelected()"
                  @change="toggleAllSrcCurrentAlbums($event.target.checked)">
-          <span x-text="srcArtist === '__ALL__' ? 'All Artists' : (srcArtist || 'Albums')"></span>
+          <span x-text="srcArtist === '__ALL__' ? srcLabels.allArtists : (srcArtist || srcLabels.album)"></span>
         </div>
         <div class="col-scroll">
           <template x-if="!srcArtist">
             <div class="empty">
               <span class="empty-icon">&#x266B;</span>
-              <span class="empty-label">Select an artist</span>
+              <span class="empty-label" x-text="srcLabels.selectArtist"></span>
             </div>
           </template>
           <template x-if="srcArtist">
@@ -543,7 +608,7 @@
                     <div class="album-name" x-text="al.name"></div>
                     <div class="album-meta">
                       <span x-text="al.year > 0 ? al.year + ' · ' : ''"></span>
-                      <span x-text="al.tracks.length + (al.tracks.length === 1 ? ' track' : ' tracks')"></span>
+                      <span x-text="al.tracks.length + ' ' + (al.tracks.length === 1 ? srcLabels.trackSg : srcLabels.trackPl)"></span>
                     </div>
                   </div>
                 </div>
@@ -556,7 +621,7 @@
       <!-- Right: Tracks with sync status -->
       <div class="col col-tracks">
         <div class="col-heading" @click="pickSrcAlbum(null)">
-          <span x-text="srcAlbum || 'Tracks'"></span>
+          <span x-text="srcAlbum || srcLabels.trackLabel"></span>
         </div>
         <div class="tracks-head" style="grid-template-columns: 16px 36px 1fr 50px 66px 72px;">
           <input type="checkbox" class="row-cb" @click.stop x-show="srcAlbum"
@@ -660,30 +725,29 @@
 
     <!-- ── Manage Sources modal ── -->
     <div class="modal-overlay"
-         x-show="showManageSources"
+         x-show="showManageSources && !showAddSource"
          x-transition.opacity
          @click.self="showManageSources = false"
-         @keydown.escape.window="showManageSources = false; showAddSource = false"
+         @keydown.escape.window="showManageSources = false"
          style="display:none">
       <div class="modal">
         <div class="modal-header">
-          <h2 x-text="showAddSource ? 'Add Folder Source' : 'Manage Sources'"></h2>
-          <button class="modal-close" @click="showManageSources = false; showAddSource = false">&#x2715;</button>
+          <h2>Manage Sources</h2>
+          <button class="modal-close" @click="showManageSources = false">&#x2715;</button>
         </div>
-
-        <!-- Source list view -->
-        <div class="modal-body" x-show="!showAddSource">
-          <div x-show="sources.length === 0"
-               style="text-align:center;color:var(--dim);padding:24px;font-size:13px">
-            No sources configured yet
+        <div class="modal-body">
+          <div x-show="filteredSources.length === 0"
+               style="text-align:center;color:var(--dim);padding:24px;font-size:13px"
+               x-text="'No ' + mediaType + ' sources configured yet'">
           </div>
-          <template x-for="s in sources" :key="s.id">
+          <template x-for="s in filteredSources" :key="s.id">
             <div class="src-row">
               <span class="source-status-dot" :class="sourceDotClass(s)" style="flex-shrink:0"></span>
               <div class="src-info">
                 <div class="src-row-name" x-text="s.name"></div>
                 <div class="src-row-path" x-text="s.path"></div>
                 <div class="src-row-meta">
+                  <span class="src-type-badge" x-text="s.type"></span>
                   <span x-text="s.track_count + ' tracks'"></span>
                   <span x-show="s.scan_status === 'scanning'" style="color:#ffd60a"> &middot; Scanning&hellip;</span>
                   <span x-show="s.scan_status === 'error'" style="color:#ff453a" :title="s.scan_error"> &middot; Error</span>
@@ -705,14 +769,43 @@
             </div>
           </template>
         </div>
+        <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn-ghost" @click="showManageSources = false">Close</button>
+          <button class="btn-primary"
+                  @click="showAddSource = true; addSourceType = mediaType; addSourceName = ''; addSourceNameEdited = false; browseDir('/music')">
+            + Add Folder
+          </button>
+        </div>
+      </div>
+    </div>
 
-        <!-- Add source view -->
-        <div class="modal-body" x-show="showAddSource">
+    <!-- ── Add Source modal ── -->
+    <div class="modal-overlay"
+         x-show="showAddSource"
+         x-transition.opacity
+         @click.self="showAddSource = false"
+         @keydown.escape.window="showAddSource = false"
+         style="display:none">
+      <div class="modal">
+        <div class="modal-header">
+          <h2 x-text="'Add ' + addSourceType.charAt(0).toUpperCase() + addSourceType.slice(1) + ' Source'"></h2>
+          <button class="modal-close" @click="showAddSource = false">&#x2715;</button>
+        </div>
+        <div class="modal-body">
           <div class="add-source-form">
+            <div class="form-group">
+              <label class="form-label">Type</label>
+              <div class="form-segmented">
+                <button :class="{ active: addSourceType === 'music' }"     @click="addSourceType = 'music'">Music</button>
+                <button :class="{ active: addSourceType === 'audiobook' }" @click="addSourceType = 'audiobook'">Audiobooks</button>
+                <button :class="{ active: addSourceType === 'podcast' }"   @click="addSourceType = 'podcast'">Podcasts</button>
+              </div>
+            </div>
             <div class="form-group">
               <label class="form-label">Name</label>
               <input class="form-input" type="text" placeholder="My Music"
-                     x-model="addSourceName" @input="if (!addSourceNameEdited) addSourceName = $event.target.value">
+                     x-model="addSourceName"
+                     @input="addSourceNameEdited = $event.target.value !== ''">
             </div>
             <div class="form-group">
               <label class="form-label">Folder</label>
@@ -740,22 +833,11 @@
             </div>
           </div>
         </div>
-
         <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
-          <template x-if="!showAddSource">
-            <div style="display:flex;gap:8px;width:100%;justify-content:flex-end">
-              <button class="btn-ghost" @click="showManageSources = false">Close</button>
-              <button class="btn-primary" @click="showAddSource = true; browseDir('/music')">+ Add Folder</button>
-            </div>
-          </template>
-          <template x-if="showAddSource">
-            <div style="display:flex;gap:8px;width:100%;justify-content:flex-end">
-              <button class="btn-ghost" @click="showAddSource = false">Back</button>
-              <button class="btn-primary"
-                      :disabled="!addSourceName.trim()"
-                      @click="addSource()">Add Source</button>
-            </div>
-          </template>
+          <button class="btn-ghost" @click="showAddSource = false">Cancel</button>
+          <button class="btn-primary"
+                  :disabled="!addSourceName.trim()"
+                  @click="addSource()">Add Source</button>
         </div>
       </div>
     </div>
@@ -843,13 +925,13 @@
     </template>
     <!-- Sources mode -->
     <template x-if="viewMode === 'sources' && srcAlbum">
-      <span x-text="srcCurrentTracks.length + ' tracks'"></span>
+      <span x-text="srcCurrentTracks.length + ' ' + (srcCurrentTracks.length === 1 ? srcLabels.trackSg : srcLabels.trackPl)"></span>
     </template>
     <template x-if="viewMode === 'sources' && srcArtist && !srcAlbum">
-      <span x-text="srcCurrentAlbums.length + ' albums · ' + srcCurrentAlbums.reduce((s,a)=>s+a.tracks.length,0) + ' tracks'"></span>
+      <span x-text="srcCurrentAlbums.length + ' ' + srcLabels.albumPl + ' · ' + srcCurrentAlbums.reduce((s,a)=>s+a.tracks.length,0) + ' ' + srcLabels.trackPl"></span>
     </template>
     <template x-if="viewMode === 'sources' && !srcArtist && sourceLibrary">
-      <span x-text="search ? filteredSrcArtists.length + ' / ' + (sourceLibrary.artists?.length || 0) + ' artists' : (sourceLibrary.total_tracks || 0).toLocaleString() + ' songs · ' + (sourceLibrary.artists?.length || 0) + ' artists'"></span>
+      <span x-text="search ? filteredSrcArtists.length + ' / ' + (sourceLibrary?.artists?.length || 0) + ' ' + srcLabels.artist.toLowerCase() : (sourceLibrary?.total_tracks || 0).toLocaleString() + ' ' + srcLabels.trackPl + ' · ' + (sourceLibrary?.artists?.length || 0) + ' ' + srcLabels.artist.toLowerCase()"></span>
     </template>
     <div class="statusbar-right">
     <!-- WALKMAN scan progress -->
@@ -915,25 +997,25 @@
     </div>
   </div>
 
-  <!-- ── Settings modal ── -->
+  <!-- ── Global settings modal ── -->
   <div class="modal-overlay"
        x-show="showSettings"
        x-transition.opacity
        @click.self="showSettings = false"
        @keydown.escape.window="showSettings = false"
        style="display:none">
-    <div class="modal" style="max-width:420px">
+    <div class="modal" style="max-width:480px">
       <div class="modal-header">
         <h2>Settings</h2>
         <button class="modal-close" @click="showSettings = false">&#x2715;</button>
       </div>
+
       <div class="modal-body" style="display:flex;flex-direction:column;gap:20px">
 
-        <!-- Force AAC toggle -->
         <label class="setting-row" style="cursor:pointer">
           <div style="flex:1">
             <div style="font-size:13px;font-weight:500;color:var(--text)">Force encode to AAC</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:2px">Convert all files to AAC during sync, ignoring lossless detection</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px">Convert all files to AAC during sync, ignoring lossless detection. Can be overridden per device.</div>
           </div>
           <div class="setting-toggle" :class="{ active: settingsDraft.force_aac }"
                @click.stop="settingsDraft.force_aac = !settingsDraft.force_aac" role="switch"
@@ -943,7 +1025,6 @@
           </div>
         </label>
 
-        <!-- CPU threads slider -->
         <div class="setting-row" style="flex-direction:column;gap:8px;align-items:stretch">
           <div style="display:flex;justify-content:space-between;align-items:baseline">
             <div>
@@ -952,20 +1033,123 @@
             </div>
             <span class="setting-thread-val" x-text="settingsDraft.max_threads"></span>
           </div>
-          <div style="display:flex;align-items:center;gap:8px">
-            <span style="font-size:11px;color:var(--dim)">1</span>
-            <input type="range" class="settings-slider"
-                   min="1" :max="settingsCpuCount"
-                   x-model.number="settingsDraft.max_threads">
-            <span style="font-size:11px;color:var(--dim)" x-text="settingsCpuCount"></span>
+          <div>
+            <input type="range" class="settings-slider" min="1" :max="settingsCpuCount"
+                   x-model.number="settingsDraft.max_threads"
+                   :style="`--fill:${settingsCpuCount > 1 ? ((settingsDraft.max_threads - 1) / (settingsCpuCount - 1) * 100).toFixed(1) : 100}%`">
           </div>
         </div>
 
+        <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;padding:0">
+          <button class="btn-ghost" @click="showSettings = false">Cancel</button>
+          <button class="btn-primary" @click="saveSettings()">Save</button>
+        </div>
       </div>
-      <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn-ghost" @click="showSettings = false">Cancel</button>
-        <button class="btn-primary" @click="saveSettings()">Save</button>
+
+    </div>
+  </div>
+
+  <!-- ── Device settings modal ── -->
+  <div class="modal-overlay"
+       x-show="showDeviceSettings"
+       x-transition.opacity
+       @click.self="showDeviceSettings = false"
+       @keydown.escape.window="showDeviceSettings = false"
+       style="display:none">
+    <div class="modal" style="max-width:480px">
+      <div class="modal-header">
+        <h2 x-text="_deviceLabel + ' Settings'"></h2>
+        <button class="modal-close" @click="showDeviceSettings = false">&#x2715;</button>
       </div>
+
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:20px">
+        <template x-if="!deviceSettingsDraft">
+          <div style="color:var(--muted);font-size:13px">Loading device settings…</div>
+        </template>
+        <template x-if="deviceSettingsDraft">
+          <div style="display:flex;flex-direction:column;gap:20px">
+
+            <!-- Force AAC override -->
+            <div class="setting-row" style="cursor:pointer" @click="cycleDeviceForceAac()">
+              <div style="flex:1">
+                <div style="font-size:13px;font-weight:500;color:var(--text)">Force encode to AAC</div>
+                <div style="font-size:11px;color:var(--muted);margin-top:2px">Override global setting for this device</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:12px;color:var(--muted)" x-text="deviceForceAacLabel()"></span>
+                <div class="setting-toggle"
+                     :class="{ active: deviceSettingsDraft.force_aac === 1, dim: deviceSettingsDraft.force_aac === null }"
+                     role="switch" :aria-checked="deviceSettingsDraft.force_aac === 1" tabindex="0"
+                     @keydown.space.prevent="cycleDeviceForceAac()">
+                  <div class="setting-toggle-thumb"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Auto-sync rules -->
+            <div>
+              <div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:10px">Auto-sync missing content</div>
+              <div style="display:flex;flex-direction:column;gap:2px">
+                <template x-for="rule in deviceSettingsDraft.sync_rules" :key="rule.media_type">
+                  <div style="display:grid;grid-template-columns:90px 1fr auto;align-items:center;gap:10px;padding:8px 10px;background:var(--surface-bg);border-radius:6px;border:1px solid var(--card-border)">
+                    <span style="font-size:12px;font-weight:500;color:var(--text);text-transform:capitalize" x-text="rule.media_type"></span>
+                    <div x-data="{ open: false }" style="position:relative">
+                      <div class="dp-row" :class="{ 'dp-offline': !rule.enabled }"
+                           style="padding:5px 8px;border-radius:5px"
+                           @click="if(rule.enabled) open = !open"
+                           @click.outside="open = false">
+                        <div class="dp-info">
+                          <span class="dp-name" style="font-size:12px" x-text="rule.source_id ? (syncRuleSources(rule.media_type).find(s => s.id == rule.source_id)?.name || 'All sources') : 'All sources'"></span>
+                        </div>
+                        <span style="font-size:9px;color:var(--dim)" x-show="rule.enabled">▾</span>
+                      </div>
+                      <div x-show="open" x-transition
+                           style="position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:5px;z-index:200;box-shadow:0 8px 28px rgba(0,0,0,.6)">
+                        <div class="dp-row" :class="{ active: !rule.source_id }"
+                             @click="rule.source_id = null; open = false">
+                          <div class="dp-info"><span class="dp-name" style="font-size:12px">All sources</span></div>
+                        </div>
+                        <template x-for="s in syncRuleSources(rule.media_type)" :key="s.id">
+                          <div class="dp-row" :class="{ active: rule.source_id == s.id }"
+                               @click="rule.source_id = s.id; open = false">
+                            <div class="dp-info"><span class="dp-name" style="font-size:12px" x-text="s.name"></span></div>
+                          </div>
+                        </template>
+                      </div>
+                    </div>
+                    <div class="setting-toggle" :class="{ active: rule.enabled }"
+                         @click.stop="rule.enabled = !rule.enabled" role="switch"
+                         :aria-checked="rule.enabled" tabindex="0"
+                         @keydown.space.prevent="rule.enabled = !rule.enabled">
+                      <div class="setting-toggle-thumb"></div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+              <div style="margin-top:10px;display:flex;gap:8px">
+                <button class="manage-btn" @click="runAutoSync()"
+                        :disabled="!deviceSettingsDraft.sync_rules.some(r => r.enabled) || _deviceSettingsDbId != null || !devices.find(d => d.devnode === _deviceSettingsDevnode)?.mounted"
+                        :title="_deviceSettingsDbId != null || !devices.find(d => d.devnode === _deviceSettingsDevnode)?.mounted ? 'Device must be mounted to run auto-sync' : ''"
+                        style="font-size:12px">
+                  ▶ Run auto-sync now
+                </button>
+                <button class="manage-btn" style="font-size:12px;color:#e57373"
+                        x-show="_deviceSettingsDbId != null"
+                        @click="deleteKnownDevice(_deviceSettingsDbId, _deviceSettingsType)">
+                  Remove device
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </template>
+
+        <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;padding:0">
+          <button class="btn-ghost" @click="showDeviceSettings = false">Cancel</button>
+          <button class="btn-primary" @click="saveDeviceSettings()" :disabled="!deviceSettingsDraft">Save</button>
+        </div>
+      </div>
+
     </div>
   </div>
 

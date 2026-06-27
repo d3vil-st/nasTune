@@ -6,7 +6,7 @@ import re
 import tarfile
 import threading
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -29,6 +29,7 @@ class SyncBody(BaseModel):
     copy_paths: list[str] = []
     delete_ids: list[int | str] = []
     copy_track_count: int | None = None
+    media_type: str = 'music'
 
 
 class DownloadTrack(BaseModel):
@@ -182,6 +183,7 @@ async def sync_tracks(body: SyncBody):
         await op_service.run_sync(
             body.copy_paths, body.delete_ids, info.mount,
             device_id=device_id, copy_track_count=body.copy_track_count,
+            media_type=body.media_type, ipod_db_id=info.ipod_db_id,
         )
     return {"ok": True}
 
@@ -257,6 +259,139 @@ async def get_op_history(devnode: str):
         except Exception:
             pass
     return JSONResponse(ops)
+
+
+class DeviceSettingsBody(BaseModel):
+    force_aac: int | None = None  # None=global, 0=off, 1=on
+    sync_rules: list[dict] = []
+
+
+def _resolve_db_id(devnode: str) -> tuple[int | None, str]:
+    """Return (db_id, device_type) for an active device, or (None, '') if not registered."""
+    info = device_service.get_device_info(devnode)
+    if not info:
+        return None, ""
+    if info.is_ipod:
+        return info.ipod_db_id, "ipod"
+    if info.is_walkman:
+        return info.walkman_db_id, "walkman"
+    return None, ""
+
+
+@router.get("/devices/known")
+async def list_known_devices():
+    from app.services.ipod_db import get_known_ipods
+    from app.services.walkman import get_known_walkmans
+    connected_uuids: set[str] = set()
+    connected_db_ids: set[int] = set()
+    for info in device_service.devices.values():
+        if info.is_ipod:
+            # ipod_db_id is set after library load; uuid is in _cache after library load
+            if info.ipod_db_id is not None:
+                connected_db_ids.add(info.ipod_db_id)
+            uuid = device_service.get_device_uuid(info.devnode)
+            if uuid:
+                connected_uuids.add(uuid)
+        elif not info.mounted and info.usb_serial:
+            # Unmounted device: is_ipod=False (can't confirm without mounting) but USB serial
+            # matches iPod UUID — include it so the known entry isn't shown as disconnected.
+            connected_uuids.add(info.usb_serial)
+    ipods = await get_known_ipods(connected_uuids, connected_db_ids)
+    walkmans = await get_known_walkmans()
+    for wm in walkmans:
+        wm["connected"] = any(
+            d.walkman_db_id == wm["id"] for d in device_service.devices.values()
+        )
+    return {"ipods": ipods, "walkmans": walkmans}
+
+
+@router.delete("/devices/known/{device_id}")
+async def delete_known_device(device_id: int, device_type: str = "ipod"):
+    if device_type == "ipod":
+        from app.services.ipod_db import delete_ipod
+        await delete_ipod(device_id)
+    else:
+        from app.services.walkman import delete_walkman_device
+        await delete_walkman_device(device_id)
+    return {"ok": True}
+
+
+@router.get("/devices/device-settings")
+async def get_device_settings_endpoint(devnode: str = Query(...)):
+    db_id, device_type = _resolve_db_id(devnode)
+    if db_id is None:
+        return {"force_aac": None, "sync_rules": []}
+    from app.services.ipod_db import get_device_settings
+    return await get_device_settings(db_id, device_type)
+
+
+@router.put("/devices/device-settings")
+async def save_device_settings_endpoint(devnode: str = Query(...), body: DeviceSettingsBody = None):
+    db_id, device_type = _resolve_db_id(devnode)
+    if db_id is None:
+        info = device_service.get_device_info(devnode)
+        if info and info.is_ipod:
+            uuid = device_service.get_device_uuid(devnode)
+            if uuid:
+                from app.services.ipod_db import upsert_ipod
+                db_id = await upsert_ipod(uuid, None, None)
+                device_type = "ipod"
+    if db_id is None:
+        raise HTTPException(404, "Device not yet registered — load its library first")
+    from app.services.ipod_db import save_device_settings
+    await save_device_settings(db_id, body.force_aac, body.sync_rules, device_type)
+    return {"ok": True}
+
+
+@router.get("/devices/known/{device_id}/settings")
+async def get_known_device_settings(device_id: int, device_type: str = "ipod"):
+    from app.services.ipod_db import get_device_settings
+    return await get_device_settings(device_id, device_type)
+
+
+@router.put("/devices/known/{device_id}/settings")
+async def save_known_device_settings(device_id: int, body: DeviceSettingsBody, device_type: str = "ipod"):
+    from app.services.ipod_db import save_device_settings
+    await save_device_settings(device_id, body.force_aac, body.sync_rules, device_type)
+    return {"ok": True}
+
+
+@router.get("/devices/offline-library")
+async def offline_library(device_id: int, device_type: str = "ipod"):
+    if device_type == "ipod":
+        from app.services.ipod_db import get_ipod_cached_library
+        lib = await get_ipod_cached_library(device_id)
+    else:
+        raise HTTPException(400, "Offline browsing only supported for iPod")
+    if lib is None:
+        raise HTTPException(404, "No cached library for this device")
+    return lib
+
+
+@router.post("/devices/{devnode}/auto-sync")
+async def run_auto_sync(devnode: str):
+    info = device_service.get_device_info(devnode)
+    if not info or not info.is_ipod:
+        raise HTTPException(404, "iPod not found or not connected")
+    if op_service.is_busy():
+        raise HTTPException(409, "Another operation is already running")
+    lib = device_service._cache.get(devnode)
+    if not lib:
+        raise HTTPException(400, "Library not loaded — select the device first")
+    db_id = info.ipod_db_id
+    if db_id is None:
+        raise HTTPException(400, "Device not yet registered in DB")
+    from app.services.ipod_db import compute_auto_sync_paths
+    paths = await compute_auto_sync_paths(lib, db_id, "ipod")
+    if not paths:
+        return {"ok": True, "queued": 0, "message": "Nothing to sync"}
+    device_id = _resolve_device_id(devnode)
+    await op_service.run_sync(
+        paths, [], info.mount,
+        device_id=device_id, copy_track_count=len(paths),
+        ipod_db_id=db_id,
+    )
+    return {"ok": True, "queued": len(paths)}
 
 
 @router.get("/operations/events")

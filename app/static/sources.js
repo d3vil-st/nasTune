@@ -2,6 +2,7 @@ function sourcesModule() {
   return {
     // Sources state
     viewMode: 'library',
+    mediaType: localStorage.getItem('nastune-media-type') || 'music',
     sources: [],
     selectedSourceId: null,
     sourceLibrary: null,
@@ -14,6 +15,8 @@ function sourcesModule() {
     showAddSource: false,
     showSourcePicker: false,
     addSourceName: '',
+    addSourceNameEdited: false,
+    addSourceType: 'music',
     browsePath: '/',
     browseDirs: [],
     browseParent: null,
@@ -21,8 +24,42 @@ function sourcesModule() {
     _srcPollTimer: null,
     srcShowUnsynced: localStorage.getItem('nastune-src-unsynced') === '1',
 
+    get filteredSources() {
+      return this.sources.filter(s => s.type === this.mediaType);
+    },
+
+    get srcLabels() {
+      if (this.mediaType === 'audiobook') return { artist: 'Authors', allArtists: 'All Authors', album: 'Books',   albumPl: 'books',   trackSg: 'chapter', trackPl: 'chapters', trackLabel: 'Chapters', selectArtist: 'Select an author' };
+      if (this.mediaType === 'podcast')   return { artist: 'Shows',   allArtists: 'All Shows',   album: 'Seasons', albumPl: 'seasons', trackSg: 'episode', trackPl: 'episodes', trackLabel: 'Episodes', selectArtist: 'Select a show' };
+      return                                     { artist: 'Artists', allArtists: 'All Artists', album: 'Albums',  albumPl: 'albums',  trackSg: 'track',   trackPl: 'tracks',   trackLabel: 'Tracks',   selectArtist: 'Select an artist' };
+    },
+
     get selectedSourceObj() {
-      return this.sources.find(s => s.id === this.selectedSourceId) || null;
+      return this.filteredSources.find(s => s.id === this.selectedSourceId) || null;
+    },
+
+    async setMediaType(type) {
+      if (this.mediaType === type) return;
+      // Remember the current source for the type we're leaving
+      if (this.selectedSourceId != null) {
+        localStorage.setItem('nastune-src-' + this.mediaType, String(this.selectedSourceId));
+      }
+      this.mediaType = type;
+      localStorage.setItem('nastune-media-type', type);
+      this.selectedArtist = null;
+      this.selectedAlbum = null;
+      this.srcArtist = null;
+      this.srcAlbum = null;
+      // Restore the previously selected source for this type (if it still exists)
+      const savedId = parseInt(localStorage.getItem('nastune-src-' + type) || '', 10);
+      const match = !isNaN(savedId) && this.filteredSources.find(s => s.id === savedId);
+      if (match) {
+        await this.pickSource(savedId);
+      } else {
+        this.selectedSourceId = null;
+        this.sourceLibrary = null;
+        this._srcKeyMap = null;
+      }
     },
 
     get scanningSource() {
@@ -32,6 +69,7 @@ function sourcesModule() {
     },
 
     get filteredSrcArtists() {
+      if (!this.selectedSourceObj) return [];
       let artists = this.sourceLibrary?.artists || [];
       if (this.search) {
         const q = this.search.toLowerCase();
@@ -171,12 +209,14 @@ function sourcesModule() {
         const r = await this.apiFetch('/sources', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, path: this.browsePath }),
+          body: JSON.stringify({ name, path: this.browsePath, type: this.addSourceType }),
         });
         if (!r.ok) { const d = await r.json().catch(()=>({})); alert(d.detail || 'Failed to add source'); return; }
         const data = await r.json();
         this.showAddSource = false;
         this.addSourceName = '';
+        this.addSourceNameEdited = false;
+        this.addSourceType = this.mediaType;
         await this.loadSources();
         this._startSrcPoll();
         this.pickSource(data.id);
@@ -215,7 +255,7 @@ function sourcesModule() {
         this.browsePath = data.path;
         this.browseParent = data.parent;
         this.browseDirs = data.dirs;
-        if (!this.addSourceName) this.addSourceName = data.path.split('/').filter(Boolean).pop() || data.path;
+        if (!this.addSourceNameEdited) this.addSourceName = data.path.split('/').filter(Boolean).pop() || data.path;
       } catch (e) { console.error('browseDir:', e); }
     },
 

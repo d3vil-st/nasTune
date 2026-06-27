@@ -42,7 +42,7 @@ _scan_tasks: dict[int, asyncio.Task] = {}
 class AddSourceBody(BaseModel):
     name: str
     path: str
-    type: str = "folder"
+    type: str = "music"
 
 
 @router.get("")
@@ -73,7 +73,7 @@ async def add_source(body: AddSourceBody):
         source_id = row[0]
         await db.commit()
 
-    _start_scan(source_id, str(p.resolve()))
+    _start_scan(source_id, str(p.resolve()), body.type)
     return {"id": source_id, "ok": True}
 
 
@@ -93,7 +93,7 @@ async def delete_source(source_id: int):
 async def trigger_scan(source_id: int, full: bool = Query(False)):
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT path, scan_status FROM sources WHERE id=?", (source_id,)) as cur:
+        async with db.execute("SELECT path, type, scan_status FROM sources WHERE id=?", (source_id,)) as cur:
             row = await cur.fetchone()
 
     if not row:
@@ -108,7 +108,7 @@ async def trigger_scan(source_id: int, full: bool = Query(False)):
             await db.commit()
         log.info("Full rescan requested for source %d — tracks cleared", source_id)
 
-    _start_scan(source_id, row["path"])
+    _start_scan(source_id, row["path"], row["type"])
     return {"ok": True}
 
 
@@ -139,11 +139,12 @@ async def get_source_library(source_id: int):
 
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT last_scanned_at FROM sources WHERE id=?", (source_id,)) as cur:
+        async with db.execute("SELECT last_scanned_at, type FROM sources WHERE id=?", (source_id,)) as cur:
             row = await cur.fetchone()
             if not row:
                 raise HTTPException(404, "Source not found")
             last_scanned_at = row[0] or 0
+            source_type = row[1] or 'music'
 
         async with db.execute(
             """SELECT id, path, artist, albumartist, album, title, disc_nr, track_nr,
@@ -171,7 +172,7 @@ async def get_source_library(source_id: int):
                 for row in await cur.fetchall():
                     tracks[key_map[row[0]]]['rating'] = row[1]
 
-    result = _build_library(tracks)
+    result = _build_library(tracks, source_type=source_type)
     _annotate_dir_file_counts(result)
     result["last_scanned_at"] = last_scanned_at
     return JSONResponse(result)
@@ -300,13 +301,21 @@ def _annotate_dir_file_counts(result: dict) -> None:
                 track["dir_file_count"] = dir_counts[d]
 
 
-def _build_library(tracks: list[dict]) -> dict:
+def _build_library(tracks: list[dict], source_type: str = 'music') -> dict:
     library: dict[str, dict] = {}
 
     for t in tracks:
         artist_key = (t.get("albumartist") or t.get("artist") or "Unknown Artist").strip()
-        album_key = (t.get("album") or "Unknown Album").strip()
         year = t.get("year") or 0
+
+        if source_type == 'podcast':
+            # Group by year (season) for display, but keep album = show name in track
+            # objects so _trackKey matches the iPod's album field (which is the show name).
+            album_key = str(year) if year else artist_key
+            track_album = (t.get("album") or artist_key).strip()
+        else:
+            album_key = (t.get("album") or "Unknown Album").strip()
+            track_album = album_key
 
         if artist_key not in library:
             library[artist_key] = {}
@@ -318,7 +327,7 @@ def _build_library(tracks: list[dict]) -> dict:
             "path": t["path"],
             "artist": t.get("artist") or "",
             "albumartist": t.get("albumartist") or "",
-            "album": album_key,
+            "album": track_album,
             "title": t.get("title") or "Unknown",
             "disc_nr": t.get("disc_nr") or 0,
             "track_nr": t.get("track_nr") or 0,
@@ -357,8 +366,8 @@ def _sorted_names(d: dict) -> list[str]:
     return sorted(d, key=key)
 
 
-def _start_scan(source_id: int, path: str) -> None:
+def _start_scan(source_id: int, path: str, source_type: str = 'music') -> None:
     existing = _scan_tasks.get(source_id)
     if existing and not existing.done():
         return
-    _scan_tasks[source_id] = asyncio.create_task(scan_source(source_id, path))
+    _scan_tasks[source_id] = asyncio.create_task(scan_source(source_id, path, source_type))
