@@ -463,3 +463,26 @@ def _sort_key(name: str) -> str:
         if lower.startswith(prefix):
             return lower[len(prefix):]
     return lower
+
+
+async def get_known_walkmans() -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT id, serial, storage_type, model, marketing_name, last_scanned_at, track_count FROM walkman_devices ORDER BY last_scanned_at DESC NULLS LAST"
+        ) as cur:
+            rows = await cur.fetchall()
+    return [
+        {
+            "id": r[0], "serial": r[1], "storage_type": r[2],
+            "model": r[3] or "WALKMAN", "marketing_name": r[4],
+            "last_scanned_at": r[5], "track_count": r[6],
+            "connected": False,  # caller sets this
+        }
+        for r in rows
+    ]
+
+
+async def delete_walkman_device(device_id: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM walkman_devices WHERE id=?", (device_id,))
+        await db.commit()

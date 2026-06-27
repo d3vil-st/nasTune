@@ -372,7 +372,7 @@ function selectionModule() {
         const r = await this.apiFetch('/library/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ devnode: this.selectedDevnode, copy_paths: copyPaths, delete_ids: deleteIds, copy_track_count: this.syncCopyTracks.length }),
+          body: JSON.stringify({ devnode: this.selectedDevnode, copy_paths: copyPaths, delete_ids: deleteIds, copy_track_count: this.syncCopyTracks.length, media_type: this.selectedSourceObj?.type || 'music' }),
         });
         if (!r.ok) { const d = await r.json().catch(()=>({})); alert(d.detail || 'Sync failed'); return; }
       } catch (e) { if (e.message !== 'auth_expired') alert('Sync failed: ' + e.message); }

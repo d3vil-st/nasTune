@@ -47,15 +47,21 @@ _LOSSLESS_EXTS    = frozenset({'.flac', '.wav', '.aiff', '.aif', '.ape', '.wv'})
 _PASSTHROUGH_EXTS = frozenset({'.mp3'})
 
 
-async def _load_sync_settings() -> tuple[bool, int]:
-    """Returns (force_aac, max_threads). max_threads=0 means let gpod-cp use its default."""
+async def _load_sync_settings(ipod_db_id: int | None = None) -> tuple[bool, int]:
+    """Returns (force_aac, max_threads). Per-device override wins over global when set."""
     try:
         import aiosqlite
         async with aiosqlite.connect(_DB_PATH) as db:
             async with db.execute("SELECT key, value FROM settings") as cur:
                 stored = {k: v for k, v in await cur.fetchall()}
-        force_aac = stored.get("force_aac", "false") == "true"
+        global_force_aac = stored.get("force_aac", "false") == "true"
         max_threads = int(stored.get("max_threads", "0") or "0")
+        if ipod_db_id is not None:
+            from app.services.ipod_db import get_effective_force_aac
+            override = await get_effective_force_aac(ipod_db_id, "ipod")
+            force_aac = global_force_aac if override is None else override
+        else:
+            force_aac = global_force_aac
         return force_aac, max_threads
     except Exception:
         return False, 0
@@ -127,11 +133,11 @@ class OperationService:
         self._op = op
         asyncio.create_task(self._do_delete(op, track_ids, mount, device_id))
 
-    async def run_sync(self, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "", copy_track_count: int | None = None) -> None:
+    async def run_sync(self, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "", copy_track_count: int | None = None, media_type: str = "music", ipod_db_id: int | None = None) -> None:
         total = (copy_track_count if copy_track_count is not None else len(copy_paths)) + len(delete_ids)
         op = _Op("sync", total)
         self._op = op
-        asyncio.create_task(self._do_sync(op, copy_paths, delete_ids, mount, device_id))
+        asyncio.create_task(self._do_sync(op, copy_paths, delete_ids, mount, device_id, media_type, ipod_db_id))
 
     async def _gpod_rm_batch(self, track_ids: list, mount: str, op: _Op) -> str | None:
         ids_str = list(dict.fromkeys(str(t) for t in track_ids))
@@ -176,13 +182,15 @@ class OperationService:
     _LOSSY_ARGS       = ['--encoder', 'fdk-aac', '--encoder-quality', '9', '--disable-encoder-fallback']
 
     async def _gpod_cp_batch(self, paths: list[str], mount: str, op: _Op, proc_offset: int = 0,
-                              *, force_aac: bool = False, threads: int = 0) -> tuple[str | None, int]:
+                              *, force_aac: bool = False, threads: int = 0,
+                              media_type_args: list[str] = ()) -> tuple[str | None, int]:
         """Split paths by format and dispatch with the appropriate encoder.
 
         lossless (FLAC/WAV/…) → ALAC
         passthrough (MP3)      → copied as-is (no encoder args)
         lossy (AAC/OGG/…)     → fdk-aac
         force_aac=True         → everything goes through fdk-aac (passthrough ignored)
+        media_type_args        → e.g. ['--tracks-media-type', 'audiobook']
         """
         paths = list(dict.fromkeys(paths))
         if force_aac:
@@ -206,17 +214,22 @@ class OperationService:
         ):
             if not group:
                 continue
-            err, n = await self._gpod_cp_exec(group, extra_args, mount, op, proc_offset + total, threads=threads)
+            err, n = await self._gpod_cp_exec(
+                group, extra_args, mount, op, proc_offset + total,
+                threads=threads, media_type_args=media_type_args,
+            )
             total += n
             if err:
                 return err, total
         return None, total
 
     async def _gpod_cp_exec(self, paths: list[str], extra_args: list[str], mount: str, op: _Op,
-                             proc_offset: int = 0, *, threads: int = 0) -> tuple[str | None, int]:
+                             proc_offset: int = 0, *, threads: int = 0,
+                             media_type_args: list[str] = ()) -> tuple[str | None, int]:
         """Execute gpod-cp with given extra args. Returns (error, track_count)."""
         thread_args = ['--threads', str(threads)] if threads > 0 else []
-        cmd_str = f"gpod-cp {' '.join(extra_args + thread_args)} {' '.join(paths)}"
+        all_flags = extra_args + thread_args + media_type_args
+        cmd_str = f"gpod-cp {' '.join(all_flags)} {' '.join(paths)}"
         log.info("exec: IPOD_MOUNT_POINT=%s %s", mount, cmd_str)
         op.log.append(f"$ {cmd_str}")
         if GPOD_DRY_RUN:
@@ -225,7 +238,7 @@ class OperationService:
             return None, 0
         env = {**os.environ, "IPOD_MOUNT_POINT": mount}
         proc = await asyncio.create_subprocess_exec(
-            "gpod-cp", *extra_args, *thread_args, *paths,
+            "gpod-cp", *extra_args, *thread_args, *media_type_args, *paths,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             env=env,
@@ -375,8 +388,9 @@ class OperationService:
             else:
                 log.info("gpod-tag --rating %d applied to %d track(s)", stars, len(track_ids))
 
-    async def _do_sync(self, op: _Op, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "") -> None:
-        force_aac, threads = await _load_sync_settings()
+    async def _do_sync(self, op: _Op, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "", media_type: str = "music", ipod_db_id: int | None = None) -> None:
+        force_aac, threads = await _load_sync_settings(ipod_db_id=ipod_db_id)
+        media_type_args = ['--tracks-media-type', media_type] if media_type in ('audiobook', 'podcast') else []
         async with self._lock:
             # Delete highest IDs first so lower IDs don't shift after each batch commit
             delete_ids = sorted(delete_ids, key=lambda x: int(x), reverse=True)
@@ -398,7 +412,7 @@ class OperationService:
                 batch = copy_paths[i:i + BATCH_SIZE]
                 err, batch_tracks = await self._gpod_cp_batch(
                     batch, mount, op, proc_offset=len(delete_ids) + copy_offset,
-                    force_aac=force_aac, threads=threads,
+                    force_aac=force_aac, threads=threads, media_type_args=media_type_args,
                 )
                 copy_offset += batch_tracks
                 op.processed = len(delete_ids) + copy_offset

@@ -59,12 +59,13 @@ nasTune/
     ├── services/
     │   ├── devices.py         # DeviceService: lsblk polling, mount/unmount, library cache, eject
     │   ├── ipod.py            # iPod detection: IPOD_SENTINEL, is_ipod(), log_mount_contents()
-    │   ├── gpod.py            # Runs gpod-ls, parses JSON → nested artist/album/track dicts
+    │   ├── ipod_db.py         # Persistent iPod device records, per-device settings, sync rules, auto-sync path computation
+    │   ├── gpod.py            # Runs gpod-ls, parses JSON → nested artist/album/track dicts; _classify_mediatype bitmask
     │   ├── walkman.py         # WALKMAN detection, SQLite scan, library build, delete/copy ops
     │   ├── artwork.py         # mutagen-based artwork extractor (M4A/MP3/FLAC)
     │   ├── fs_utils.py        # os.statvfs capacity + /proc/mounts FS-type label
-    │   ├── db.py              # SQLite schema + migrations (sources, source_tracks, walkman_devices, walkman_tracks, ipod_track_ratings, settings)
-    │   ├── scanner.py         # Async file scanner: walks dirs, reads tags via mutagen
+    │   ├── db.py              # SQLite schema + migrations (sources, source_tracks, walkman_devices, walkman_tracks, ipod_devices, ipod_track_ratings, ipod_device_settings, ipod_sync_rules, walkman_device_settings, walkman_sync_rules, settings)
+    │   ├── scanner.py         # Async file scanner: walks dirs, reads tags via mutagen; _remap_podcast for podcast sources
     │   ├── track_key.py       # Python port of JS _normStr/_trackKey; shared by ratings + operations
     │   ├── ratings.py         # persist_ratings(): upserts iPod ratings into ipod_track_ratings (max wins)
     │   └── operations.py      # OperationService: gpod-rm / gpod-cp / WALKMAN shutil; smart encoder selection; progress tracking
@@ -73,11 +74,12 @@ nasTune/
     └── static/
         ├── style.css          # All CSS; CSS var token system, light/dark theme
         ├── utils.js           # Format helpers, gradients, _normStr/_trackKey, source format/quality, theme state
-        ├── devices.js         # Device list, SSE, library fetch/refresh, eject
-        ├── device.js          # Device 3-pane browser, artUrl, _buildDeviceMap, isOnDevice
+        ├── devices.js         # Device list, SSE, library fetch/refresh, eject; _connectedDeviceName
+        ├── device.js          # Device 3-pane browser, artUrl, _buildDeviceMap, isOnDevice; devLabels getter
         ├── player.js          # Audio queue, play/pause/skip, iPod + source playback
-        ├── sources.js         # Source CRUD, scan polling, folder browser, _buildCopyPaths
+        ├── sources.js         # Source CRUD, scan polling, folder browser, _buildCopyPaths; media type selector; srcLabels
         ├── selection.js       # Checkboxes, select-all, delete/sync/download ops, storage bar
+        ├── settings.js        # Global settings + device settings modal; auto-sync trigger; openDeviceSettings / openDeviceSettingsForKnown
         └── app.js             # Assembles all modules via Object.defineProperties + init(); URL state
 ```
 
@@ -122,7 +124,7 @@ Key docker-compose volumes:
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/` | Renders the main HTML UI |
-| `GET` | `/devices` | All known devices + currently selected devnode |
+| `GET` | `/devices` | All known devices + currently selected devnode; includes `known_devices` with iPod and WALKMAN records |
 | `POST` | `/devices/select` | `{ devnode }` — select an iPod; triggers library load if not cached |
 | `POST` | `/devices/mount` | `{ devnode }` — mount an unmounted device |
 | `POST` | `/devices/eject` | `{ devnode }` — sync + umount + remove; returns 409 if device is busy |
@@ -131,6 +133,9 @@ Key docker-compose volumes:
 | `POST` | `/library/refresh` | Clears cache and re-runs `gpod-ls` for the selected device |
 | `GET` | `/artwork?path=&devnode=` | Extracts embedded album art via mutagen; cached 24 h |
 | `GET` | `/audio?path=&devnode=` | Serves audio from iPod mount; ALAC M4A is transcoded to FLAC on-the-fly |
+| `GET` | `/device-settings?devnode=` | Per-device settings (force_aac override, sync rules); resolves via devnode or db_id/type |
+| `POST` | `/device-settings` | `{ devnode?, db_id?, device_type?, force_aac, sync_rules[] }` — save settings |
+| `POST` | `/auto-sync` | `{ devnode }` — run sync using per-device sync rules; returns 409 if busy or no rules |
 
 ### iPod/WALKMAN operations (app/routers/device.py)
 
@@ -221,6 +226,25 @@ Operations are tracked in real time via SSE and persisted to disk so the status 
 - **History files**: each finished op is written to `/data/op_history/{device_id}/{timestamp}.json` and the directory is pruned to the last 10 files. `device_id` is the iPod UUID from the library cache; falls back to sanitized devnode if the library is not yet loaded.
 - **`lastOp` getter**: in-session `currentOp` (when status is `done` or `error`) takes priority over `opHistory[0]` so the status bar shows the freshest result.
 - **Op log modal**: clicking the running indicator or last-op entry in the status bar opens a terminal-style modal (`op-log-modal`). Live ops auto-scroll; historical ops are shown via `historyViewOp`.
+
+### Media type system
+
+`mediaType` (stored in `localStorage` under key `nastune-media-type`) is a shared state value that gates both the device pane and source pane simultaneously. Valid values: `'music'`, `'podcast'`, `'audiobook'`.
+
+- **Device pane** (`_typeFilteredLibrary`): filters tracks by `t.mediatype` — `'music'` accepts `null` or `'music'`; `'podcast'` and `'audiobook'` match exactly. Track `mediatype` field is set by `_classify_mediatype` in `gpod.py` (bitmask: AUDIO=1, VIDEO=2, PODCAST=4, AUDIOBOOK=8; value 5 = PODCAST|AUDIO which classifies as podcast).
+- **Source pane** (`filteredSources`): filters the sources list to `s.type === mediaType`. Each source has a `type` column in the DB set at creation time.
+- **Labels**: `devLabels` (in `device.js`) and `srcLabels` (in `sources.js`) return media-type-specific terminology — "Artists/Albums/Tracks" for music, "Shows/Seasons/Episodes" for podcasts, "Authors/Books/Chapters" for audiobooks.
+- **Per-type source memory**: `setMediaType()` saves the current `selectedSourceId` to `localStorage` under key `nastune-src-{type}` before switching, and restores it on switch-back.
+- **`filteredSrcArtists` guard**: returns `[]` when `selectedSourceObj` is null (no source of the current type selected), preventing stale content from a previous type's source from bleeding through.
+
+### Device settings and auto-sync
+
+`settings.js` contains both the global settings modal and the per-device settings modal. They are independent — the device settings modal uses `_deviceSettingsDevnode` (for connected devices) or `_deviceSettingsDbId + _deviceSettingsType` (for offline/known devices via the known-devices list).
+
+- `openDeviceSettings(devnode)`: for unmounted devices, redirects to `openDeviceSettingsForKnown` using USB serial → iPod UUID match via `knownDevices.ipods`.
+- `_loadDeviceSettings()`: calls `GET /devices/device-settings?devnode=` (connected) or `GET /devices/known/{id}/settings?device_type=` (offline). Note: devnode is a **query parameter** (not path) because devnode values like `/dev/sdb3` contain slashes that Starlette would decode and misroute if used as path segments.
+- **Auto-sync** (`runAutoSync()`): sends `POST /auto-sync?devnode=` which calls `compute_auto_sync_paths` in `ipod_db.py` — walks per-device sync rules, collects source paths for tracks not already on the device, and passes them to the normal sync endpoint.
+- **Per-device `force_aac`** override: takes precedence over the global `force_aac` setting from the `settings` table; stored in `ipod_device_settings` / `walkman_device_settings`.
 
 ### All Artists mode
 
@@ -411,6 +435,17 @@ The DB schema includes `disc_nr INTEGER` on `source_tracks`. The library respons
 
 The `ipod_track_ratings` table (`track_key TEXT PRIMARY KEY, rating INTEGER, updated_at INTEGER`) stores 0–5 star ratings keyed by normalized track key. It is shared between the iPod and source tabs — the same key formula is used in both so a rating set in the source view applies to the matching iPod track and vice versa.
 
+### Podcast source remapping (`_remap_podcast`)
+
+Podcast files use `album` tag = show name, `artist` tag = empty or per-episode host name. `_remap_podcast` is called per-track when `source_type == 'podcast'`:
+
+- Sets `artist` and `albumartist` to the show name (from `album` tag, falling back to `albumartist`, `artist`, then `'Unknown Show'`)
+- Does **not** overwrite `album` — it stays as the original show name in the DB
+
+**Why album must not be overwritten**: the key formula uses `artist + album + track_nr/title`. On the iPod, the `album` field retains the original file tag (show name). If the source DB stored `album = year_string` instead, `isOnDevice` keys would mismatch. The year is used purely for display grouping.
+
+**Season grouping** is done at library-build time in `_build_library` (sources.py) when `source_type == 'podcast'`: `album_key = str(year) if year else artist_key`. This makes column 2 show years/seasons. Individual track objects receive `"album": original_show_name_from_db` so their key matches the iPod. A Full Rescan is needed after the first deploy of this fix to clear DB rows that had `album = year` stored from a previous version.
+
 ---
 
 ## WALKMAN scanner
@@ -504,6 +539,11 @@ The `mode='w|'` flag enables streaming (no seeking). The OS pipe provides natura
 - **iPod rating deferred to sync**: `POST /library/rate` writes to `ipod_track_ratings` and mutates the in-memory cache, but does **not** call `gpod-tag` immediately. The actual iTunesDB write happens during the next sync's rating-sync step. This means ratings set via UI are not written to the iPod until the next sync operation completes.
 - **`ipod_track_ratings` shared across tabs**: the same normalized key is used by both the iPod library (via `persist_ratings` and `POST /library/rate`) and the source library (via `POST /sources/rate` and `GET /sources/{id}/library`). A rating set in one view is visible in the other after the next library load.
 - **Rating scale**: `ipod_track_ratings` stores 0–5 stars. The iPod library cache stores the iPod-native 0–100 scale (`rating * 20`). `fmtRating(r)` in `utils.js` takes 0–100; `fmtRatingStars(s)` takes 0–5. Use the correct formatter for each tab.
+- **Device settings devnode in query param**: `GET/PUT /devices/device-settings` takes `devnode` as a query parameter, not a path segment. DevNode values like `/dev/sdb3` contain slashes — Starlette decodes `%2F` back to `/` before routing, so a path-segment route `/devices/{devnode}/device-settings` would never match. Always use `?devnode=` and `encodeURIComponent` on the JS side.
+- **iPod mediatype bitmask**: `gpod-ls` returns `mediatype` as a raw integer bitmask (AUDIO=1, VIDEO=2, PODCAST=4, AUDIOBOOK=8). Value `5` (PODCAST|AUDIO) is a valid podcast — use `raw & 4` to test for podcast, not a dict lookup. `_classify_mediatype` in `gpod.py` implements this.
+- **Podcast artist/album fallback in gpod.py**: for podcast and audiobook tracks where both `albumartist` and `artist` are null (common for podcasts), `_parse` uses `t.get("album")` (the show name) as the artist key. This matches how the source scanner sets `artist = show_name` via `_remap_podcast`.
+- **Podcast key matching**: `track.album` in source library track objects must equal the iPod's `album` field (the show name) for `isOnDevice` to match. Do not overwrite `album` with year/season in `_remap_podcast` — season grouping is done at library-build time by `_build_library` using `year` as `album_key`, while the track object retains `"album": show_name`.
+- **`filteredSrcArtists` null guard**: returns `[]` when `selectedSourceObj` is null. Without this, switching to a media type with no source still shows the library from the previous type's source (the `sourceLibrary` reference is not nulled on type switch when no matching source exists).
 
 ---
 

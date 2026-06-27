@@ -105,6 +105,45 @@ CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS ipod_devices (
+    id           INTEGER PRIMARY KEY,
+    uuid         TEXT UNIQUE NOT NULL,
+    model        TEXT,
+    ipod_name    TEXT,
+    capacity     INTEGER,
+    first_seen   INTEGER NOT NULL DEFAULT (unixepoch()),
+    last_seen    INTEGER NOT NULL DEFAULT (unixepoch()),
+    library_json TEXT
+);
+
+CREATE TABLE IF NOT EXISTS ipod_device_settings (
+    device_id  INTEGER PRIMARY KEY REFERENCES ipod_devices(id) ON DELETE CASCADE,
+    force_aac  INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS ipod_sync_rules (
+    id          INTEGER PRIMARY KEY,
+    device_id   INTEGER NOT NULL REFERENCES ipod_devices(id) ON DELETE CASCADE,
+    media_type  TEXT NOT NULL DEFAULT 'music',
+    enabled     INTEGER NOT NULL DEFAULT 0,
+    source_id   INTEGER REFERENCES sources(id) ON DELETE SET NULL,
+    UNIQUE(device_id, media_type)
+);
+
+CREATE TABLE IF NOT EXISTS walkman_device_settings (
+    device_id  INTEGER PRIMARY KEY REFERENCES walkman_devices(id) ON DELETE CASCADE,
+    force_aac  INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS walkman_sync_rules (
+    id          INTEGER PRIMARY KEY,
+    device_id   INTEGER NOT NULL REFERENCES walkman_devices(id) ON DELETE CASCADE,
+    media_type  TEXT NOT NULL DEFAULT 'music',
+    enabled     INTEGER NOT NULL DEFAULT 0,
+    source_id   INTEGER REFERENCES sources(id) ON DELETE SET NULL,
+    UNIQUE(device_id, media_type)
+);
 """
 
 
@@ -137,5 +176,13 @@ async def init_db() -> None:
             wt_cols = {row[1] for row in await cur.fetchall()}
         if "has_artwork" not in wt_cols:
             await db.execute("ALTER TABLE walkman_tracks ADD COLUMN has_artwork INTEGER NOT NULL DEFAULT 0")
+
+        async with db.execute("PRAGMA table_info(ipod_devices)") as cur:
+            ipod_cols = {row[1] for row in await cur.fetchall()}
+        if "ipod_name" not in ipod_cols:
+            await db.execute("ALTER TABLE ipod_devices ADD COLUMN ipod_name TEXT")
+
+        # Rename legacy type='folder' to 'music' for all existing sources
+        await db.execute("UPDATE sources SET type='music' WHERE type='folder'")
 
         await db.commit()

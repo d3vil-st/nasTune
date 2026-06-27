@@ -8,6 +8,7 @@ from typing import Any
 
 from app.services.fs_utils import FS_LABELS, fs_type, fs_usage
 from app.services.ipod import is_ipod as detect_ipod, log_mount_contents as log_ipod_mount_contents
+from app.services.walkman import get_serial as _get_usb_serial
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +30,8 @@ class DeviceInfo:
     mounted: bool = True
     is_walkman: bool = False
     walkman_db_id: int | None = None
+    ipod_db_id: int | None = None
+    usb_serial: str | None = None   # USB iSerial read at connect time (= iPod UUID)
 
 
 class DeviceService:
@@ -207,6 +210,7 @@ class DeviceService:
             # Not mounted (automount off, or device was explicitly ejected) — register as
             # unmounted so it remains visible in the UI with a manual Mount button
             size_bytes = bd.get("size") or 0
+            usb_serial_early = await _get_usb_serial(devnode) or None
             info = DeviceInfo(
                 devnode=devnode,
                 devname=devname,
@@ -215,10 +219,11 @@ class DeviceService:
                 size_bytes=size_bytes,
                 is_ipod=False,
                 mounted=False,
+                usb_serial=usb_serial_early,
             )
             reason = "ejected" if devnode in self._ejected else "automount disabled"
-            log.info("USB device visible (not mounted, %s): %s  fstype=%s  size=%.1f GB",
-                     reason, devnode, fstype_raw, size_bytes / 1024 ** 3)
+            log.info("USB device visible (not mounted, %s): %s  fstype=%s  size=%.1f GB  serial=%s",
+                     reason, devnode, fstype_raw, size_bytes / 1024 ** 3, usb_serial_early or "(none)")
             async with self._lock:
                 self.devices[devnode] = info
             self._broadcast()
@@ -256,6 +261,12 @@ class DeviceService:
             else:
                 log.info("  Not an iPod or WALKMAN: no sentinels found at %s", mount)
 
+        usb_serial: str | None = None
+        if is_ipod:
+            usb_serial = await _get_usb_serial(devnode) or None
+            if usb_serial:
+                log.info("  iPod USB serial (early UUID): %s", usb_serial)
+
         info = DeviceInfo(
             devnode=devnode,
             devname=devname,
@@ -265,6 +276,7 @@ class DeviceService:
             is_ipod=is_ipod,
             is_walkman=is_walkman,
             walkman_db_id=walkman_db_id,
+            usb_serial=usb_serial,
         )
 
         async with self._lock:
@@ -388,7 +400,9 @@ class DeviceService:
         lib = self._cache.get(devnode)
         if lib:
             return lib.get("device", {}).get("uuid") or None
-        return None
+        # Fall back to the USB serial read at connect time (iSerial = UUID)
+        info = self.devices.get(devnode)
+        return info.usb_serial if info else None
 
     async def select_device(self, devnode: str) -> None:
         async with self._lock:
@@ -442,8 +456,45 @@ class DeviceService:
             else:
                 from app.services.gpod import fetch_library
                 from app.services.ratings import persist_ratings
+                from app.services.ipod_db import upsert_ipod
+                from app.services.track_key import track_key as _tk
+                from app.services.db import DB_PATH as _DB_PATH
+                import aiosqlite as _aiosqlite
                 lib = await fetch_library(info.mount)
                 asyncio.create_task(persist_ratings(lib))
+                # Merge stored ratings (ipod_track_ratings) into the library before
+                # caching to disk — raw gpod-ls ratings may lag behind UI-set ratings.
+                _key_to_track: dict[str, dict] = {}
+                for _a in lib.get("artists", []):
+                    for _al in _a["albums"]:
+                        for _t in _al["tracks"]:
+                            _k = _tk(_t.get("artist") or _a["name"], _al["name"],
+                                     _t.get("track_nr"), _t.get("disc_nr"), _t.get("title", ""))
+                            _key_to_track[_k] = _t
+                if _key_to_track:
+                    _ph = ",".join("?" * len(_key_to_track))
+                    async with _aiosqlite.connect(_DB_PATH) as _db:
+                        async with _db.execute(
+                            f"SELECT track_key, rating FROM ipod_track_ratings WHERE track_key IN ({_ph})",
+                            list(_key_to_track),
+                        ) as _cur:
+                            for _row in await _cur.fetchall():
+                                _t2 = _key_to_track.get(_row[0])
+                                if _t2:
+                                    _t2["rating"] = max(_t2.get("rating", 0), _row[1] * 20)
+                device_meta = lib.get("device", {})
+                uuid = device_meta.get("uuid") or ""
+                if uuid:
+                    lib_json = json.dumps(lib, default=str)
+                    ipod_db_id = await upsert_ipod(
+                        uuid,
+                        device_meta.get("model_name") or device_meta.get("model"),
+                        device_meta.get("capacity"),
+                        lib_json,
+                        lib.get("ipod_name"),
+                    )
+                    info.ipod_db_id = ipod_db_id
+                    log.info("iPod registered in DB: uuid=%s db_id=%d", uuid, ipod_db_id)
             self._cache[devnode] = lib
             log.info("Library loaded for %s: %d tracks, %d artists",
                      devnode, lib.get("total_tracks", 0), len(lib.get("artists", [])))

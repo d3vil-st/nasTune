@@ -9,6 +9,17 @@ from app.services.fs_utils import fs_usage, fs_type
 
 log = logging.getLogger(__name__)
 
+def _classify_mediatype(raw: int | None) -> str:
+    """Classify iPod mediatype bitmask (libgpod: AUDIO=1, VIDEO=2, PODCAST=4, AUDIOBOOK=8)."""
+    if not raw:
+        return 'music'
+    if raw & 8:
+        return 'audiobook'
+    if raw & 4:
+        return 'podcast'
+    return 'music'
+
+
 
 async def fetch_library(mount: str) -> dict[str, Any]:
     env = {**os.environ, "IPOD_MOUNT_POINT": mount}
@@ -37,7 +48,11 @@ def _parse(raw: dict, mount: Path) -> dict[str, Any]:
     total_bytes = 0
 
     for t in master["tracks"]:
-        artist = t.get("albumartist") or t.get("artist") or "Unknown Artist"
+        mt = _classify_mediatype(t.get("mediatype"))
+        if mt in ('podcast', 'audiobook') and not (t.get("albumartist") or t.get("artist")):
+            artist = t.get("album") or "Unknown Artist"
+        else:
+            artist = t.get("albumartist") or t.get("artist") or "Unknown Artist"
         album_name = t.get("album") or "Unknown Album"
         year = t.get("year") or 0
         total_bytes += t.get("size") or 0
@@ -68,6 +83,7 @@ def _parse(raw: dict, mount: Path) -> dict[str, Any]:
             "year": t.get("year") or 0,
             "time_added": t.get("time_added") or 0,
             "time_played": t.get("time_played") or 0,
+            "mediatype": _classify_mediatype(t.get("mediatype")),
             "missing": _is_missing(mount, t.get("ipod_path") or ""),
         })
 
