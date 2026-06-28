@@ -386,16 +386,33 @@ function selectionModule() {
       } catch { this.opHistory = []; }
     },
 
+    // Append log lines from `op` to opLogEl starting at `fromLine`.
+    // Bypasses Alpine reactivity — only new lines are touched per SSE tick.
+    _fillOpLog(op, fromLine = 0) {
+      const el = this.$refs?.opLogEl;
+      if (!el) return fromLine;
+      const lines = op?.log || [];
+      for (let i = fromLine; i < lines.length; i++) {
+        const span = document.createElement('span');
+        if (lines[i].startsWith('$')) span.className = 'op-log-cmd';
+        span.textContent = lines[i] + '\n';
+        el.appendChild(span);
+      }
+      if (lines.length > fromLine) el.scrollTop = el.scrollHeight;
+      return lines.length;
+    },
+
     openLiveLog() {
       this.historyViewOp = null;
       this.showOpLog = true;
-      this.$nextTick(() => { const el = this.$refs?.opLogEl; if (el) el.scrollTop = el.scrollHeight; });
+      this._logRenderedCount = 0;
+      this.$nextTick(() => { this._logRenderedCount = this._fillOpLog(this.currentOp); });
     },
 
     openLastOpLog() {
       this.historyViewOp = this.lastOp;
       this.showOpLog = true;
-      this.$nextTick(() => { const el = this.$refs?.opLogEl; if (el) el.scrollTop = el.scrollHeight; });
+      this.$nextTick(() => { this._fillOpLog(this.historyViewOp); });
     },
 
     _connectOpEvents() {
@@ -411,10 +428,7 @@ function selectionModule() {
           const prevStartedAt = this.currentOp?.started_at;
           this.currentOp = op;
           if (this.showOpLog && !this.historyViewOp) {
-            this.$nextTick(() => {
-              const el = this.$refs?.opLogEl;
-              if (el) el.scrollTop = el.scrollHeight;
-            });
+            this._logRenderedCount = this._fillOpLog(op, this._logRenderedCount || 0);
           }
           // Trigger on running→done transition, OR on a new op that completed before
           // the first SSE poll (fast ops like WALKMAN delete). connectedAt guards

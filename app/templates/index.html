@@ -1214,7 +1214,7 @@
           <span x-show="(historyViewOp || currentOp).status === 'error'"   class="op-log-badge op-log-badge-err">error</span>
           <button class="modal-close" @click="showOpLog = false; historyViewOp = null">&#x2715;</button>
         </div>
-        <pre class="op-log-body" x-ref="opLogEl"><template x-for="(line, i) in ((historyViewOp || currentOp)?.log || [])" :key="i"><span :class="line.startsWith('$') ? 'op-log-cmd' : ''" x-text="line"></span></template></pre>
+        <pre class="op-log-body" x-ref="opLogEl"></pre>
       </div>
     </template>
   </div>
