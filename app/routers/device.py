@@ -53,6 +53,11 @@ class RateBody(BaseModel):
     rating: int  # 0-5 stars
 
 
+class VerifyBody(BaseModel):
+    devnode: str
+    mode: str  # 'add' | 'delete'
+
+
 def _get_mount(devnode: str) -> str:
     """For iPod-only operations (gpod-rm/gpod-cp). Raises for WALKMAN."""
     info = device_service.get_device_info(devnode)
@@ -153,6 +158,16 @@ def _resolve_device_id(devnode: str) -> str:
     if uuid:
         return uuid
     return devnode.lstrip("/").replace("/", "_")
+
+
+@router.post("/library/verify")
+async def verify_library(body: VerifyBody):
+    if body.mode not in ("add", "delete", "check"):
+        raise HTTPException(422, "mode must be 'add', 'delete', or 'check'")
+    mount = _get_mount(body.devnode)  # iPod-only; raises for WALKMAN and busy
+    device_id = _resolve_device_id(body.devnode)
+    await op_service.run_verify(body.mode, mount, device_id)
+    return {"ok": True}
 
 
 @router.post("/library/delete")

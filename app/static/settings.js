@@ -211,6 +211,22 @@ function settingsModule() {
       } catch (e) { alert('Auto-sync failed: ' + e.message); }
     },
 
+    async runVerify(mode) {
+      const devnode = this._deviceSettingsDevnode;
+      if (!devnode) return;
+      if (mode === 'delete' && !confirm('Remove all iTunesDB entries that have no corresponding file on device?\n\nThis cannot be undone.')) return;
+      try {
+        const r = await fetch('/library/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ devnode, mode }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) { alert(data.detail || 'Verify failed'); return; }
+        this.showDeviceSettings = false;
+      } catch (e) { alert('Verify failed: ' + e.message); }
+    },
+
     cycleDeviceForceAac() {
       if (!this.deviceSettingsDraft) return;
       const cur = this.deviceSettingsDraft.force_aac;

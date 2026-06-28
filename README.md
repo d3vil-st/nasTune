@@ -31,8 +31,9 @@ iPod support is built around [gpod-utils](https://github.com/d3vil-st/gpod-utils
 - **Sony WALKMAN support** — detected automatically via `default-capability.xml`; tag-based scan (mutagen) indexes the device into SQLite; delete and sync use direct file operations with immediate DB update — no rescan needed
 - **Force full rescan** — WALKMAN devices and NAS sources each have a full-rescan button that clears all existing library data and re-reads every file from scratch; useful after tag corrections or large file moves (confirmation dialog shown before starting)
 - **Sync** tracks from a NAS music source to the device — add missing tracks, remove ones no longer in the source; sync confirmation dialog appears when deletes are involved or free space is insufficient
-- **Device settings** — per-device gear icon opens a settings panel with a force-AAC override and per-media-type sync rules (which source to use for Music, Podcasts, Audiobooks); also available for known-but-disconnected iPods
+- **Device settings** — per-device gear icon opens a settings panel with a force-AAC override, per-media-type sync rules, and library verification tools; also available for known-but-disconnected iPods
 - **Auto-sync** — one-click button in device settings runs a full sync using configured per-type source rules, skipping tracks already on the device
+- **Library verify** (`gpod-verify`) — three modes in device settings: *Check only* (reports mismatches without changes), *Add missing entries* (creates iTunesDB entries for files on device with no DB record), *Remove orphaned entries* (deletes DB entries whose file no longer exists on device)
 - **Rating sync** — iPod track ratings (1–5 stars) are persisted to SQLite on every library read; during sync, newly copied tracks automatically receive their stored ratings via `gpod-tag`; highest rating wins when the same track is seen on multiple iPods
 - **Source comparison** — tracks in the iPod/WALKMAN pane appear in blue when they are absent from the selected NAS source; parent album and artist rows turn blue as soon as even a single track is missing
 - **Unsynced filter** — one-click toggle in the Sources bar to show only tracks not yet on the device; state saved per browser
@@ -44,7 +45,9 @@ iPod support is built around [gpod-utils](https://github.com/d3vil-st/gpod-utils
 - **Storage bar** — shows used / net change / free with a live delete/add counter overlay during operations
 - **Operation log** — click the status bar progress indicator to view live output in a terminal popup; last operation result and log persist across page reloads
 - **Multi-disc album** support with CD separators and disc-aware track matching
-- **Podcast metadata** — podcast sources remap `album` tag → show name (artist/albumartist) for correct 3-column navigation (Shows → Seasons → Episodes); audiobooks navigate naturally as Authors → Books → Chapters
+- **Podcast metadata** — podcast sources remap `album` tag → show name (artist/albumartist) for correct 3-column navigation (Shows → Seasons → Episodes); audiobooks navigate naturally as Authors → Books → Chapters; episodes are sorted newest-first in both the season column and episode list
+- **Episode publication date** — the raw `date` tag (e.g. `2026-05-19T12:12:40`) is stored as `pub_date` and displayed as a formatted date under each episode title (e.g. "May 19, 2026"); device-side tracks show year only (gpod-ls limitation); requires a source rescan to populate
+- **Unplayed indicator** — a blue dot before the episode number marks podcast episodes with zero plays; play counts are read from the iPod on every library load, persisted to `ipod_track_playcounts`, and cross-referenced in the source tab so the indicator also appears for episodes in your NAS library that are on the device but unplayed
 - **Device picker** — gear icon is always visible on device rows; connected devices show the iPod/WALKMAN name alongside the block device name; unmounted iPods are matched by serial to their known DB record so settings are accessible even when disconnected
 - **Search** with smart navigation — click an artist from results to see all their albums (when the artist name matched) or only relevant albums (when an album or track matched); clear button in the search field
 - **Auto-discover** connected devices via USB polling; optional auto-mount

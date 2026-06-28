@@ -434,6 +434,49 @@ class OperationService:
                 _save_op_history(op, device_id)
 
 
+    # ── gpod-verify ──────────────────────────────────────────────────
+
+    async def run_verify(self, mode: str, mount: str, device_id: str = "") -> None:
+        op = _Op("verify", 0)
+        self._op = op
+        asyncio.create_task(self._do_verify(op, mode, mount, device_id))
+
+    async def _do_verify(self, op: _Op, mode: str, mount: str, device_id: str) -> None:
+        flag = {"add": "--add", "delete": "--delete"}.get(mode)
+        cmd = ["gpod-verify", "-M", mount] + ([flag] if flag else [])
+        log.info("exec: %s", " ".join(cmd))
+        op.log.append(f"$ {' '.join(cmd)}")
+        async with self._lock:
+            if GPOD_DRY_RUN:
+                op.log.append("[dry-run] skipped")
+                op.status = "done"
+                if device_id:
+                    _save_op_history(op, device_id)
+                return
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
+                )
+                async for raw in proc.stdout:
+                    line = raw.decode().rstrip()
+                    op.log.append(line)
+                    op.current = line
+                await proc.wait()
+                if proc.returncode != 0:
+                    op.status = "error"
+                    op.error = f"gpod-verify exited {proc.returncode}"
+                else:
+                    op.status = "done"
+                    op.current = ""
+            except Exception as exc:
+                op.status = "error"
+                op.error = str(exc)
+            finally:
+                if device_id:
+                    _save_op_history(op, device_id)
+
     # ── WALKMAN operations (cp/rm via shutil) ────────────────────────
 
     async def run_walkman_delete(self, track_db_ids: list[int], mount: str,

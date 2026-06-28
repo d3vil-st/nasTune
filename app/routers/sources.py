@@ -148,7 +148,7 @@ async def get_source_library(source_id: int):
 
         async with db.execute(
             """SELECT id, path, artist, albumartist, album, title, disc_nr, track_nr,
-                      duration_ms, bitrate, samplerate, year, size, codec, bits_per_sample
+                      duration_ms, bitrate, samplerate, year, pub_date, size, codec, bits_per_sample
                FROM source_tracks WHERE source_id=?
                ORDER BY albumartist, artist, album, disc_nr, track_nr, title""",
             (source_id,),
@@ -163,14 +163,25 @@ async def get_source_library(source_id: int):
             key = _tk(artist, t.get('album') or '', t.get('track_nr'), t.get('disc_nr'), t.get('title') or '')
             key_map[key] = i
 
+        keys = list(key_map.keys())
+        placeholders = ','.join('?' * len(keys))
         async with aiosqlite.connect(DB_PATH) as db:
-            placeholders = ','.join('?' * len(key_map))
             async with db.execute(
                 f'SELECT track_key, rating FROM ipod_track_ratings WHERE track_key IN ({placeholders})',
-                list(key_map.keys()),
+                keys,
             ) as cur:
                 for row in await cur.fetchall():
                     tracks[key_map[row[0]]]['rating'] = row[1]
+
+            try:
+                async with db.execute(
+                    f'SELECT track_key, playcount FROM ipod_track_playcounts WHERE track_key IN ({placeholders})',
+                    keys,
+                ) as cur:
+                    for row in await cur.fetchall():
+                        tracks[key_map[row[0]]]['played'] = row[1] > 0
+            except Exception:
+                pass  # table may not exist on first run before migration
 
     result = _build_library(tracks, source_type=source_type)
     _annotate_dir_file_counts(result)
@@ -335,20 +346,35 @@ def _build_library(tracks: list[dict], source_type: str = 'music') -> dict:
             "bitrate": t.get("bitrate") or 0,
             "samplerate": t.get("samplerate") or 0,
             "year": t.get("year") or 0,
+            "pub_date": t.get("pub_date") or "",
             "size": t.get("size") or 0,
             "codec": t.get("codec") or "",
             "bits_per_sample": t.get("bits_per_sample") or 0,
             "rating": t.get("rating") or 0,
+            "played": t.get("played"),  # None = not on device / unknown, True/False = known from DB
         })
 
     result_artists = []
     for artist in _sorted_names(library):
-        albums = sorted(
-            library[artist].values(),
-            key=lambda a: (a["year"] if a["year"] > 0 else 9999, a["name"].lower()),
-        )
-        for album in albums:
-            album["tracks"].sort(key=lambda t: (t["disc_nr"] or 0, t["track_nr"] or 999, t["title"].lower()))
+        if source_type == 'podcast':
+            albums = sorted(
+                library[artist].values(),
+                key=lambda a: (1 if a["year"] <= 0 else 0, -(a["year"] or 0), a["name"].lower()),
+            )
+            for album in albums:
+                # Newest episodes first: pub_date ISO string sorts lexicographically;
+                # missing dates fall to end ('0000' < any real date, reversed → end)
+                album["tracks"].sort(
+                    key=lambda t: (t["pub_date"] or '0000', t["track_nr"] or 0),
+                    reverse=True,
+                )
+        else:
+            albums = sorted(
+                library[artist].values(),
+                key=lambda a: (a["year"] if a["year"] > 0 else 9999, a["name"].lower()),
+            )
+            for album in albums:
+                album["tracks"].sort(key=lambda t: (t["disc_nr"] or 0, t["track_nr"] or 999, t["title"].lower()))
         track_count = sum(len(a["tracks"]) for a in albums)
         result_artists.append({"name": artist, "albums": albums, "track_count": track_count})
 

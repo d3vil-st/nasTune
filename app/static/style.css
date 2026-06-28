@@ -601,7 +601,7 @@
     .track-row.missing { opacity: .45; }
     .artist-row.not-in-src .artist-name,
     .album-row.not-in-src .album-name,
-    .track-row.not-in-src .t-title { color: #4a9eff; }
+    .track-row.not-in-src .t-title > span:first-child { color: #4a9eff; }
     .track-row.disc-sep-before { margin-top: 28px; position: relative; }
     .track-row.disc-sep-before::before {
       content: 'CD ' attr(data-disc-nr);
@@ -804,11 +804,33 @@
     }
 
     .t-title {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-width: 0;
+      gap: 1px;
+      font-size: 13px;
+    }
+    .t-title > span:first-child {
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      font-size: 13px;
     }
+    .t-date {
+      font-size: 10px;
+      color: var(--dim);
+      white-space: nowrap;
+      line-height: 1.3;
+    }
+
+    .t-dot-cell { display: flex; align-items: center; justify-content: center; }
+    .t-unplayed-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--blue);
+      visibility: hidden;
+      flex-shrink: 0;
+    }
+    .t-unplayed-dot.show { visibility: visible; }
 
     .t-dur {
       color: var(--muted);

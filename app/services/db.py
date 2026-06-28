@@ -101,6 +101,12 @@ CREATE TABLE IF NOT EXISTS ipod_track_ratings (
     updated_at  INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS ipod_track_playcounts (
+    track_key   TEXT PRIMARY KEY,
+    playcount   INTEGER NOT NULL DEFAULT 0,
+    updated_at  INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -160,6 +166,7 @@ async def init_db() -> None:
             ("codec",           "ALTER TABLE source_tracks ADD COLUMN codec           TEXT"),
             ("bits_per_sample", "ALTER TABLE source_tracks ADD COLUMN bits_per_sample INTEGER"),
             ("disc_nr",         "ALTER TABLE source_tracks ADD COLUMN disc_nr         INTEGER"),
+            ("pub_date",        "ALTER TABLE source_tracks ADD COLUMN pub_date        TEXT"),
         ]:
             if col not in st_cols:
                 await db.execute(ddl)
