@@ -337,7 +337,7 @@ class DeviceService:
         log.info("  mount %s → %s OK (opts=%s)", devnode, mountpoint, opts)
         return True
 
-    async def _remove(self, devnode: str) -> None:
+    async def _remove(self, devnode: str, *, skip_umount: bool = False) -> None:
         async with self._lock:
             info = self.devices.pop(devnode, None)
             self._cache.pop(devnode, None)
@@ -350,7 +350,7 @@ class DeviceService:
             return
 
         log.info("Device disconnected: %s (mount=%s)", devnode, info.mount)
-        if not info.manual and info.mounted and info.mount:
+        if not skip_umount and not info.manual and info.mounted and info.mount:
             proc = await asyncio.create_subprocess_exec(
                 "umount", info.mount,
                 stderr=asyncio.subprocess.PIPE,
@@ -570,9 +570,24 @@ class DeviceService:
             )
             await proc.communicate()
             log.info("sync complete for %s", devnode)
+
+            # Attempt umount before modifying device state so that a busy-device
+            # failure leaves the UI unchanged (the poll loop would otherwise
+            # re-discover the still-mounted device and make it appear remounted).
+            proc = await asyncio.create_subprocess_exec(
+                "umount", info.mount,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                err = stderr.decode().strip()
+                log.warning("umount %s failed (rc=%d): %s", info.mount, proc.returncode, err)
+                raise RuntimeError(f"Cannot unmount {info.mount}: {err or 'device or resource busy'}")
+            log.info("Unmounted %s", info.mount)
+
             self._ejected.add(devnode)
             log.info("Marked %s as ejected; auto-mount suppressed until physical disconnect", devnode)
-        await self._remove(devnode)
+        await self._remove(devnode, skip_umount=True)
 
     def subscribe(self) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue(maxsize=8)
