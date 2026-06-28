@@ -1,4 +1,9 @@
 function selectionModule() {
+  // Non-reactive closure caches — writing here never triggers Alpine reactive effects.
+  // Both Sets are always replaced (never mutated in-place), so === is a valid signal.
+  let _selCache  = null;  // { lib, sel, tracks }  for deviceSelectedTracks
+  let _syncCache = null;  // { ini, chk, del, cpy, delTracks, cpyTracks }
+
   return {
     // Selection & operations state
     deviceSelection: new Set(),
@@ -14,9 +19,11 @@ function selectionModule() {
     _opCopyCount: 0,
 
     get lastOp() {
-      // In-session finished op takes priority; fall back to persisted history
-      if (this.currentOp && this.currentOp.status !== 'running') return this.currentOp;
-      return this.opHistory[0] || null;
+      // Running op: currentOp has live progress; use it.
+      if (this.currentOp?.status === 'running') return this.currentOp;
+      // Finished op: prefer the history entry — it has the full log.
+      // currentOp from SSE no longer carries the log array.
+      return this.opHistory[0] || this.currentOp || null;
     },
 
     get opRunning() { return this.currentOp?.status === 'running'; },
@@ -24,11 +31,15 @@ function selectionModule() {
     // ── Storage bar ──────────────────────────────────────────────────
 
     get deviceSelectedTracks() {
+      const lib = this.library;
+      const sel = this.deviceSelection;
+      if (_selCache && _selCache.lib === lib && _selCache.sel === sel) return _selCache.tracks;
       const out = [];
-      for (const artist of (this.library?.artists || []))
+      for (const artist of (lib?.artists || []))
         for (const album of artist.albums)
           for (const t of album.tracks)
-            if (this.deviceSelection.has(t.id)) out.push(t);
+            if (sel.has(t.id)) out.push(t);
+      _selCache = { lib, sel, tracks: out };
       return out;
     },
 
@@ -52,11 +63,10 @@ function selectionModule() {
       if (!total) return 0;
       const usedAfter = (this.library?.fs_used_gb || 0) - this.storageRemoveBytes / 1073741824;
       let pct = Math.max(0, Math.min(100, (usedAfter / total) * 100));
-      // During copy phase, blue grows as files land on device
+      // Show projected final state once copy starts; N/M counter provides per-track progress.
+      // Avoids reading currentOp.processed every SSE tick (would cascade to O(n) syncCopyTracks).
       if (this.opRunning && this._opCopyCount) {
-        const copyDone = Math.max(0, (this.currentOp.processed || 0) - this._opDeleteCount);
-        const copyFrac = Math.min(1, copyDone / this._opCopyCount);
-        pct = Math.min(100, pct + (this.storageAddBytes / 1073741824 / total) * 100 * copyFrac);
+        pct = Math.min(100, pct + (this.storageAddBytes / 1073741824 / total) * 100);
       }
       return pct;
     },
@@ -64,24 +74,15 @@ function selectionModule() {
     get storageRemovePct() {
       const total = this.library?.fs_total_gb || 0;
       if (!total) return 0;
-      const base = Math.min(100, (this.storageRemoveBytes / 1073741824 / total) * 100);
-      if (this.opRunning && this._opDeleteCount) {
-        const delFrac = Math.min(1, (this.currentOp.processed || 0) / this._opDeleteCount);
-        return base * (1 - delFrac);
-      }
-      return base;
+      return Math.min(100, (this.storageRemoveBytes / 1073741824 / total) * 100);
     },
 
     get storageAddPct() {
       const total = this.library?.fs_total_gb || 0;
       if (!total) return 0;
-      const base = Math.min(100, (this.storageAddBytes / 1073741824 / total) * 100);
-      if (this.opRunning && this._opCopyCount) {
-        const copyDone = Math.max(0, (this.currentOp.processed || 0) - this._opDeleteCount);
-        const copyFrac = Math.min(1, copyDone / this._opCopyCount);
-        return base * (1 - copyFrac);
-      }
-      return base;
+      // Projected add space is absorbed into storageBasePct while the op is running
+      if (this.opRunning && this._opCopyCount) return 0;
+      return Math.min(100, (this.storageAddBytes / 1073741824 / total) * 100);
     },
 
     get storageFreePct() {
@@ -337,15 +338,35 @@ function selectionModule() {
     // ── Sync ─────────────────────────────────────────────────────────
 
     get syncToDelete() {
-      return [...this.srcInitialOnIpod].filter(id => !this.srcChecked.has(id));
+      const ini = this.srcInitialOnIpod, chk = this.srcChecked;
+      if (!_syncCache || _syncCache.ini !== ini || _syncCache.chk !== chk) {
+        const del = [...ini].filter(id => !chk.has(id));
+        const cpy = [...chk].filter(id => !ini.has(id));
+        _syncCache = {
+          ini, chk, del, cpy,
+          delTracks: del.map(id => this._srcTrackById(id)).filter(Boolean),
+          cpyTracks: cpy.map(id => this._srcTrackById(id)).filter(Boolean),
+        };
+      }
+      return _syncCache.del;
     },
 
     get syncToCopy() {
-      return [...this.srcChecked].filter(id => !this.srcInitialOnIpod.has(id));
+      const ini = this.srcInitialOnIpod, chk = this.srcChecked;
+      if (!_syncCache || _syncCache.ini !== ini || _syncCache.chk !== chk) {
+        const del = [...ini].filter(id => !chk.has(id));
+        const cpy = [...chk].filter(id => !ini.has(id));
+        _syncCache = {
+          ini, chk, del, cpy,
+          delTracks: del.map(id => this._srcTrackById(id)).filter(Boolean),
+          cpyTracks: cpy.map(id => this._srcTrackById(id)).filter(Boolean),
+        };
+      }
+      return _syncCache.cpy;
     },
 
-    get syncDeleteTracks() { return this.syncToDelete.map(id => this._srcTrackById(id)).filter(Boolean); },
-    get syncCopyTracks()   { return this.syncToCopy.map(id => this._srcTrackById(id)).filter(Boolean); },
+    get syncDeleteTracks() { this.syncToDelete; return _syncCache?.delTracks || []; },
+    get syncCopyTracks()   { this.syncToCopy;   return _syncCache?.cpyTracks || []; },
     get syncDeleteBytes()  { return this.syncDeleteTracks.reduce((s, t) => s + (t.size || 0), 0); },
     get syncCopyBytes()    { return this.syncCopyTracks.reduce((s, t) => s + (t.size || 0), 0); },
     get hasSyncChanges()   { return this.syncToDelete.length > 0 || this.syncToCopy.length > 0; },
@@ -386,33 +407,74 @@ function selectionModule() {
       } catch { this.opHistory = []; }
     },
 
-    // Append log lines from `op` to opLogEl starting at `fromLine`.
-    // Bypasses Alpine reactivity — only new lines are touched per SSE tick.
-    _fillOpLog(op, fromLine = 0) {
-      const el = this.$refs?.opLogEl;
-      if (!el) return fromLine;
-      const lines = op?.log || [];
-      for (let i = fromLine; i < lines.length; i++) {
+    // Append an array of line strings to opLogEl. Pure DOM — no Alpine reactivity.
+    // Returns true if the element was ready; false if it wasn't (caller should retry).
+    _appendLogLines(lines) {
+      const el = this.$refs?.opLogEl ?? document.querySelector('pre.op-log-body');
+      if (!el) return false;
+      if (!lines.length) return true;
+      const frag = document.createDocumentFragment();
+      for (const line of lines) {
         const span = document.createElement('span');
-        if (lines[i].startsWith('$')) span.className = 'op-log-cmd';
-        span.textContent = lines[i] + '\n';
-        el.appendChild(span);
+        if (line.startsWith('$')) span.className = 'op-log-cmd';
+        span.textContent = line + '\n';
+        frag.appendChild(span);
       }
-      if (lines.length > fromLine) el.scrollTop = el.scrollHeight;
-      return lines.length;
+      el.appendChild(frag);
+      // Trim oldest lines so the DOM stays bounded and layout cost doesn't grow unbounded.
+      const maxLines = 500;
+      while (el.childNodes.length > maxLines) el.removeChild(el.firstChild);
+      // Large constant avoids reading scrollHeight (which forces a synchronous layout flush).
+      // The browser clamps scrollTop to the real maximum automatically.
+      el.scrollTop = 9999999;
+      return true;
+    },
+
+    async _pollLiveLog(session) {
+      while (this.showOpLog && !this.historyViewOp && this._logSession === session) {
+        try {
+          const r = await fetch(`/operations/log?from=${this._logRenderedCount || 0}`);
+          if (r.ok && this._logSession === session) {
+            const { lines, total } = await r.json();
+            if (lines.length) {
+              // Only advance the cursor if lines were actually rendered.
+              // If the ref isn't ready yet (first tick), retry next poll.
+              if (this._appendLogLines(lines)) this._logRenderedCount = total;
+            }
+          }
+        } catch { /* network hiccup — keep polling */ }
+        await new Promise(res => setTimeout(res, 2000));
+      }
     },
 
     openLiveLog() {
       this.historyViewOp = null;
       this.showOpLog = true;
       this._logRenderedCount = 0;
-      this.$nextTick(() => { this._logRenderedCount = this._fillOpLog(this.currentOp); });
+      this._logSession = (this._logSession || 0) + 1;
+      const session = this._logSession;
+      // setTimeout gives WebKit one extra event-loop turn to register x-ref
+      // after Alpine evaluates the x-if template (needed on iOS Safari).
+      setTimeout(() => this._pollLiveLog(session), 0);
     },
 
-    openLastOpLog() {
+    async openLastOpLog() {
       this.historyViewOp = this.lastOp;
       this.showOpLog = true;
-      this.$nextTick(() => { this._fillOpLog(this.historyViewOp); });
+      // Wait two ticks: one for Alpine to evaluate x-if, one for WebKit to register x-ref.
+      await this.$nextTick();
+      await new Promise(res => setTimeout(res, 0));
+      if (this.historyViewOp?.log?.length) {
+        this._appendLogLines(this.historyViewOp.log);
+      } else {
+        // History not yet loaded (op just finished) — fetch log from server
+        try {
+          const r = await fetch('/operations/log?from=0');
+          if (r.ok) { const { lines } = await r.json(); this._appendLogLines(lines); }
+        } catch { /* ignore */ }
+      }
+      const el = this.$refs?.opLogEl ?? document.querySelector('pre.op-log-body');
+      if (el) el.scrollTop = 9999999;
     },
 
     _connectOpEvents() {
@@ -426,9 +488,15 @@ function selectionModule() {
           const op = JSON.parse(evt.data);
           const prevStatus = this.currentOp?.status;
           const prevStartedAt = this.currentOp?.started_at;
-          this.currentOp = op;
-          if (this.showOpLog && !this.historyViewOp) {
-            this._logRenderedCount = this._fillOpLog(op, this._logRenderedCount || 0);
+          const existing = this.currentOp;
+          if (existing && existing.started_at === op.started_at &&
+              existing.status === 'running' && op.status === 'running') {
+            // Mutate in-place: only effects tracking .processed / .current re-run.
+            // Replacing the whole object would fire every effect that reads any currentOp property.
+            existing.processed = op.processed;
+            existing.current = op.current;
+          } else {
+            this.currentOp = op;
           }
           // Trigger on running→done transition, OR on a new op that completed before
           // the first SSE poll (fast ops like WALKMAN delete). connectedAt guards

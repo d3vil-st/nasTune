@@ -409,6 +409,11 @@ async def run_auto_sync(devnode: str):
     return {"ok": True, "queued": len(paths)}
 
 
+@router.get("/operations/log")
+async def get_op_log(from_line: int = 0):
+    return JSONResponse(op_service.current_log(from_line))
+
+
 @router.get("/operations/events")
 async def operations_events(request: Request):
     async def stream():
@@ -416,11 +421,11 @@ async def operations_events(request: Request):
         while True:
             if await request.is_disconnected():
                 break
-            current_json = json.dumps(op_service.current())
+            current_json = json.dumps(op_service.current_status())
             if current_json != last_json:
                 last_json = current_json
                 yield f"data: {current_json}\n\n"
-            await asyncio.sleep(0.25)
+            await asyncio.sleep(1.0)
     return StreamingResponse(
         stream(),
         media_type="text/event-stream",

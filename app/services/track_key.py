@@ -14,5 +14,10 @@ def _norm_str(s: str) -> str:
 
 def track_key(artist: str, album: str, track_nr: int | None, disc_nr: int | None, title: str) -> str:
     disc_prefix = f"{disc_nr}." if (disc_nr or 0) > 1 else ""
-    track_part = str(track_nr) if (track_nr or 0) > 0 else _norm_str(title)
+    if disc_prefix:
+        # Multi-disc: use title because iPod/iTunes stores global track numbers
+        # while file tags store per-disc numbers — they never agree.
+        track_part = _norm_str(title)
+    else:
+        track_part = str(track_nr) if (track_nr or 0) > 0 else _norm_str(title)
     return f"{_norm_str(artist)}|||{_norm_str(album)}|||{disc_prefix}{track_part}"
