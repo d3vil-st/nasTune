@@ -458,13 +458,14 @@
             <div>
               <template x-for="(t, i) in currentTracks" :key="t.id">
                 <div class="track-row"
-                     style="grid-template-columns: 16px 36px 1fr 54px 50px 66px 72px;"
+                     style="grid-template-columns: 16px 8px 36px 1fr 54px 50px 66px 72px;"
                      :class="{ active: selectedTrack?.id === t.id, missing: t.missing, 'not-in-src': !isTrackInSrc(t, selectedArtist === '__ALL__' ? '' : selectedArtist, selectedAlbum), 'now-playing': isCurrentTrack(t), 'disc-sep-before': t.disc_nr > 0 && (i === 0 ? currentTracks.some(x => x.disc_nr > 0 && x.disc_nr !== t.disc_nr) : t.disc_nr !== currentTracks[i-1].disc_nr) }"
                      :data-disc-nr="t.disc_nr || ''"
                      @click="openDetail(t)">
                   <input type="checkbox" class="row-cb" @click.stop
                          :checked="isTrackSelected(t)"
                          @change="toggleTrack(t, $event.target.checked)">
+                  <span class="t-dot-cell"><span class="t-unplayed-dot" :class="{ show: mediaType === 'podcast' && !t.playcount }"></span></span>
                   <span class="t-play-cell" @click.stop="!t.missing && playTrack(t)">
                     <span class="t-nr-text" x-show="!isCurrentTrack(t)" x-text="t.track_nr || '·'"></span>
                     <span class="t-nr-play">&#x25B6;&#xFE0E;</span>
@@ -472,7 +473,10 @@
                           @click.stop="togglePlay()"
                           x-text="playing ? '⏸︎' : '▶︎'"></span>
                   </span>
-                  <span class="t-title" x-text="t.title"></span>
+                  <span class="t-title">
+                    <span x-text="t.title"></span>
+                    <span class="t-date" x-show="mediaType === 'podcast' && t.year > 0" x-text="t.year"></span>
+                  </span>
                   <span class="t-rating" @click.stop x-data="{ hov: 0 }" @mouseleave="hov = 0"><template x-for="s in [1,2,3,4,5]" :key="s"><span class="sp-s" :class="{ lit: s <= (hov || Math.round((t.rating||0)/20)) }" @mouseenter="hov = s" @click.stop="setIpodRating(t, s === Math.round((t.rating||0)/20) ? 0 : s)">★</span></template></span>
                   <span class="t-dur" x-text="fmtDur(t.duration_ms)"></span>
                   <span class="t-fmt-cell">
@@ -511,6 +515,7 @@
             <div class="detail-row"><span class="dr-l">File Size</span> <span class="dr-v" x-text="selectedTrack ? (selectedTrack.size / 1048576).toFixed(1) + ' MB' : ''"></span></div>
 
             <div class="detail-sep">Library</div>
+            <div class="detail-row" x-show="mediaType === 'podcast' && selectedTrack?.year > 0"><span class="dr-l">Published</span><span class="dr-v" x-text="selectedTrack?.year"></span></div>
             <div class="detail-row"><span class="dr-l">Track #</span>   <span class="dr-v" x-text="selectedTrack?.track_nr || '—'"></span></div>
             <div class="detail-row" x-show="selectedTrack?.genre">    <span class="dr-l">Genre</span>    <span class="dr-v" x-text="selectedTrack?.genre"></span></div>
             <div class="detail-row" x-show="selectedTrack?.composer"> <span class="dr-l">Composer</span><span class="dr-v" x-text="selectedTrack?.composer"></span></div>
@@ -664,13 +669,14 @@
             <div>
               <template x-for="(t, i) in srcCurrentTracks" :key="t.id">
                 <div class="track-row"
-                     style="grid-template-columns: 16px 36px 1fr 54px 50px 66px 72px;"
+                     style="grid-template-columns: 16px 8px 36px 1fr 54px 50px 66px 72px;"
                      :class="{ active: srcSelectedTrack?.id === t.id, 'now-playing': isSrcCurrentTrack(t), 'disc-sep-before': t.disc_nr > 0 && (i === 0 ? srcCurrentTracks.some(x => x.disc_nr > 0 && x.disc_nr !== t.disc_nr) : t.disc_nr !== srcCurrentTracks[i-1].disc_nr) }"
                      :data-disc-nr="t.disc_nr || ''"
                      @click="openSrcDetail(t)">
                   <input type="checkbox" class="row-cb" @click.stop
                          :checked="isSrcTrackChecked(t)"
                          @change="toggleSrcTrack(t, $event.target.checked)">
+                  <span class="t-dot-cell"><span class="t-unplayed-dot" :class="{ show: mediaType === 'podcast' && t.played !== true }"></span></span>
                   <span class="t-play-cell" @click.stop="playSrcTrack(t)">
                     <span class="t-nr-text" x-show="!isSrcCurrentTrack(t)" x-text="t.track_nr || '·'"></span>
                     <span class="t-nr-play">&#x25B6;&#xFE0E;</span>
@@ -678,7 +684,10 @@
                           @click.stop="togglePlay()"
                           x-text="playing ? '⏸︎' : '▶︎'"></span>
                   </span>
-                  <span class="t-title" x-text="t.title"></span>
+                  <span class="t-title">
+                    <span x-text="t.title"></span>
+                    <span class="t-date" x-show="mediaType === 'podcast' && (t.pub_date || t.year > 0)" x-text="fmtPubDate(t.pub_date || t.year)"></span>
+                  </span>
                   <span class="t-rating" @click.stop x-data="{ hov: 0 }" @mouseleave="hov = 0"><template x-for="s in [1,2,3,4,5]" :key="s"><span class="sp-s" :class="{ lit: s <= (hov || (t.rating||0)) }" @mouseenter="hov = s" @click.stop="setSrcRating(t, s === (t.rating||0) ? 0 : s)">★</span></template></span>
                   <span class="t-dur" x-text="fmtDur(t.duration_ms)"></span>
                   <span class="t-fmt-cell">
@@ -714,6 +723,7 @@
             <div class="detail-row"><span class="dr-l">File Size</span>  <span class="dr-v" x-text="srcSelectedTrack ? (srcSelectedTrack.size / 1048576).toFixed(1) + ' MB' : ''"></span></div>
             <div class="detail-row"><span class="dr-l">Rating</span>    <span class="dr-v" x-text="fmtRatingStars(srcSelectedTrack?.rating)"></span></div>
             <div class="detail-sep">File</div>
+            <div class="detail-row" x-show="mediaType === 'podcast' && (srcSelectedTrack?.pub_date || srcSelectedTrack?.year > 0)"><span class="dr-l">Published</span><span class="dr-v" x-text="fmtPubDate(srcSelectedTrack?.pub_date || srcSelectedTrack?.year)"></span></div>
             <div class="detail-row"><span class="dr-l">Track #</span>    <span class="dr-v" x-text="srcSelectedTrack?.track_nr || '—'"></span></div>
             <div class="detail-path" x-text="srcSelectedTrack?.path"></div>
           </div>
@@ -1142,6 +1152,36 @@
                 </button>
               </div>
             </div>
+
+            <!-- Verify library -->
+            <template x-if="_deviceSettingsDevnode && devices.find(d => d.devnode === _deviceSettingsDevnode)?.mounted">
+              <div>
+                <div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:10px">Verify Library</div>
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface-bg);border-radius:6px;border:1px solid var(--card-border)">
+                    <div style="flex:1">
+                      <div style="font-size:12px;font-weight:500;color:var(--text)">Check only</div>
+                      <div style="font-size:11px;color:var(--muted);margin-top:1px">Report mismatches between iTunesDB and files — no changes made</div>
+                    </div>
+                    <button class="manage-btn" style="font-size:12px;white-space:nowrap" @click="runVerify('check')">▶ Run</button>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface-bg);border-radius:6px;border:1px solid var(--card-border)">
+                    <div style="flex:1">
+                      <div style="font-size:12px;font-weight:500;color:var(--text)">Add missing entries</div>
+                      <div style="font-size:11px;color:var(--muted);margin-top:1px">Files on device without a DB entry get added to iTunesDB</div>
+                    </div>
+                    <button class="manage-btn" style="font-size:12px;white-space:nowrap" @click="runVerify('add')">▶ Run</button>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface-bg);border-radius:6px;border:1px solid var(--card-border)">
+                    <div style="flex:1">
+                      <div style="font-size:12px;font-weight:500;color:var(--text)">Remove orphaned entries</div>
+                      <div style="font-size:11px;color:var(--muted);margin-top:1px">DB entries with no corresponding file on device are deleted</div>
+                    </div>
+                    <button class="manage-btn" style="font-size:12px;white-space:nowrap;color:#e57373" @click="runVerify('delete')">▶ Run</button>
+                  </div>
+                </div>
+              </div>
+            </template>
 
           </div>
         </template>

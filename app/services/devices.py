@@ -455,13 +455,14 @@ class DeviceService:
                 )
             else:
                 from app.services.gpod import fetch_library
-                from app.services.ratings import persist_ratings
+                from app.services.ratings import persist_ratings, persist_playcounts
                 from app.services.ipod_db import upsert_ipod
                 from app.services.track_key import track_key as _tk
                 from app.services.db import DB_PATH as _DB_PATH
                 import aiosqlite as _aiosqlite
                 lib = await fetch_library(info.mount)
                 asyncio.create_task(persist_ratings(lib))
+                asyncio.create_task(persist_playcounts(lib))
                 # Merge stored ratings (ipod_track_ratings) into the library before
                 # caching to disk — raw gpod-ls ratings may lag behind UI-set ratings.
                 _key_to_track: dict[str, dict] = {}

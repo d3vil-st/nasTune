@@ -49,6 +49,7 @@ def _read_track(file_path: Path) -> dict | None:
         if codec:
             codec = codec.lower()
 
+        date_str = g('date') or ''
         return {
             'path': str(file_path),
             'artist': g('artist'),
@@ -61,7 +62,8 @@ def _read_track(file_path: Path) -> dict | None:
             'bitrate': int(getattr(info, 'bitrate', 0) / 1000) or None,
             'samplerate': getattr(info, 'sample_rate', None),
             'bits_per_sample': bits_per_sample,
-            'year': (lambda v: int(v.split('-')[0].split('/')[0]) if v else None)(g('date')),
+            'year': int(date_str.split('-')[0].split('/')[0]) if date_str else None,
+            'pub_date': date_str or None,
             'size': stat.st_size,
             'file_mtime': int(stat.st_mtime),
             'codec': codec,
@@ -76,16 +78,17 @@ async def _flush_batch(batch: list[dict]) -> None:
         await db.executemany(
             """INSERT INTO source_tracks
                    (source_id, path, artist, albumartist, album, title, disc_nr, track_nr,
-                    duration_ms, bitrate, samplerate, year, size, file_mtime, codec, bits_per_sample, scanned_at)
+                    duration_ms, bitrate, samplerate, year, pub_date, size, file_mtime, codec, bits_per_sample, scanned_at)
                VALUES
                    (:source_id, :path, :artist, :albumartist, :album, :title, :disc_nr, :track_nr,
-                    :duration_ms, :bitrate, :samplerate, :year, :size, :file_mtime, :codec, :bits_per_sample, :scanned_at)
+                    :duration_ms, :bitrate, :samplerate, :year, :pub_date, :size, :file_mtime, :codec, :bits_per_sample, :scanned_at)
                ON CONFLICT(source_id, path) DO UPDATE SET
                    artist=excluded.artist, albumartist=excluded.albumartist,
                    album=excluded.album, title=excluded.title,
                    disc_nr=excluded.disc_nr, track_nr=excluded.track_nr,
                    duration_ms=excluded.duration_ms, bitrate=excluded.bitrate,
                    samplerate=excluded.samplerate, year=excluded.year,
+                   pub_date=excluded.pub_date,
                    size=excluded.size, file_mtime=excluded.file_mtime,
                    codec=excluded.codec, bits_per_sample=excluded.bits_per_sample,
                    scanned_at=excluded.scanned_at""",

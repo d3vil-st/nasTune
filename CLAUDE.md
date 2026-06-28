@@ -64,11 +64,11 @@ nasTune/
     │   ├── walkman.py         # WALKMAN detection, SQLite scan, library build, delete/copy ops
     │   ├── artwork.py         # mutagen-based artwork extractor (M4A/MP3/FLAC)
     │   ├── fs_utils.py        # os.statvfs capacity + /proc/mounts FS-type label
-    │   ├── db.py              # SQLite schema + migrations (sources, source_tracks, walkman_devices, walkman_tracks, ipod_devices, ipod_track_ratings, ipod_device_settings, ipod_sync_rules, walkman_device_settings, walkman_sync_rules, settings)
-    │   ├── scanner.py         # Async file scanner: walks dirs, reads tags via mutagen; _remap_podcast for podcast sources
+    │   ├── db.py              # SQLite schema + migrations (sources, source_tracks, walkman_devices, walkman_tracks, ipod_devices, ipod_track_ratings, ipod_track_playcounts, ipod_device_settings, ipod_sync_rules, walkman_device_settings, walkman_sync_rules, settings)
+    │   ├── scanner.py         # Async file scanner: walks dirs, reads tags via mutagen; _remap_podcast for podcast sources; stores pub_date raw string
     │   ├── track_key.py       # Python port of JS _normStr/_trackKey; shared by ratings + operations
-    │   ├── ratings.py         # persist_ratings(): upserts iPod ratings into ipod_track_ratings (max wins)
-    │   └── operations.py      # OperationService: gpod-rm / gpod-cp / WALKMAN shutil; smart encoder selection; progress tracking
+    │   ├── ratings.py         # persist_ratings(): upserts iPod ratings into ipod_track_ratings (max wins); persist_playcounts(): upserts play counts into ipod_track_playcounts
+    │   └── operations.py      # OperationService: gpod-rm / gpod-cp / gpod-verify / WALKMAN shutil; smart encoder selection; progress tracking
     ├── templates/
     │   └── index.html         # iTunes-like 3-pane dark UI + bottom player bar
     └── static/
@@ -141,6 +141,7 @@ Key docker-compose volumes:
 
 | Method | Path | Description |
 |---|---|---|
+| `POST` | `/library/verify` | `{ devnode, mode }` — runs `gpod-verify`; `mode`: `'check'` (report only), `'add'` (add entries for orphan files), `'delete'` (remove entries with no file); iPod-only |
 | `POST` | `/library/delete` | `{ devnode, track_ids[] }` — enqueues gpod-rm for each track ID |
 | `POST` | `/library/sync` | `{ devnode, copy_paths[], delete_ids[], copy_track_count }` — delete then copy then rating sync |
 | `POST` | `/library/rate` | `{ devnode, track_id, rating }` — set track rating (0–5); updates cache + ipod_track_ratings; gpod-tag applied on next sync |
@@ -245,6 +246,7 @@ Operations are tracked in real time via SSE and persisted to disk so the status 
 - `_loadDeviceSettings()`: calls `GET /devices/device-settings?devnode=` (connected) or `GET /devices/known/{id}/settings?device_type=` (offline). Note: devnode is a **query parameter** (not path) because devnode values like `/dev/sdb3` contain slashes that Starlette would decode and misroute if used as path segments.
 - **Auto-sync** (`runAutoSync()`): sends `POST /auto-sync?devnode=` which calls `compute_auto_sync_paths` in `ipod_db.py` — walks per-device sync rules, collects source paths for tracks not already on the device, and passes them to the normal sync endpoint.
 - **Per-device `force_aac`** override: takes precedence over the global `force_aac` setting from the `settings` table; stored in `ipod_device_settings` / `walkman_device_settings`.
+- **Library verify** (`runVerify(mode)`): posts `POST /library/verify { devnode, mode }` and closes the modal; only shown when the device is connected and mounted (hidden for offline devices via `x-if`); three modes: `check` (no-op read-only report), `add`, `delete`. Tracked as an operation so progress appears in the status bar.
 
 ### All Artists mode
 
@@ -413,9 +415,16 @@ gpod-rm <id1> <id2> ...
 
 # Set track rating (0 = unrated, 1–5 = stars); accepts multiple IDs
 gpod-tag --rating <0-5> <id1> <id2> ...
+
+# Verify/repair iTunesDB integrity (-M is required, not via env var)
+gpod-verify -M <mount>          # check only — report mismatches, no changes
+gpod-verify -M <mount> --add    # add iTunesDB entries for files with no entry
+gpod-verify -M <mount> --delete # remove iTunesDB entries whose file is missing
 ```
 
 Every invocation is logged at INFO level as `exec: IPOD_MOUNT_POINT=<mount> <cmd> <args>`. Set `GPOD_DRY_RUN=1` to skip execution while preserving logs.
+
+Note: `gpod-verify` takes `-M <mount>` explicitly — it does **not** read `IPOD_MOUNT_POINT`. `run_verify` in `operations.py` passes the mount path directly.
 
 `gpod-ls` JSON output schema: `ipod_data.device` (model, capacity, uuid) + `ipod_data.playlists.items[]` where `type == "master"` contains all tracks. Track fields include `id`, `ipod_path`, `title`, `artist`, `album`, `albumartist`, `filetype`, `bitrate`, `samplerate`, `tracklen` (ms), `track_nr`, `cd_nr`, `year`, `size`, `artwork` (bool), `rating` (0–100), `playcount`.
 
@@ -431,9 +440,13 @@ Every invocation is logged at INFO level as `exec: IPOD_MOUNT_POINT=<mount> <cmd
 
 Progress is written to `sources.scan_processed / scan_total / scan_current_file` and polled by the frontend every 2 s. Files removed from disk since the last scan are deleted from the DB (tracked by `scanned_at` timestamp).
 
-The DB schema includes `disc_nr INTEGER` on `source_tracks`. The library response includes `last_scanned_at` (Unix timestamp) which is appended as `?_v=` to artwork URLs to bust the browser cache after each rescan.
+The DB schema includes `disc_nr INTEGER` and `pub_date TEXT` on `source_tracks`. The library response includes `last_scanned_at` (Unix timestamp) which is appended as `?_v=` to artwork URLs to bust the browser cache after each rescan.
+
+`pub_date` stores the raw `date` mutagen easy-tag string (e.g. `2026-05-19T12:12:40` or `2024-03-15`). The `year` integer column is still derived from it by splitting on `-`. `fmtPubDate(d)` in `utils.js` formats the ISO prefix to a locale date string; it handles full dates, year-month, bare year, and ISO datetime strings (splits on the first 3 numeric components to avoid timezone shifts from `new Date('2024-03-15')` UTC parsing). Existing DB rows have `pub_date = NULL` until rescanned.
 
 The `ipod_track_ratings` table (`track_key TEXT PRIMARY KEY, rating INTEGER, updated_at INTEGER`) stores 0–5 star ratings keyed by normalized track key. It is shared between the iPod and source tabs — the same key formula is used in both so a rating set in the source view applies to the matching iPod track and vice versa.
+
+The `ipod_track_playcounts` table (`track_key TEXT PRIMARY KEY, playcount INTEGER, updated_at INTEGER`) mirrors the same pattern for play counts. `persist_playcounts(lib)` in `ratings.py` upserts all tracks (including unplayed ones with count 0) after every `gpod-ls` run; MAX wins on conflict so play counts never decrease. The source library response attaches `played: bool | None` to each track by joining against this table — `None` means the track has no playcount record (not on iPod or never loaded), `False` means explicitly 0 plays.
 
 ### Podcast source remapping (`_remap_podcast`)
 
@@ -544,6 +557,11 @@ The `mode='w|'` flag enables streaming (no seeking). The OS pipe provides natura
 - **Podcast artist/album fallback in gpod.py**: for podcast and audiobook tracks where both `albumartist` and `artist` are null (common for podcasts), `_parse` uses `t.get("album")` (the show name) as the artist key. This matches how the source scanner sets `artist = show_name` via `_remap_podcast`.
 - **Podcast key matching**: `track.album` in source library track objects must equal the iPod's `album` field (the show name) for `isOnDevice` to match. Do not overwrite `album` with year/season in `_remap_podcast` — season grouping is done at library-build time by `_build_library` using `year` as `album_key`, while the track object retains `"album": show_name`.
 - **`filteredSrcArtists` null guard**: returns `[]` when `selectedSourceObj` is null. Without this, switching to a media type with no source still shows the library from the previous type's source (the `sourceLibrary` reference is not nulled on type switch when no matching source exists).
+- **Podcast artwork — `t.artwork` flag bypass**: `gpod-ls` reports `artwork: false` for podcast tracks even when an APIC frame is physically embedded in the MP3. `artUrl()` in `device.js` only gates on `t.artwork` for `mediaType === 'music'`; for podcasts and audiobooks it always attempts the `/artwork` request and lets the `@error` handler discard a 404. `artwork.py` logs all extraction failures at WARNING level.
+- **`ipod_track_playcounts` shared across tabs**: same normalized key is used by both the device and source panes. `persist_playcounts` stores all tracks (including those with 0 plays). The source tab attaches `played: bool | None` to each track — `true` means played, `false` means on iPod with 0 plays, `null` means no DB record. The unplayed blue dot renders on `played !== true` — both `false` and `null` (no record) are treated as unplayed.
+- **Podcast sort newest-first**: `gpod.py` and `_build_library` in `sources.py` both detect podcast albums by checking `tracks[0].mediatype === 'podcast'` (device) or `source_type == 'podcast'` (source) and reverse the sort. Season/year column key: `(1 if year<=0 else 0, -year, name)` so unknown years fall to the end. Episode sort for source: `pub_date` descending then `track_nr` descending; ISO strings compare lexicographically so no conversion needed. Device track sort: `track_nr` descending (gpod-ls has no pub_date), with 0/missing track numbers at the end.
+- **`pub_date` ISO datetime**: the `date` mutagen tag can be a full ISO-8601 datetime (`2026-05-19T12:12:40`). `fmtPubDate` in `utils.js` uses `s.match(/^(\d{4})-(\d{2})-(\d{2})/)` to extract the date components and constructs `new Date(+y, +m-1, +d)` (local time, no UTC shift) rather than parsing the full ISO string. This avoids timezone-driven off-by-one-day errors. `year` in the DB is extracted in Python via `date_str.split('-')[0]` which also works on full datetimes.
+- **`gpod-verify` uses `-M`, not env var**: unlike `gpod-ls`/`gpod-cp`/`gpod-rm` which read `IPOD_MOUNT_POINT`, `gpod-verify` requires an explicit `-M <mount>` argument. `_do_verify` constructs the command as `["gpod-verify", "-M", mount, flag]` — do not try to pass the mount via the environment variable.
 
 ---
 

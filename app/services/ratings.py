@@ -51,3 +51,38 @@ async def persist_ratings(lib: dict) -> None:
         )
         await db.commit()
     log.info("persist_ratings: upserted %d rated track(s)", len(updates))
+
+
+async def persist_playcounts(lib: dict) -> None:
+    """Upsert track playcounts from a freshly parsed gpod-ls library. Highest count wins on conflict."""
+    updates: list[tuple[str, int, int]] = []
+    now = int(time.time())
+
+    for artist in lib.get('artists', []):
+        artist_name = artist['name']
+        for album in artist.get('albums', []):
+            album_name = album['name']
+            for track in album.get('tracks', []):
+                pc = track.get('playcount') or 0
+                artist_tag = track.get('artist') or artist_name
+                key = _track_key(
+                    artist_tag, album_name,
+                    track.get('track_nr'), track.get('disc_nr'),
+                    track.get('title', ''),
+                )
+                updates.append((key, pc, now))
+
+    if not updates:
+        return
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.executemany(
+            """INSERT INTO ipod_track_playcounts(track_key, playcount, updated_at)
+               VALUES(?, ?, ?)
+               ON CONFLICT(track_key) DO UPDATE SET
+                 playcount  = MAX(playcount, excluded.playcount),
+                 updated_at = excluded.updated_at""",
+            updates,
+        )
+        await db.commit()
+    log.info("persist_playcounts: upserted %d track(s)", len(updates))

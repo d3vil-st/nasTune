@@ -58,6 +58,22 @@ function utilsModule() {
       return new Date(ts * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
     },
 
+    fmtPubDate(d) {
+      if (!d) return '';
+      const s = String(d).trim();
+      const full = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (full) {
+        const dt = new Date(+full[1], +full[2] - 1, +full[3]);
+        return dt.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+      }
+      const ym = s.match(/^(\d{4})-(\d{2})/);
+      if (ym) {
+        const dt = new Date(+ym[1], +ym[2] - 1, 1);
+        return dt.toLocaleDateString(undefined, { year: 'numeric', month: 'short' });
+      }
+      return s.slice(0, 4) || '';
+    },
+
     fmtAgo(ts) {
       if (!ts) return '';
       const diff = Date.now() / 1000 - ts;
