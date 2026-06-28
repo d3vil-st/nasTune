@@ -236,12 +236,12 @@
     <!-- Media type dropdown -->
     <div class="tab-combo" x-data="{ open: false }">
       <button class="tab-type-btn" @click.stop="open = !open"
-              x-text="mediaType === 'music' ? 'Music' : mediaType === 'audiobook' ? 'Audiobooks' : 'Podcasts'">
+              x-text="mediaType === 'music' ? '♫ Music' : mediaType === 'audiobook' ? '📖 Audiobooks' : '🎙 Podcasts'">
       </button>
       <div x-show="open" @click.outside="open = false" style="display:none;position:absolute;top:calc(100% + 8px);left:0;background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:5px;z-index:500;min-width:130px;box-shadow:0 8px 28px rgba(0,0,0,.6)">
-        <div class="dp-row" :class="{ active: mediaType === 'music' }"     @click="setMediaType('music'); open = false"><div class="dp-info"><span class="dp-name">Music</span></div></div>
-        <div class="dp-row" :class="{ active: mediaType === 'audiobook' }" @click="setMediaType('audiobook'); open = false"><div class="dp-info"><span class="dp-name">Audiobooks</span></div></div>
-        <div class="dp-row" :class="{ active: mediaType === 'podcast' }"   @click="setMediaType('podcast'); open = false"><div class="dp-info"><span class="dp-name">Podcasts</span></div></div>
+        <div class="dp-row" :class="{ active: mediaType === 'music' }"     @click="setMediaType('music'); open = false"><div class="dp-info"><span class="dp-name">♫ Music</span></div></div>
+        <div class="dp-row" :class="{ active: mediaType === 'audiobook' }" @click="setMediaType('audiobook'); open = false"><div class="dp-info"><span class="dp-name">📖 Audiobooks</span></div></div>
+        <div class="dp-row" :class="{ active: mediaType === 'podcast' }"   @click="setMediaType('podcast'); open = false"><div class="dp-info"><span class="dp-name">🎙 Podcasts</span></div></div>
       </div>
     </div>
 
@@ -378,7 +378,7 @@
         <div class="col-scroll">
           <template x-if="!selectedArtist">
             <div class="empty">
-              <span class="empty-icon">&#x266B;</span>
+              <span class="empty-icon" x-text="mediaType === 'podcast' ? '🎙' : mediaType === 'audiobook' ? '📖' : '♫'"></span>
               <span class="empty-label" x-text="devLabels.selectArtist"></span>
             </div>
           </template>
@@ -393,7 +393,7 @@
                          x-effect="$el.indeterminate = isAlbumIndeterminate(al)"
                          @change="toggleAlbum(al, $event.target.checked)">
                   <div class="album-thumb" :style="gradientFor(al.name)">
-                    <span x-text="mediaType === 'podcast' ? '♫' : mediaType === 'audiobook' ? '♪' : '♫'"></span>
+                    <span x-text="mediaType === 'podcast' ? '🎙' : mediaType === 'audiobook' ? '📖' : '♫'"></span>
                     <img :src="artUrl(al)" @error="$el.style.display='none'" loading="lazy" alt="">
                     <div class="album-play-overlay" @click.stop="pickAlbum(al.name); playAlbum(al)">&#x25B6;</div>
                   </div>
@@ -435,7 +435,7 @@
                  :style="(albumArtUrl ? 'cursor:zoom-in;' : '') + (albumArtUrl ? '' : gradientFor(selectedAlbum))"
                  @click="albumArtUrl && (coverPopupUrl = albumArtUrl)">
               <img x-show="albumArtUrl" :src="albumArtUrl" @error="albumArtUrl = null" alt="">
-              <span x-show="!albumArtUrl">&#x266B;</span>
+              <span x-show="!albumArtUrl" x-text="mediaType === 'podcast' ? '🎙' : mediaType === 'audiobook' ? '📖' : '♫'"></span>
             </div>
             <div class="abar-info">
               <div class="abar-title" x-text="selectedAlbum"></div>
@@ -448,7 +448,7 @@
         <div class="col-scroll">
           <template x-if="!selectedAlbum">
             <div class="empty">
-              <span class="empty-icon">&#x266A;</span>
+              <span class="empty-icon" x-text="mediaType === 'podcast' ? '🎙' : mediaType === 'audiobook' ? '📖' : '♪'"></span>
               <span class="empty-label" x-text="devLabels.selectAlbum"></span>
               <span class="empty-sub" x-show="selectedArtist"
                     x-text="currentAlbums.length + ' ' + devLabels.album.toLowerCase() + ' by ' + (selectedArtist === '__ALL__' ? devLabels.allArtists : selectedArtist)"></span>
@@ -492,7 +492,7 @@
                :style="(albumArtUrl ? 'cursor:zoom-in;' : '') + (albumArtUrl ? '' : artStyle(selectedTrack))"
                @click="albumArtUrl && (coverPopupUrl = albumArtUrl)">
             <img x-show="albumArtUrl" :src="albumArtUrl" @error="albumArtUrl = null" alt="">
-            <span class="detail-art-note" x-show="!albumArtUrl">&#x266A;</span>
+            <span class="detail-art-note" x-show="!albumArtUrl" x-text="mediaType === 'podcast' ? '🎙' : mediaType === 'audiobook' ? '📖' : '♪'"></span>
             <button class="detail-close" @click.stop="selectedTrack = null">&#x2715;</button>
           </div>
 
@@ -586,7 +586,7 @@
         <div class="col-scroll">
           <template x-if="!srcArtist">
             <div class="empty">
-              <span class="empty-icon">&#x266B;</span>
+              <span class="empty-icon" x-text="mediaType === 'podcast' ? '🎙' : mediaType === 'audiobook' ? '📖' : '♫'"></span>
               <span class="empty-label" x-text="srcLabels.selectArtist"></span>
             </div>
           </template>
@@ -602,7 +602,7 @@
                          @change="toggleSrcAlbum(al, $event.target.checked)">
                   <div class="album-thumb" :style="gradientFor(al.name)"
                        @click.stop="pickSrcAlbum(al.name); playSrcAlbum(al)">
-                    <span x-text="mediaType === 'podcast' ? '♫' : mediaType === 'audiobook' ? '♪' : '♫'"></span>
+                    <span x-text="mediaType === 'podcast' ? '🎙' : mediaType === 'audiobook' ? '📖' : '♫'"></span>
                     <img x-effect="$el.style.display=''; $el.src=sourceArtUrl(al)" @error="$el.style.display='none'" loading="lazy" alt="">
                     <div class="album-play-overlay">&#x25B6;</div>
                   </div>
@@ -643,7 +643,7 @@
                  :style="(srcAlbumArtUrl ? 'cursor:zoom-in;' : '') + (srcAlbumArtUrl ? '' : gradientFor(srcAlbum))"
                  @click="srcAlbumArtUrl && (coverPopupUrl = srcAlbumArtUrl)">
               <img x-show="srcAlbumArtUrl" :src="srcAlbumArtUrl" @error="srcAlbumArtUrl = null" alt="">
-              <span x-show="!srcAlbumArtUrl">&#x266B;</span>
+              <span x-show="!srcAlbumArtUrl" x-text="mediaType === 'podcast' ? '🎙' : mediaType === 'audiobook' ? '📖' : '♫'"></span>
             </div>
             <div class="abar-info">
               <div class="abar-title" x-text="srcAlbum"></div>
@@ -656,7 +656,7 @@
         <div class="col-scroll">
           <template x-if="!srcAlbum">
             <div class="empty">
-              <span class="empty-icon">&#x266A;</span>
+              <span class="empty-icon" x-text="mediaType === 'podcast' ? '🎙' : mediaType === 'audiobook' ? '📖' : '♪'"></span>
               <span class="empty-label">Select an album</span>
             </div>
           </template>
@@ -697,7 +697,7 @@
                :style="(srcAlbumArtUrl ? 'cursor:zoom-in;' : '') + (srcAlbumArtUrl ? '' : gradientFor(srcAlbum))"
                @click="srcAlbumArtUrl && (coverPopupUrl = srcAlbumArtUrl)">
             <img x-show="srcAlbumArtUrl" :src="srcAlbumArtUrl" @error="srcAlbumArtUrl = null" alt="">
-            <span class="detail-art-note" x-show="!srcAlbumArtUrl">&#x266A;</span>
+            <span class="detail-art-note" x-show="!srcAlbumArtUrl" x-text="mediaType === 'podcast' ? '🎙' : mediaType === 'audiobook' ? '📖' : '♪'"></span>
             <button class="detail-close" @click.stop="srcSelectedTrack = null">&#x2715;</button>
           </div>
           <div class="detail-body">

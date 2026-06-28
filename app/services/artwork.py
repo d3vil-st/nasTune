@@ -1,5 +1,8 @@
 import base64
+import logging
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 
 def extract_artwork(ipod_path: str, mount: str) -> tuple[bytes, str] | None:
@@ -15,18 +18,28 @@ def extract_artwork(ipod_path: str, mount: str) -> tuple[bytes, str] | None:
         raise ValueError("Path outside mount point")
 
     if not full.exists():
+        log.warning("artwork: file not found on device: %s", full)
         return None
 
     try:
         from mutagen import File
         audio = File(str(full), easy=False)
-    except Exception:
+    except Exception as exc:
+        log.warning("artwork: failed to open %s: %s", full, exc)
         return None
 
-    if audio is None or audio.tags is None:
+    if audio is None:
+        log.warning("artwork: mutagen could not identify format: %s", full)
         return None
 
-    return _flac(audio) or _mp4(audio.tags) or _id3(audio.tags) or _vorbis(audio.tags)
+    if audio.tags is None:
+        log.warning("artwork: no tags in %s", full)
+        return None
+
+    result = _flac(audio) or _mp4(audio.tags) or _id3(audio.tags) or _vorbis(audio.tags)
+    if result is None:
+        log.warning("artwork: no embedded art in %s", full)
+    return result
 
 
 def _flac(audio) -> tuple[bytes, str] | None:

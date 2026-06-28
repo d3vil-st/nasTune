@@ -128,7 +128,11 @@ function deviceModule() {
 
     artUrl(album) {
       if (!album) return null;
-      const t = album.tracks.find(t => t.artwork && t.ipod_path);
+      // For music, trust libgpod's artwork flag to avoid unnecessary requests.
+      // For podcasts/audiobooks gpod-ls often reports artwork=false even when an
+      // APIC frame is embedded — always attempt and let @error discard the 404.
+      const requireFlag = this.mediaType === 'music';
+      const t = album.tracks.find(t => t.ipod_path && (!requireFlag || t.artwork));
       if (!t) return null;
       return '/artwork?devnode=' + encodeURIComponent(this.selectedDevnode || '') +
              '&path=' + encodeURIComponent(t.ipod_path);
