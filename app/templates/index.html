@@ -986,7 +986,7 @@
               :style="currentOp.kind === 'delete' ? 'background:#ff453a' : 'background:#30d158'"></span>
         <span style="font-weight:500;flex-shrink:0"
               :style="currentOp.kind === 'delete' ? 'color:#ff453a' : 'color:#30d158'"
-              x-text="currentOp.kind === 'delete' ? 'Deleting…' : 'Syncing…'"></span>
+              x-text="currentOp.kind === 'delete' ? 'Deleting…' : currentOp.kind === 'verify' ? 'Verifying…' : 'Syncing…'"></span>
         <span class="statusbar-op-count" x-text="currentOp.processed + ' / ' + currentOp.total"></span>
         <template x-if="currentOp.current">
           <span class="statusbar-op-current" x-text="currentOp.current"></span>
@@ -1001,7 +1001,7 @@
               :style="lastOp.status === 'done' ? 'color:#30d158' : 'color:#ff453a'"
               x-text="lastOp.status === 'done' ? '✓' : '✗'"></span>
         <span style="color:var(--muted);flex-shrink:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px"
-              x-text="(lastOp.kind === 'sync' ? 'Sync' : 'Delete') + ' · ' + lastOp.total + ' tracks' + (fmtOpDuration(lastOp) ? ' · ' + fmtOpDuration(lastOp) : '')"></span>
+              x-text="(lastOp.kind === 'sync' ? 'Sync' : lastOp.kind === 'verify' ? 'Verify' : 'Delete') + (lastOp.kind === 'verify' ? '' : ' · ' + lastOp.total + ' tracks') + (fmtOpDuration(lastOp) ? ' · ' + fmtOpDuration(lastOp) : '')"></span>
         <span style="color:var(--dim);flex-shrink:0;font-variant-numeric:tabular-nums" x-text="fmtAgo(lastOp.finished_at)"></span>
       </span>
     </template>
@@ -1205,7 +1205,7 @@
     <template x-if="showOpLog && (historyViewOp || currentOp)">
       <div class="op-log-modal">
         <div class="op-log-header">
-          <span x-text="(historyViewOp || currentOp).kind === 'delete' ? 'Delete output' : 'Sync output'"></span>
+          <span x-text="(historyViewOp || currentOp).kind === 'delete' ? 'Delete output' : (historyViewOp || currentOp).kind === 'verify' ? 'Verify output' : 'Sync output'"></span>
           <template x-if="historyViewOp">
             <span style="color:var(--dim);font-size:11px;font-weight:400" x-text="fmtAgo(historyViewOp.finished_at)"></span>
           </template>
