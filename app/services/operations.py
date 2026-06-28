@@ -125,6 +125,21 @@ class OperationService:
     def current(self) -> dict | None:
         return self._op.to_dict() if self._op else None
 
+    def current_status(self) -> dict | None:
+        """Like current() but omits the log array — used for the SSE stream."""
+        if not self._op:
+            return None
+        d = self._op.to_dict()
+        del d["log"]
+        return d
+
+    def current_log(self, from_line: int = 0) -> dict:
+        """Return log lines from `from_line` onwards for the active (or last) op."""
+        if not self._op:
+            return {"lines": [], "total": 0}
+        lines = self._op.log
+        return {"lines": lines[from_line:], "total": len(lines)}
+
     def is_busy(self) -> bool:
         return self._op is not None and self._op.status == "running"
 

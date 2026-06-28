@@ -53,6 +53,7 @@ function app() {
 
     this.startSSE();
     this._connectOpEvents();
+    if (this.selectedDevnode) this.loadOpHistory(this.selectedDevnode);
 
     // Restore iPod artist/album after library loads
     if (url && this.library) {
@@ -93,7 +94,7 @@ function app() {
 
     // Keep URL in sync with navigation state
     this.$watch('mediaType',       () => this._syncUrl());
-    this.$watch('selectedDevnode', () => this._syncUrl());
+    this.$watch('selectedDevnode', (v) => { this._syncUrl(); if (v) this.loadOpHistory(v); });
     this.$watch('viewMode',        () => this._syncUrl());
     this.$watch('selectedArtist',  () => this._syncUrl());
     this.$watch('selectedAlbum',   () => this._syncUrl());

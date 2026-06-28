@@ -134,10 +134,12 @@ function utilsModule() {
     _trackKey(artist, album, track_nr, title, disc_nr) {
       const a  = this._normStr(artist);
       const al = this._normStr(album);
-      const nr = track_nr != null && track_nr > 0 ? String(track_nr) : '';
       const t  = this._normStr(title);
       const d  = disc_nr != null && disc_nr > 1 ? disc_nr + '.' : '';
-      return a + '|||' + al + '|||' + d + (nr || t);
+      // Multi-disc: use title, not track_nr. iPod/iTunes stores global track numbers
+      // (disc 2 track 1 → nr 11) while file tags store per-disc numbers (nr 1).
+      const part = d ? t : (track_nr != null && track_nr > 0 ? String(track_nr) : t);
+      return a + '|||' + al + '|||' + d + part;
     },
 
     srcFmtShort(t) {
