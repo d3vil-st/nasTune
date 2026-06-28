@@ -420,13 +420,13 @@ function selectionModule() {
         span.textContent = line + '\n';
         frag.appendChild(span);
       }
+      // Check before appending: if the user scrolled up, don't hijack their position.
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
       el.appendChild(frag);
       // Trim oldest lines so the DOM stays bounded and layout cost doesn't grow unbounded.
       const maxLines = 500;
       while (el.childNodes.length > maxLines) el.removeChild(el.firstChild);
-      // Large constant avoids reading scrollHeight (which forces a synchronous layout flush).
-      // The browser clamps scrollTop to the real maximum automatically.
-      el.scrollTop = 9999999;
+      if (atBottom) el.scrollTop = 9999999;
       return true;
     },
 
@@ -443,6 +443,7 @@ function selectionModule() {
             }
           }
         } catch { /* network hiccup — keep polling */ }
+        if (!this.opRunning) break;
         await new Promise(res => setTimeout(res, 2000));
       }
     },
@@ -455,7 +456,13 @@ function selectionModule() {
       const session = this._logSession;
       // setTimeout gives WebKit one extra event-loop turn to register x-ref
       // after Alpine evaluates the x-if template (needed on iOS Safari).
-      setTimeout(() => this._pollLiveLog(session), 0);
+      setTimeout(() => {
+        // Clear stale content — _logRenderedCount reset to 0 means the poll
+        // re-fetches from the beginning, so any existing DOM lines would duplicate.
+        const el = this.$refs?.opLogEl ?? document.querySelector('pre.op-log-body');
+        if (el) el.textContent = '';
+        this._pollLiveLog(session);
+      }, 0);
     },
 
     async openLastOpLog() {

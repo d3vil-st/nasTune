@@ -25,7 +25,6 @@ iPod support is built around [gpod-utils](https://github.com/d3vil-st/gpod-utils
 | HTTP framework | **FastAPI** (Python 3.12+) | Async, lightweight, ideal for subprocess streaming |
 | ASGI server | **Uvicorn** | Minimal, production-ready |
 | Templating | **Jinja2** | Server-side HTML, no JS build step |
-| Frontend reactivity | **HTMX** | Reserved for future SSE streaming features |
 | Client-side state | **Alpine.js** (vendored, `app/static/alpine.min.js`) | 3-pane browser state, player, modals, detail panel — no build step |
 | iPod CLI backend | **gpod-utils** (`gpod-ls`, `gpod-cp`, `gpod-rm`) | Wraps libgpod, supports iPod Classic and iPod 5 |
 | WALKMAN backend | **shutil** + **SQLite** | Direct file copy/delete; library indexed once and updated incrementally |
@@ -49,7 +48,7 @@ nasTune/
 ├── CLAUDE.md
 ├── Dockerfile                 # Ubuntu 26.04 base; installs gpod-utils deb + ffmpeg + Python venv
 ├── docker-compose.yml
-├── requirements.txt           # fastapi, uvicorn[standard], jinja2, python-multipart, mutagen, aiosqlite
+├── requirements.txt
 └── app/
     ├── main.py                # FastAPI app factory; mounts /static; core iPod endpoints
     ├── routers/
@@ -64,10 +63,10 @@ nasTune/
     │   ├── walkman.py         # WALKMAN detection, SQLite scan, library build, delete/copy ops
     │   ├── artwork.py         # mutagen-based artwork extractor (M4A/MP3/FLAC)
     │   ├── fs_utils.py        # os.statvfs capacity + /proc/mounts FS-type label
-    │   ├── db.py              # SQLite schema + migrations (sources, source_tracks, walkman_devices, walkman_tracks, ipod_devices, ipod_track_ratings, ipod_track_playcounts, ipod_device_settings, ipod_sync_rules, walkman_device_settings, walkman_sync_rules, settings)
+    │   ├── db.py              # SQLite schema + migrations
     │   ├── scanner.py         # Async file scanner: walks dirs, reads tags via mutagen; _remap_podcast for podcast sources; stores pub_date raw string
     │   ├── track_key.py       # Python port of JS _normStr/_trackKey; shared by ratings + operations
-    │   ├── ratings.py         # persist_ratings(): upserts iPod ratings into ipod_track_ratings (max wins); persist_playcounts(): upserts play counts into ipod_track_playcounts
+    │   ├── ratings.py         # persist_ratings(): upserts iPod ratings into ipod_track_ratings (max wins); persist_playcounts()
     │   └── operations.py      # OperationService: gpod-rm / gpod-cp / gpod-verify / WALKMAN shutil; smart encoder selection; progress tracking
     ├── templates/
     │   └── index.html         # iTunes-like 3-pane dark UI + bottom player bar
@@ -87,20 +86,11 @@ nasTune/
 
 ## Docker setup
 
-The Dockerfile uses `ubuntu:26.04` (matches the gpod-utils `.deb` target). It installs the pre-built `gpod-utils_1.4.6.ubuntu26.04_amd64.deb` from GitHub releases plus `ffmpeg` for ALAC transcoding. A Python venv is created at `/opt/venv`.
-
 ```bash
 docker compose up --build   # build + start on port 127.0.0.1:8080
 ```
 
-Key docker-compose volumes:
-- `/dev:/dev` + `/dev/bus/usb` — USB device access
-- `/run/udev:/run/udev:ro` — udev event detection
-- `./ipod:/mnt/ipod` — iPod mount point (host directory shared with container)
-- `/mnt/music:/music:ro` — NAS music share (read-only)
-- `./data:/data` — persistent SQLite database
-
-`privileged: true` is required for mount syscalls inside the container.
+Key volumes: `/dev:/dev`, `./ipod:/mnt/ipod`, `/mnt/music:/music:ro`, `./data:/data`. `privileged: true` required for mount syscalls.
 
 ---
 
@@ -110,10 +100,10 @@ Key docker-compose volumes:
 |---|---|---|
 | `IPOD_MOUNT_POINT` | _(unset)_ | Register a pre-mounted iPod directory as a manual device. The poll loop still runs alongside it. |
 | `IPOD_MOUNT_BASE` | `/mnt/ipods` | Base directory where auto-discovered devices are mounted (subdirs per devname). |
-| `IPOD_AUTOMOUNT` | `0` | Set to `1`/`true`/`yes` to enable automatic mounting of USB block devices found by lsblk. Disabled by default — devices already mounted by the host are always detected regardless. |
+| `IPOD_AUTOMOUNT` | `0` | Set to `1`/`true`/`yes` to enable automatic mounting of USB block devices found by lsblk. |
 | `DB_PATH` | `/data/nastune.db` | Path to the SQLite database file for source library index. |
-| `GPOD_DRY_RUN` | `0` | Set to `1`/`true`/`yes` to log all `gpod-rm` and `gpod-cp` commands without executing them. `gpod-ls` always runs (read-only). |
-| `BUILD_VERSION` | `dev` | Version string shown in the UI header. Set automatically by the Docker build via `ARG BUILD_VERSION`; the CI workflow computes it with `git describe --tags --always --dirty=-dirty`. |
+| `GPOD_DRY_RUN` | `0` | Set to `1`/`true`/`yes` to log all `gpod-rm` and `gpod-cp` commands without executing them. |
+| `BUILD_VERSION` | `dev` | Version string shown in the UI header. Set by Docker build via `ARG BUILD_VERSION`; CI uses `git describe --tags --always --dirty=-dirty`. |
 
 ---
 
@@ -133,7 +123,7 @@ Key docker-compose volumes:
 | `POST` | `/library/refresh` | Clears cache and re-runs `gpod-ls` for the selected device |
 | `GET` | `/artwork?path=&devnode=` | Extracts embedded album art via mutagen; cached 24 h |
 | `GET` | `/audio?path=&devnode=` | Serves audio from iPod mount; ALAC M4A is transcoded to FLAC on-the-fly |
-| `GET` | `/device-settings?devnode=` | Per-device settings (force_aac override, sync rules); resolves via devnode or db_id/type |
+| `GET` | `/device-settings?devnode=` | Per-device settings (force_aac override, sync rules) |
 | `POST` | `/device-settings` | `{ devnode?, db_id?, device_type?, force_aac, sync_rules[] }` — save settings |
 | `POST` | `/auto-sync` | `{ devnode }` — run sync using per-device sync rules; returns 409 if busy or no rules |
 
@@ -141,34 +131,31 @@ Key docker-compose volumes:
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/library/verify` | `{ devnode, mode }` — runs `gpod-verify`; `mode`: `'check'` (report only), `'add'` (add entries for orphan files), `'delete'` (remove entries with no file); iPod-only |
+| `POST` | `/library/verify` | `{ devnode, mode }` — runs `gpod-verify`; `mode`: `'check'`, `'add'`, `'delete'`; iPod-only |
 | `POST` | `/library/delete` | `{ devnode, track_ids[] }` — enqueues gpod-rm for each track ID |
 | `POST` | `/library/sync` | `{ devnode, copy_paths[], delete_ids[], copy_track_count }` — delete then copy then rating sync |
 | `POST` | `/library/rate` | `{ devnode, track_id, rating }` — set track rating (0–5); updates cache + ipod_track_ratings; gpod-tag applied on next sync |
 | `POST` | `/library/download` | `{ devnode, tracks[] }` — streams selected tracks as a `.tar` archive |
 | `GET` | `/operations` | Current operation status: kind, status, processed, total, current, error, started_at |
 | `GET` | `/operations/events` | SSE stream; pushes full op state on any change (250 ms server-side diff-poll) |
+| `GET` | `/operations/log?from=N` | Lines `[N:]` of the current op log + total line count; used by frontend poll |
 | `GET` | `/operations/history?devnode=` | Last 10 finished ops for the device, newest-first, full log included |
 
 ### WALKMAN operations (app/routers/walkman.py — prefix `/walkman`)
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/walkman/scan?devnode=&full=` | Trigger a background library scan; `full=true` clears all tracks first (full rescan) |
+| `POST` | `/walkman/scan?devnode=&full=` | Trigger a background library scan; `full=true` clears all tracks first |
 | `GET` | `/walkman/scan_status?devnode=` | Live scan progress: status, processed, total, current_file, error |
 
-WALKMAN delete and sync go through the same `/library/delete` and `/library/sync` endpoints as iPod — the router dispatches to `walkman.py` based on `device_info.is_walkman`. Operations use `shutil.copy2` / `os.remove` and update the SQLite library immediately on completion without a rescan.
+WALKMAN delete and sync go through the same `/library/delete` and `/library/sync` endpoints as iPod — the router dispatches to `walkman.py` based on `device_info.is_walkman`.
 
 #### Download track object schema
 ```json
-{
-  "ipod_path": ":iPod_Control:Music:F02:TGWN.mp3",
-  "artist": "...", "albumartist": "...", "album": "...",
-  "year": 1980, "track_nr": 3, "title": "..."
-}
+{ "ipod_path": ":iPod_Control:Music:F02:TGWN.mp3", "artist": "...", "albumartist": "...",
+  "album": "...", "year": 1980, "track_nr": 3, "title": "..." }
 ```
-The archive restores the original directory structure:
-`{albumartist}/{[year] - album}/{NN - title.ext}`
+Archive restores: `{albumartist}/{[year] - album}/{NN - title.ext}`
 
 ### Sources (app/routers/sources.py — prefix `/sources`)
 
@@ -177,12 +164,12 @@ The archive restores the original directory structure:
 | `GET` | `/sources` | List all registered sources |
 | `POST` | `/sources` | `{ name, path, type }` — add source and start scan |
 | `DELETE` | `/sources/{id}` | Remove source and all its track data |
-| `POST` | `/sources/{id}/scan?full=` | Trigger a rescan; `full=true` clears all tracks first (full rescan) |
+| `POST` | `/sources/{id}/scan?full=` | Trigger a rescan; `full=true` clears all tracks first |
 | `GET` | `/sources/browse?path=` | Directory browser for adding sources |
 | `GET` | `/sources/{id}/library` | Source library as artist → album → track hierarchy |
 | `GET` | `/sources/audio?path=` | Serve audio file from source; ALAC → FLAC transcode |
 | `GET` | `/sources/artwork?path=` | Extract artwork from source file via mutagen |
-| `POST` | `/sources/rate` | `{ path, rating }` — set rating (0–5) for a source track by file path; updates ipod_track_ratings |
+| `POST` | `/sources/rate` | `{ path, rating }` — set rating (0–5) for a source track by file path |
 
 ---
 
@@ -211,7 +198,7 @@ Scripts load synchronously (no `defer`) before Alpine's deferred `<script defer>
 
 ### URL state persistence
 
-Navigation state is encoded in the URL hash so the browser preserves it across reloads and the back button works:
+Navigation state is encoded in the URL hash so the browser preserves it across reloads:
 
 - Library tab: `#tab=library&artist=Joy+Division&album=Closer`
 - Sources tab: `#tab=sources&src=1&srca=Joy+Division&sral=Closer`
@@ -223,10 +210,11 @@ Navigation state is encoded in the URL hash so the browser preserves it across r
 Operations are tracked in real time via SSE and persisted to disk so the status bar survives page reloads.
 
 - **SSE**: `_connectOpEvents()` in `selection.js` opens an `EventSource` to `/operations/events`. The variable is closure-scoped (not stored in Alpine state) to avoid proxy issues with non-plain objects. On `running → done/error` transition, the library is refreshed and `loadOpHistory` is called.
-- **Fast-op detection**: WALKMAN delete/sync completes in milliseconds — faster than the 250 ms SSE poll interval, so the frontend may never see `status: 'running'`. The handler stamps `connectedAt = Date.now() / 1000` when the `EventSource` opens and triggers refresh if `op.started_at >= connectedAt && op.status !== 'running'` (even when the previous op state was null). This guards against spuriously refreshing on pre-existing done ops seen at connect time.
+- **In-place mutation for running ops**: when the SSE handler receives a `running` update for the same op (same `started_at`), it mutates `existing.processed` and `existing.current` in-place instead of replacing `this.currentOp`. Replacing the object causes Alpine to re-evaluate every getter that reads any `currentOp.*` property; in-place mutation only triggers getters that read the specific fields changed.
+- **Fast-op detection**: WALKMAN delete/sync completes in milliseconds — faster than the SSE poll interval. The handler stamps `connectedAt = Date.now() / 1000` when the `EventSource` opens and triggers refresh if `op.started_at >= connectedAt && op.status !== 'running'`. This guards against spuriously refreshing on pre-existing done ops seen at connect time.
 - **History files**: each finished op is written to `/data/op_history/{device_id}/{timestamp}.json` and the directory is pruned to the last 10 files. `device_id` is the iPod UUID from the library cache; falls back to sanitized devnode if the library is not yet loaded.
 - **`lastOp` getter**: in-session `currentOp` (when status is `done` or `error`) takes priority over `opHistory[0]` so the status bar shows the freshest result.
-- **Op log modal**: clicking the running indicator or last-op entry in the status bar opens a terminal-style modal (`op-log-modal`). Live ops auto-scroll; historical ops are shown via `historyViewOp`.
+- **Op log modal**: clicking the running indicator or last-op entry in the status bar opens a terminal-style modal (`op-log-modal`). Live ops poll `GET /operations/log?from=N` every 2 s for new lines only (log is excluded from the SSE payload). `_appendLogLines` appends to the `<pre>`, caps at 500 DOM nodes, and only auto-scrolls when the user was already within 40 px of the bottom. `openLiveLog()` clears the `<pre>` content before starting the poll — without this, re-opening mid-operation re-fetches from line 0 and duplicates already-rendered lines. `_pollLiveLog` breaks immediately when `!opRunning` to avoid unnecessary requests after the op finishes. Historical ops are shown via `historyViewOp`.
 
 ### Media type system
 
@@ -246,7 +234,7 @@ Operations are tracked in real time via SSE and persisted to disk so the status 
 - `_loadDeviceSettings()`: calls `GET /devices/device-settings?devnode=` (connected) or `GET /devices/known/{id}/settings?device_type=` (offline). Note: devnode is a **query parameter** (not path) because devnode values like `/dev/sdb3` contain slashes that Starlette would decode and misroute if used as path segments.
 - **Auto-sync** (`runAutoSync()`): sends `POST /auto-sync?devnode=` which calls `compute_auto_sync_paths` in `ipod_db.py` — walks per-device sync rules, collects source paths for tracks not already on the device, and passes them to the normal sync endpoint.
 - **Per-device `force_aac`** override: takes precedence over the global `force_aac` setting from the `settings` table; stored in `ipod_device_settings` / `walkman_device_settings`.
-- **Library verify** (`runVerify(mode)`): posts `POST /library/verify { devnode, mode }` and closes the modal; only shown when the device is connected and mounted (hidden for offline devices via `x-if`); three modes: `check` (no-op read-only report), `add`, `delete`. Tracked as an operation so progress appears in the status bar.
+- **Library verify** (`runVerify(mode)`): posts `POST /library/verify { devnode, mode }` and closes the modal; only shown when the device is connected and mounted; three modes: `check`, `add`, `delete`. Tracked as an operation so progress appears in the status bar.
 
 ### All Artists mode
 
@@ -263,53 +251,44 @@ Search filters all three panes simultaneously. `onSearch()` clears the artist an
 
 When a user then clicks an artist from the filtered list, both `search` and `selectedArtist` are set. The album getter resolves what to show based on *why* the artist appeared:
 
-- **Artist name matched** — `a.name.toLowerCase().includes(q)` → show all albums unfiltered.
+- **Artist name matched** — show all albums unfiltered.
 - **Album or track matched** — filter albums to those matching the query; filter tracks to matching titles.
-- Track list is similarly unfiltered when the artist or album name matched the query, and filtered to matching titles otherwise.
 
-A clear (×) button appears inside the search input (`.search-clear`) when the field is non-empty. Clicking calls `onSearch()` to reset navigation state.
+A clear (×) button appears inside the search input (`.search-clear`) when the field is non-empty.
 
 ### Sources bar filters
 
-The sources bar (`.sources-bar`) contains quick-action buttons that are only shown when relevant:
-
 - **Unsynced only** (`srcShowUnsynced`) — filters all three source panes to artists/albums/tracks not yet on the device, using `isOnDevice()`. Only visible when both device library and source library are loaded. Persisted in `localStorage` under key `nastune-src-unsynced`. Active state indicated by blue border (`.manage-btn.active`).
-- **Full rescan** — available for WALKMAN devices (magnifying-glass icon in the device header) and for NAS sources (in the Manage Sources modal and the sources bar). Calls `triggerWalkmanScan(true)` / `rescanSource(id, true)` which send `?full=true` to the backend, clearing all existing DB rows before re-reading every file. A `confirm()` dialog is shown before starting since full rescans can take minutes.
+- **Full rescan** — available for WALKMAN devices and NAS sources. Calls `triggerWalkmanScan(true)` / `rescanSource(id, true)` which send `?full=true` to the backend. A `confirm()` dialog is shown before starting.
 
 ### Source presence highlighting (iPod/WALKMAN pane)
 
-When a source is selected, items in the device pane that are **absent from the source** are highlighted in blue text via the `.not-in-src` CSS class (color `#4a9eff`), applied to `.artist-name`, `.album-name`, and `.t-title`.
+When a source is selected, items in the device pane that are **absent from the source** are highlighted in blue text via the `.not-in-src` CSS class, applied to `.artist-name`, `.album-name`, and `.t-title`.
 
-`device.js` maintains `_srcKeyMap` — a `Map<trackKey, true>` built from the source library using the same `_trackKey` formula as `_deviceMap`. It is built lazily on first use and cleared whenever `sourceLibrary` changes (source switch, source removed, source rescan completes). Three derived helpers:
+`device.js` maintains `_srcKeyMap` — a `Map<trackKey, true>` built from the source library using the same `_trackKey` formula as `_deviceMap`. It is built lazily on first use and cleared whenever `sourceLibrary` changes. Three derived helpers:
 
 - `isTrackInSrc(track, artistName, albumName)` — returns `true` if the track's key exists in `_srcKeyMap`; returns `true` when no source is selected
-- `isAlbumInSrc(al, artistName)` — `true` only if **all** tracks in the album are in the source (uses `.every()` with a `length > 0` guard — a single missing track turns the album blue)
-- `isArtistInSrc(artist)` — `true` only if **all** albums of the artist satisfy `isAlbumInSrc` (uses `.every()` — a single partially-missing album turns the artist blue)
-
-The `:class` binding on artist/album/track rows adds `not-in-src` when the corresponding `isXxxInSrc` returns `false`.
+- `isAlbumInSrc(al, artistName)` — `true` only if **all** tracks in the album are in the source (`.every()` with `length > 0` guard)
+- `isArtistInSrc(artist)` — `true` only if **all** albums satisfy `isAlbumInSrc`
 
 ### Sync confirmation dialog
 
-The **Sync** button skips the confirmation modal when there are no deletes and enough free space:
-
 - `syncNeedsConfirm` getter: `true` when `syncToDelete.length > 0 || syncSpaceWarning`
-- `syncSpaceWarning` getter: `true` when `syncCopyBytes > freeBytes + syncDeleteBytes` (free space after accounting for the deletes that run first)
+- `syncSpaceWarning` getter: `true` when `syncCopyBytes > freeBytes + syncDeleteBytes`
 - When `syncNeedsConfirm` is false, the Sync button calls `confirmSync()` directly
-- When `syncSpaceWarning` is true the dialog shows an orange warning and the confirm button becomes `.btn-danger` with label "Sync anyway"
+- When `syncSpaceWarning` is true the dialog shows an orange warning and the confirm button becomes `.btn-danger`
 
 ### Storage bar
 
-The storage bar shows three labels: `used` / `± net diff` / `free`. The net diff is a single signed number (green for net add, red for net reduction) replacing the previous four separate remove/add spans.
+The storage bar shows three labels: `used` / `± net diff` / `free`. The net diff is a single signed number (green for net add, red for net reduction).
 
-During an operation (`opRunning && (_opDeleteCount > 0 || _opCopyCount > 0)`), a `.storage-bar-delta` overlay (`position: absolute; inset: 0`) is shown on top of the bar displaying live `−N` (red) and `+N` (green) track counts. `_opDeleteCount` and `_opCopyCount` are incremented by the SSE op handler as tracks are processed and reset to 0 on op completion.
+`storageBasePct` / `storageRemovePct` / `storageAddPct` are computed from `syncToDelete` / `syncToCopy` byte totals at the time the op starts — they do **not** track `currentOp.processed` live. During an operation, a `.storage-bar-delta` overlay displays live `−N` / `+N` track counts driven by `_opDeleteCount` / `_opCopyCount` (incremented by the SSE handler, reset on op completion).
+
+`syncToDelete` and `syncToCopy` are cached in a closure-level `_syncCache` keyed by reference equality of `srcInitialOnIpod` and `srcChecked` Sets. The cache also stores resolved `delTracks` / `cpyTracks` arrays for `syncDeleteTracks` / `syncCopyTracks` getters — these call the primary getter as a side effect to populate the cache.
 
 ### Status bar right section
 
-The status bar uses `display:flex`. The right section is wrapped in `.statusbar-right` which has a CSS-declared `width: min(440px, 54%)` — fixed, not content-driven. This prevents layout reflow when the N/M counter or track name changes, which would otherwise cause the left-side text to jump. `justify-content: flex-end` keeps all items stacked against the right edge so only active indicators appear; inactive ones simply aren't rendered, and the remaining items shift right without artificial gaps.
-
-Inside `.statusbar-right`, each `.statusbar-op` span is naturally sized (no `flex-grow`) with `flex-shrink: 1` and `overflow: hidden`. Text elements use `max-width` + `text-overflow: ellipsis` instead of `flex: 1 1 0` — this eliminates the dead space that used to appear between short op text and the timestamp. `.statusbar-op-current` (the track name during a running op) is capped at `max-width: 160px`. The N/M counter uses `font-variant-numeric: tabular-nums` for stable digit widths.
-
-The **build version** (`<span class="build-ver">`) is the last (rightmost) child of `.statusbar-right`, always visible.
+`.statusbar-right` has `width: min(440px, 54%)` — fixed, not content-driven. This prevents layout reflow when the N/M counter or track name changes. `justify-content: flex-end` keeps items stacked against the right edge. Text elements use `max-width` + `text-overflow: ellipsis` instead of `flex: 1 1 0`. The build version span is the rightmost child, always visible.
 
 ### Track matching (sync / isOnDevice)
 
@@ -319,39 +298,25 @@ Tracks are matched across iPod and source library by a normalized key:
 _normStr(artist) + '|||' + _normStr(album) + '|||' + (disc_nr+'.' if disc_nr>1 else '') + (track_nr || _normStr(title))
 ```
 
-`_normStr` NFD-decomposes, strips diacritics, lowercases, and collapses all non-alphanumeric characters to spaces. This handles common tag discrepancies (Unicode hyphens, curly quotes, accented characters).
+`_normStr` NFD-decomposes, strips diacritics, lowercases, and collapses all non-alphanumeric characters to spaces. `disc_nr` prefix is only added when `disc_nr > 1`; tracks with disc 0, 1, or absent are treated identically. When `disc_nr > 1`, the key uses `_normStr(title)` instead of `track_nr` — track numbers restart at 1 per disc, so only the title is unique across discs.
 
-`disc_nr` prefix (e.g. `2.`) is only added when `disc_nr > 1`. Tracks with `disc_nr` of 0, 1, or absent are treated identically, so single-disc albums match regardless of whether disc number is tagged.
-
-The `_deviceMap` (`Map<key, track>`) is built lazily on first use and **always rebuilt** in `_initSrcChecked()` (not skipped when already cached) to avoid stale data after Alpine reactive re-renders during async library fetches. `_srcTrackMap` (`Map<id, track>`) is built on source library load for O(1) ID → track resolution.
+The `_deviceMap` (`Map<key, track>`) is built lazily on first use and **always rebuilt** in `_initSrcChecked()` to avoid stale data after Alpine reactive re-renders. `_srcTrackMap` (`Map<id, track>`) is built on source library load for O(1) ID → track resolution.
 
 ### gpod-cp path collapsing (`_buildCopyPaths`)
 
-`sources.js` exposes `_buildCopyPaths(tracks)` which compresses individual file paths into directory paths before sending to `gpod-cp`. At up to 3 ancestor levels (CD dir → album dir → artist dir), if every library track under a directory is in the selection, the directory path is used instead of individual files. `gpod-cp` accepts both file and directory arguments natively.
-
-This means syncing a complete album sends one directory arg instead of N file args. Behavior is correct for flat albums (no CD subdirs), CD-organized albums, and mixed selections — partial albums fall back to individual file paths.
+`sources.js` exposes `_buildCopyPaths(tracks)` which compresses individual file paths into directory paths before sending to `gpod-cp`. At up to 3 ancestor levels (CD dir → album dir → artist dir), if every library track under a directory is in the selection, the directory path is used instead of individual files. The sync body includes `copy_track_count` (actual track count, not collapsed path count) so `op.total` reflects real track counts.
 
 ### Sync progress
 
-The sync body includes `copy_track_count` (actual number of tracks to copy, not collapsed path count) so `op.total` reflects real track counts even when directories are collapsed. During `gpod-cp` execution, `_gpod_cp_batch` parses `[N/M]` streaming lines to update `op.processed` with per-track granularity and `op.current` with the track currently being copied (`Artist – Title`). A `proc_offset` parameter accumulates progress across multi-batch syncs.
+`_gpod_cp_batch` in `operations.py` parses `[N/M]` streaming lines to update `op.processed` with per-track granularity and `op.current` with the track name. A `proc_offset` parameter accumulates progress across multi-batch syncs. `BATCH_SIZE = 50`.
 
 ### Light / dark theming
 
-The app supports Auto / Light / Dark modes via a 3-segment pill switcher in the header. The selected preference is stored in `localStorage` under key `nastune-theme`.
+Auto / Light / Dark modes via a 3-segment pill switcher in the header. Preference stored in `localStorage` under key `nastune-theme`.
 
-- Theme state is managed by `themeMode`, `setTheme(mode)`, and `initTheme()` in `utils.js`.
-- Visual switching is done by toggling the `html.light` class — no duplicate CSS, all components use CSS custom properties (`--surface-bg`, `--card-bg`, `--player-bg`, `--detail-bg`, `--fill-bg`, `--hover-surface`, `--chip-active`, `--badge-bg`, `--overlay-bg`, `--card-border`, `--surface-border`, `--icon-grad-from/to`).
-- `html.light` is set immediately via an inline `<script>` in `<head>` (before the CSS `<link>`) to prevent flash of wrong theme (FOUC).
-- `initTheme()` (called from `app.js`'s `init()`) attaches a `prefers-color-scheme` media-query listener so Auto mode reacts to OS-level theme changes without a page reload.
-- Placeholder album art gradients (set as inline styles via Alpine's `:style` binding) are overridden in light mode via `html.light .album-thumb / .abar-art / .player-art / .detail-art { background: ... !important; }` CSS rules.
-
-### Build version display
-
-A `<span class="build-ver">` at the far right of `.statusbar-right` (the status bar's right section) shows the `BUILD_VERSION` env var injected by the server into the Jinja2 template. The full string is also in the element's `title` tooltip for long SHA-suffixed versions.
-
-- `BUILD_VERSION` is read in `app/main.py` at startup (`os.getenv("BUILD_VERSION", "dev")`) and passed to every `/` template render.
-- The Dockerfile declares `ARG BUILD_VERSION=dev` → `ENV BUILD_VERSION=${BUILD_VERSION}`, so local `docker build` without the arg defaults to `dev`.
-- The CI workflow (`release.yml`) computes `git describe --tags --always --dirty=-dirty` in the "Set build env" step and forwards it as `--build-arg BUILD_VERSION=...`. Tagged release builds show the bare tag (e.g. `v0.2.9`); builds from commits after a tag show `v0.2.9-3-ga8f200d`; dirty trees append `-dirty`.
+- Visual switching toggles the `html.light` class — all components use CSS custom properties (`--surface-bg`, `--card-bg`, `--player-bg`, `--detail-bg`, `--fill-bg`, `--hover-surface`, `--chip-active`, `--badge-bg`, `--overlay-bg`, `--card-border`, `--surface-border`, `--icon-grad-from/to`).
+- `html.light` is set immediately via an inline `<script>` in `<head>` (before the CSS `<link>`) to prevent FOUC. Do not move it after the stylesheet link.
+- `initTheme()` attaches a `prefers-color-scheme` media-query listener so Auto mode reacts to OS-level theme changes without a page reload.
 
 ---
 
@@ -360,27 +325,23 @@ A `<span class="build-ver">` at the far right of `.statusbar-right` (the status 
 Ratings (1–5 stars) are stored in `ipod_track_ratings` and flow in two directions:
 
 **iPod → DB** (`persist_ratings` in `services/ratings.py`):
-- Called as a background task after every successful `gpod-ls` run (library load or refresh)
+- Called as a background task after every successful `gpod-ls` run
 - Converts iPod's 0–100 rating to 0–5 stars (`round(r / 20)`); unrated tracks (0) are skipped
 - Upserts with `MAX(stored, new)` — highest rating seen across multiple reads wins on conflict
-- Track identity uses the same normalized key as sync: `_norm_str(artist) + '|||' + _norm_str(album) + '|||' + disc_prefix + track_nr_or_title`; implemented in `services/track_key.py`, mirroring `_normStr` / `_trackKey` in JS
 
 **DB → iPod** (rating sync step in `_do_sync`, `services/operations.py`):
-- Runs on every sync (delete-only and copy); skipped entirely via a `COUNT(*)` pre-check when `ipod_track_ratings` is empty
-- Runs `gpod-ls` to get fresh track IDs, builds key→(id, current_stars) map, queries stored ratings
-- Calls `gpod-tag --rating <stars> <id…>` grouped by rating value for tracks where `stored_stars > current_ipod_stars`; failure is non-fatal (logged as warning, sync still completes)
+- Runs on every sync; skipped via a `COUNT(*)` pre-check when `ipod_track_ratings` is empty
+- Runs `gpod-ls` to get fresh track IDs, calls `gpod-tag --rating <stars> <id…>` grouped by rating value for tracks where `stored_stars > current_ipod_stars`; failure is non-fatal
 
 **UI → DB** (`POST /library/rate` and `POST /sources/rate`):
-- Writing a rating from the track-row star picker updates `ipod_track_ratings` immediately and mutates the in-memory library cache so the UI reflects the change without a page reload
-- For iPod tracks, `gpod-tag` is **not** called at this point — it is deferred to the next sync
+- Updates `ipod_track_ratings` immediately and mutates the in-memory library cache; `gpod-tag` is deferred to next sync
 - Explicit UI writes overwrite the DB value (no max-wins); setting 0 deletes the row
-- Source track ratings use the file `path` to look up metadata in `source_tracks`, compute the key, and upsert `ipod_track_ratings` — the same table used for iPod tracks
 
 ---
 
 ## Sync encoder selection
 
-`_classify_audio_path` in `operations.py` classifies each sync path into one of three buckets, which determine the `gpod-cp` encoder flags:
+`_classify_audio_path` in `operations.py` classifies each sync path:
 
 | Class | Extensions | gpod-cp args |
 |---|---|---|
@@ -388,202 +349,109 @@ Ratings (1–5 stars) are stored in `ipod_track_ratings` and flow in two directi
 | `passthrough` | `.mp3`, AAC `.m4a` | _(no encoder args — copied as-is)_ |
 | `lossy` | `.aac` `.ogg` `.wma` `.opus`, other `.m4a` | `--encoder fdk-aac --encoder-quality 9 --disable-encoder-fallback` |
 
-For directory paths (collapsed album/artist args), classification is based on the first audio file found in sorted order. For `.m4a` files, `mutagen.mp4.MP4.info.codec` is read to distinguish ALAC (→ lossless) from AAC (→ passthrough).
+For directory paths, classification is based on the first audio file found in sorted order. For `.m4a` files, `mutagen.mp4.MP4.info.codec` is read to distinguish ALAC from AAC.
 
-**`force_aac` setting** (`settings` table, key `"force_aac"`, value `"true"`): routes everything through fdk-aac regardless of classification — including MP3 and AAC M4A. Useful when the target iPod is limited in storage and you want a uniform AAC library.
-
-**`max_threads` setting** (`settings` table, key `"max_threads"`, value `"N"`): forwarded as `--threads N` to each `gpod-cp` invocation. `0` means let gpod-cp use its default.
-
-Settings are loaded at the start of each sync via `_load_sync_settings()`, which falls back to `(False, 0)` if the `settings` table does not exist yet.
+**`force_aac` setting**: routes everything through fdk-aac regardless of classification. **`max_threads` setting**: forwarded as `--threads N` to each `gpod-cp` invocation. Both loaded at sync start via `_load_sync_settings()`.
 
 ---
 
 ## gpod-utils CLI reference
 
-All interaction with the iPod goes through these commands. The `IPOD_MOUNT_POINT` environment variable is read natively by gpod-utils — no explicit path argument needed.
+`IPOD_MOUNT_POINT` env var is read natively by gpod-utils (except `gpod-verify`).
 
 ```bash
-# List all tracks on iPod as JSON (IPOD_MOUNT_POINT must be set)
-gpod-ls
-
-# Copy files to iPod (accepts files or directories)
-gpod-cp /music/Artist/Album/track.mp3
-gpod-cp /music/Artist/Album/
-
-# Remove tracks from iPod by persistent ID (accepts multiple IDs)
-gpod-rm <id1> <id2> ...
-
-# Set track rating (0 = unrated, 1–5 = stars); accepts multiple IDs
-gpod-tag --rating <0-5> <id1> <id2> ...
-
-# Verify/repair iTunesDB integrity (-M is required, not via env var)
-gpod-verify -M <mount>          # check only — report mismatches, no changes
-gpod-verify -M <mount> --add    # add iTunesDB entries for files with no entry
-gpod-verify -M <mount> --delete # remove iTunesDB entries whose file is missing
+gpod-ls                              # list all tracks as JSON
+gpod-cp /music/Artist/Album/         # copy files or directories to iPod
+gpod-rm <id1> <id2> ...              # remove by persistent ID
+gpod-tag --rating <0-5> <id1> ...   # set star rating
+gpod-verify -M <mount>               # check only
+gpod-verify -M <mount> --add        # add entries for orphan files
+gpod-verify -M <mount> --delete     # remove entries with no file
 ```
 
-Every invocation is logged at INFO level as `exec: IPOD_MOUNT_POINT=<mount> <cmd> <args>`. Set `GPOD_DRY_RUN=1` to skip execution while preserving logs.
+Every invocation is logged at INFO level. Set `GPOD_DRY_RUN=1` to skip execution while preserving logs.
 
-Note: `gpod-verify` takes `-M <mount>` explicitly — it does **not** read `IPOD_MOUNT_POINT`. `run_verify` in `operations.py` passes the mount path directly.
+`gpod-ls` JSON schema: `ipod_data.device` (model, capacity, uuid) + `ipod_data.playlists.items[]` where `type == "master"` contains all tracks. Track fields: `id`, `ipod_path`, `title`, `artist`, `album`, `albumartist`, `filetype`, `bitrate`, `samplerate`, `tracklen` (ms), `track_nr`, `cd_nr`, `year`, `size`, `artwork` (bool), `rating` (0–100), `playcount`.
 
-`gpod-ls` JSON output schema: `ipod_data.device` (model, capacity, uuid) + `ipod_data.playlists.items[]` where `type == "master"` contains all tracks. Track fields include `id`, `ipod_path`, `title`, `artist`, `album`, `albumartist`, `filetype`, `bitrate`, `samplerate`, `tracklen` (ms), `track_nr`, `cd_nr`, `year`, `size`, `artwork` (bool), `rating` (0–100), `playcount`.
-
-`gpod-rm` output: `[N/M]  :iPod_Control:...-path -> { id=X ... }` per track, summary `removed X/Y items`. IDs are positional — always delete in descending ID order across batches to avoid index shifts.
-
-`gpod-cp` output: `[N/M]  /source/path -> { title='...' artist='...' ... }` per track, summary `X/M items (size)  dupl=D`. Duplicates (same audio content by checksum) count as success.
+`gpod-rm` output: `[N/M]  :iPod_Control:... -> { id=X }` per track. `gpod-cp` output: `[N/M]  /source/path -> { title='...' ... }` per track, summary `X/M items (size)  dupl=D`.
 
 ---
 
 ## Source library scanner
 
-`scanner.py` walks directories with `asyncio.to_thread(_find_files)` + `asyncio.to_thread(_read_track)` (per file). Tags are read via `mutagen` with `easy=True`; M4A/AAC files are re-opened with `mutagen.mp4.MP4` to reliably extract `codec` and `bits_per_sample` (older mutagen may not expose these via the Easy API).
+`scanner.py` walks directories with `asyncio.to_thread`. Tags are read via mutagen with `easy=True`; M4A/AAC files are re-opened with `mutagen.mp4.MP4` to extract `codec` and `bits_per_sample`.
 
-Progress is written to `sources.scan_processed / scan_total / scan_current_file` and polled by the frontend every 2 s. Files removed from disk since the last scan are deleted from the DB (tracked by `scanned_at` timestamp).
+The DB schema includes `disc_nr INTEGER` and `pub_date TEXT` on `source_tracks`. `pub_date` stores the raw `date` mutagen tag string (e.g. `2026-05-19T12:12:40` or `2024-03-15`). `fmtPubDate(d)` in `utils.js` uses `s.match(/^(\d{4})-(\d{2})-(\d{2})/)` to extract date components and constructs `new Date(+y, +m-1, +d)` (local time, no UTC shift). `year` is extracted via `date_str.split('-')[0]`.
 
-The DB schema includes `disc_nr INTEGER` and `pub_date TEXT` on `source_tracks`. The library response includes `last_scanned_at` (Unix timestamp) which is appended as `?_v=` to artwork URLs to bust the browser cache after each rescan.
-
-`pub_date` stores the raw `date` mutagen easy-tag string (e.g. `2026-05-19T12:12:40` or `2024-03-15`). The `year` integer column is still derived from it by splitting on `-`. `fmtPubDate(d)` in `utils.js` formats the ISO prefix to a locale date string; it handles full dates, year-month, bare year, and ISO datetime strings (splits on the first 3 numeric components to avoid timezone shifts from `new Date('2024-03-15')` UTC parsing). Existing DB rows have `pub_date = NULL` until rescanned.
-
-The `ipod_track_ratings` table (`track_key TEXT PRIMARY KEY, rating INTEGER, updated_at INTEGER`) stores 0–5 star ratings keyed by normalized track key. It is shared between the iPod and source tabs — the same key formula is used in both so a rating set in the source view applies to the matching iPod track and vice versa.
-
-The `ipod_track_playcounts` table (`track_key TEXT PRIMARY KEY, playcount INTEGER, updated_at INTEGER`) mirrors the same pattern for play counts. `persist_playcounts(lib)` in `ratings.py` upserts all tracks (including unplayed ones with count 0) after every `gpod-ls` run; MAX wins on conflict so play counts never decrease. The source library response attaches `played: bool | None` to each track by joining against this table — `None` means the track has no playcount record (not on iPod or never loaded), `False` means explicitly 0 plays.
+The `ipod_track_ratings` table stores 0–5 star ratings keyed by normalized track key, shared between iPod and source tabs. The `ipod_track_playcounts` table mirrors the same pattern. The source library response attaches `played: bool | None` to each track — `null` means no DB record, `false` means explicitly 0 plays, `true` means played.
 
 ### Podcast source remapping (`_remap_podcast`)
 
-Podcast files use `album` tag = show name, `artist` tag = empty or per-episode host name. `_remap_podcast` is called per-track when `source_type == 'podcast'`:
+Called per-track when `source_type == 'podcast'`: sets `artist` and `albumartist` to the show name (from `album` tag); does **not** overwrite `album` — it stays as the original show name in the DB so that `isOnDevice` keys match the iPod.
 
-- Sets `artist` and `albumartist` to the show name (from `album` tag, falling back to `albumartist`, `artist`, then `'Unknown Show'`)
-- Does **not** overwrite `album` — it stays as the original show name in the DB
-
-**Why album must not be overwritten**: the key formula uses `artist + album + track_nr/title`. On the iPod, the `album` field retains the original file tag (show name). If the source DB stored `album = year_string` instead, `isOnDevice` keys would mismatch. The year is used purely for display grouping.
-
-**Season grouping** is done at library-build time in `_build_library` (sources.py) when `source_type == 'podcast'`: `album_key = str(year) if year else artist_key`. This makes column 2 show years/seasons. Individual track objects receive `"album": original_show_name_from_db` so their key matches the iPod. A Full Rescan is needed after the first deploy of this fix to clear DB rows that had `album = year` stored from a previous version.
+**Season grouping** is done at library-build time in `_build_library` (sources.py): `album_key = str(year) if year else artist_key`. Track objects retain `"album": show_name` for key matching.
 
 ---
 
 ## WALKMAN scanner
 
-`walkman.py` implements a self-contained async scanner triggered manually via the UI magnifying-glass button:
+`walkman.py` implements a self-contained async scanner:
 
-- **Detection**: `parse_capability(mount)` reads `default-capability.xml` at the mount root to extract model, serial, storage type (INTERNAL / CARD), and music path. Returns `None` for non-WALKMAN mounts.
-- **DB tables**: `walkman_devices` (keyed by `serial + storage_type` to handle dual-LUN USB) and `walkman_tracks` (indexed by `device_id + path`).
-- **Incremental scan**: existing DB rows are fetched first; only files not yet in the DB have tags read with mutagen. Stale DB rows (files removed from disk) are bulk-deleted. Progress is written per-file to `walkman_devices.scan_processed / scan_total / scan_current_file`.
-- **Library format**: `fetch_library()` builds the same `artists[].albums[].tracks[]` nested dict as `gpod.py`, plus `walkman: True` and `walkman_db_id` flags used by the router to dispatch operations.
-- **Operations**: delete enqueues `os.remove()` for each file; sync enqueues `shutil.copy2()` for each source file into the WALKMAN music directory. Both update the `walkman_tracks` table immediately after each file so the library is consistent without a rescan.
-- **Full rescan**: `POST /walkman/scan?devnode=&full=true` clears all `walkman_tracks` rows for the device and resets `track_count=0` before starting the scan, forcing every file to be re-read. Used to pick up tag corrections or filesystem changes that the incremental scan would miss.
-
----
-
-## Async subprocess pattern
-
-Long-running gpod operations must stream output back to the client. Use this pattern:
-
-```python
-async def run_streaming(cmd: list[str]):
-    process = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-    )
-    async for line in process.stdout:
-        yield line.decode()
-    await process.wait()
-    return process.returncode
-```
-
-Expose streaming endpoints as SSE using FastAPI's `StreamingResponse` with `media_type="text/event-stream"`.
-
-### Tar download streaming
-
-`/library/download` uses an OS pipe + thread to stream tar content with no temp files:
-
-```python
-r_fd, w_fd = os.pipe()
-
-def write_tar():
-    with os.fdopen(w_fd, 'wb') as wf:
-        with tarfile.open(fileobj=wf, mode='w|') as tar:
-            for t in tracks:
-                tar.add(disk_path, arcname=arcname)
-
-thread = threading.Thread(target=write_tar, daemon=True)
-thread.start()
-
-with os.fdopen(r_fd, 'rb') as rf:
-    while chunk := await asyncio.to_thread(rf.read, 65536):
-        yield chunk
-```
-
-The `mode='w|'` flag enables streaming (no seeking). The OS pipe provides natural backpressure so the writer thread blocks when the client is slow. Downloads do not check `op_service.is_busy()` since they are read-only.
+- **Detection**: `parse_capability(mount)` reads `default-capability.xml` to extract model, serial, storage type (INTERNAL / CARD), and music path.
+- **DB tables**: `walkman_devices` (keyed by `serial + storage_type`) and `walkman_tracks` (indexed by `device_id + path`).
+- **Incremental scan**: existing DB rows are fetched first; only new files have tags read with mutagen. Stale rows are bulk-deleted.
+- **Library format**: `fetch_library()` builds the same `artists[].albums[].tracks[]` nested dict as `gpod.py`, plus `walkman: True` and `walkman_db_id` flags.
+- **Operations**: `os.remove()` / `shutil.copy2()` update `walkman_tracks` immediately after each file.
+- **Full rescan**: `POST /walkman/scan?devnode=&full=true` clears all rows and resets `track_count=0`.
 
 ---
 
 ## Known constraints and gotchas
 
-- **libgpod hash requirement**: Writing to iPod Classic (6th gen+) and Nano 3G+ requires computing a device-specific cryptographic hash. Handled via libgpod's `itdb_device_write_sysinfo` support inside gpod-utils.
+- **libgpod hash requirement**: Writing to iPod Classic (6th gen+) and Nano 3G+ requires a device-specific cryptographic hash. Handled inside gpod-utils.
 - **Mount permissions**: The container must run privileged or with `CAP_SYS_ADMIN` for mount syscalls.
-- **iTunesDB corruption**: Always take a backup of `/mnt/ipod/iPod_Control/iTunes/iTunesDB` before any write operation. Use `GPOD_DRY_RUN=1` when testing sync logic.
-- **HFS+ vs FAT32**: iPod 5 may be formatted as HFS+. Ensure `hfsplus` kernel module or `hfsprogs` is available in the container if needed.
-- **udev inside Docker**: `/run/udev` must be bind-mounted read-only from the host. Alternatively, poll `lsblk -J` on a timer (current approach).
-- **ALAC playback**: Firefox on Linux cannot decode ALAC in M4A containers. The `/audio` and `/sources/audio` endpoints detect ALAC via `mutagen.MP4.info.codec` and pipe through `ffmpeg -f flac -` on the fly. Seeking is disabled for streamed ALAC; duration falls back to the DB value.
+- **iTunesDB corruption**: Always take a backup of `/mnt/ipod/iPod_Control/iTunes/iTunesDB` before any write operation. Use `GPOD_DRY_RUN=1` when testing.
+- **HFS+ vs FAT32**: iPod 5 may be formatted as HFS+. Ensure `hfsplus` kernel module or `hfsprogs` is available if needed.
+- **ALAC playback**: Firefox on Linux cannot decode ALAC in M4A containers. `/audio` and `/sources/audio` detect ALAC via `mutagen.MP4.info.codec` and pipe through `ffmpeg -f flac -` on the fly. Seeking is disabled for streamed ALAC.
 - **IPOD_AUTOMOUNT disabled by default**: The poll loop detects already-mounted iPods but will not call `mount` itself unless `IPOD_AUTOMOUNT=1`.
-- **Alpine.js x-show + inline flex**: Alpine's `x-show` sets `el.style.display = ''` when restoring visibility, which wipes any inline `display:flex`. Always use a CSS class for flex containers that are toggled with `x-show`.
+- **Alpine.js x-show + inline flex**: Alpine's `x-show` sets `el.style.display = ''` when restoring visibility, which wipes any inline `display:flex`. Always use a CSS class for flex containers toggled with `x-show`.
 - **Object.defineProperties for getters**: Alpine.js getters in module objects must be merged with `Object.defineProperties`, not `Object.assign` — the latter evaluates getters immediately and stores the result as a plain value.
+- **Alpine SSE in-place mutation**: When the SSE handler receives a `running` update for the same op, mutate `existing.processed`/`existing.current` in-place rather than replacing `this.currentOp`. Replacing the whole object causes Alpine to re-evaluate every getter that reads any `currentOp.*` field, amplifying the cost of every SSE tick.
+- **CSS Grid reflow from display toggle**: Never use `display:none ↔ display:inline` on elements inside a CSS Grid (e.g., the `.t-nr-play` hover overlay). Toggling `display` forces `nsGridContainerFrame::Tracks::ResolveIntrinsicSize` on every mousemove. Use `position:absolute + opacity` instead — `.t-nr-play` is absolutely positioned over `.t-nr-text` so grid column width never changes.
+- **CSS animation forces 60fps VSync**: Any active CSS animation (even GPU-compositable `transform`) forces Firefox's RefreshDriver to schedule VSync ticks at 60fps. Any layout-dirty operation within those ticks then runs at 60fps frequency. The storage bar stripe animation was removed for this reason — a static hatched `::before` overlay is used instead when an op is running.
+- **Op log duplication**: `openLiveLog()` clears the `<pre>` content (`el.textContent = ''`) before starting the poll. Without this, re-opening the modal mid-operation resets `_logRenderedCount = 0` but leaves old DOM lines in place — the next poll re-fetches from line 0 and appends, duplicating everything already shown.
+- **`_pollLiveLog` continuation**: The poll loop calls `if (!this.opRunning) break` after each fetch. Without this, the loop continues requesting `/operations/log` every 2 s indefinitely after the op finishes.
+- **`_appendLogLines` scroll**: Checks `atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40` before appending, then sets `el.scrollTop = 9999999` (browser-clamped) only when the user was already at the bottom. This preserves scroll position when the user has scrolled up to read earlier output. Avoid reading `el.scrollHeight` after a DOM mutation — do it before appending.
 - **Unicode tag normalization**: Source file tags often use Unicode hyphens (U+2010) or curly apostrophes (U+2019) where the iPod DB stores ASCII. `_normStr()` in `utils.js` normalizes both before key comparison.
-- **Mobile single-pane navigation**: On `≤768px` screens the three-column browser collapses to a single-pane slide view driven entirely by CSS `:has()` — no JS required. Selecting an artist/album slides in the next pane. Tapping the column heading navigates back (clears `selectedAlbum` / `selectedArtist`).
-- **Light theme + FOUC**: The FOUC-prevention inline `<script>` runs before the CSS `<link>` in `<head>`. It reads `localStorage` and conditionally adds `html.light` before any paint. Do not move it after the stylesheet link.
-- **Theme CSS variable tokens**: All surface/card/border colors are CSS variables. Adding a new component that needs theme awareness: use `var(--surface-bg)`, `var(--card-bg)`, `var(--fill-bg)`, `var(--surface-border)`, `var(--card-border)`, `var(--hover-surface)`, `var(--chip-active)`, `var(--overlay-bg)`, `var(--detail-bg)`, `var(--player-bg)` instead of hardcoded `rgba()` values. Override these in `html.light { }` if the dark default is wrong for light mode.
-- **gpod-rm ID positional shift**: After each batch deletion, remaining track IDs shift down. Always sort delete IDs in descending order and process them highest-first so earlier deletions don't invalidate later IDs in the same operation.
-- **gpod-cp directory args**: `gpod-cp` accepts both file paths and directory paths. Passing a directory copies all audio files under it recursively. `_buildCopyPaths` exploits this to collapse complete album/artist selections into a single directory argument.
-- **WALKMAN dual-LUN**: some WALKMAN models expose INTERNAL storage and SD card as two separate USB mass-storage LUNs (two block devices). Each is treated as a separate device, keyed by `serial + storage_type` in `walkman_devices`.
-- **WALKMAN NTFS/exFAT**: `devices.py` accepts `vfat`, `ntfs`, `exfat`, and `fuseblk` fstypes when detecting WALKMAN mounts. VFAT mounts get `utf8` / `iocharset=utf8` mount options to handle non-ASCII filenames correctly.
-- **SSE connectedAt guard**: `_connectOpEvents()` stamps `connectedAt = Date.now() / 1000` when the EventSource opens. The `justFinished` condition uses `op.started_at >= connectedAt` instead of `prevStartedAt != null` — the latter fails (JS `undefined == null` is true) when no prior op exists in the session, causing WALKMAN fast ops to never trigger a library refresh.
-- **`_srcKeyMap` invalidation**: `_srcKeyMap` must be set to `null` wherever `sourceLibrary` is reassigned (source switch, source removal, library reload). Missing an invalidation point causes stale source-presence highlighting in the device pane.
-- **iPod service module**: `app/services/ipod.py` owns `IPOD_SENTINEL`, `is_ipod(mount)`, and `log_mount_contents(mount)` — parallel to `app/services/walkman.py` for WALKMAN. `devices.py` imports these as `detect_ipod` / `log_ipod_mount_contents` to avoid shadowing the local `is_ipod` variable that holds the boolean result.
-- **Source switch flash prevention**: `pickSource()` does NOT null out `sourceLibrary` before fetching the new library. The old library stays visible while the fetch is in flight; `_loadSourceLibrary` replaces it atomically on success. Setting `sourceLibrary = null` before the fetch causes a blank flash (two separate Alpine render batches across `await` boundaries). The stale-response guard `if (this.selectedSourceId !== id) return` inside `_loadSourceLibrary` handles rapid source switching.
-- **`_startSrcPoll` wasScanning guard**: `_startSrcPoll` records `wasScanning` before calling `loadSources`. On the tick where scanning transitions to done, the library is reloaded only when `wasScanning && !scanning`. Without this guard, `_loadSourceLibrary` would fire spuriously on the first tick after `pickSource()` even if the source was never scanning.
-- **Sync confirmation bypass**: `syncNeedsConfirm` being `false` means the Sync button calls `confirmSync()` directly without opening the modal. The modal is still rendered in the DOM but only shown when `showSyncConfirm` is set to `true`. Do not add `showSyncConfirm = true` to the Sync button click handler unconditionally — it will break the fast-path.
-- **Track library structure**: The nested library response (`artists[].albums[].tracks[]`) does not embed `album` or `albumartist` on individual track objects — those fields live at the parent level. Code that needs full track context (e.g. download, display) must walk the nested structure to obtain them.
-- **`__ALL__` sentinel in album checkboxes**: `isAlbumSelected`, `isAlbumIndeterminate`, `toggleAlbum` (and source equivalents) accept an album object, not `(artistName, albumName)`. Do not change to string-based lookup — it breaks when `selectedArtist === '__ALL__'` because no library artist has that name.
-- **`_normStr` empty fallback**: `_normStr` returns `norm || raw` so that symbol-only strings like `#####` (which normalize to `''`) don't collide with each other or with null/empty artist names.
-- **Status bar `.statusbar-right` width**: declared as `width: min(440px, 54%)` (CSS value, not content-driven). Never change to `width: auto` or remove the declaration — the right section will grow/shrink with text and cause the left content to jump during N/M counter updates. Do not add `flex-grow` to `.statusbar-op` children — that re-introduces artificial gaps between op text and timestamps.
-- **Rating sync runs `gpod-ls`**: `_gpod_rating_sync` re-reads the full iPod library after copy/delete to get fresh track IDs. This adds a few seconds to sync time on large libraries. It is skipped via a `COUNT(*)` pre-check when `ipod_track_ratings` is empty, so new installs with no rated tracks pay no cost.
-- **Star picker uses nested `x-data` in `x-for`**: each track row's `.t-rating` span carries `x-data="{ hov: 0 }"` to manage per-row hover state. Alpine v3 correctly scopes nested `x-data` inside `x-for` iterations. `@click.stop` on the container prevents the click from bubbling to the row's `openDetail` handler.
-- **iPod rating deferred to sync**: `POST /library/rate` writes to `ipod_track_ratings` and mutates the in-memory cache, but does **not** call `gpod-tag` immediately. The actual iTunesDB write happens during the next sync's rating-sync step. This means ratings set via UI are not written to the iPod until the next sync operation completes.
-- **`ipod_track_ratings` shared across tabs**: the same normalized key is used by both the iPod library (via `persist_ratings` and `POST /library/rate`) and the source library (via `POST /sources/rate` and `GET /sources/{id}/library`). A rating set in one view is visible in the other after the next library load.
-- **Rating scale**: `ipod_track_ratings` stores 0–5 stars. The iPod library cache stores the iPod-native 0–100 scale (`rating * 20`). `fmtRating(r)` in `utils.js` takes 0–100; `fmtRatingStars(s)` takes 0–5. Use the correct formatter for each tab.
-- **Device settings devnode in query param**: `GET/PUT /devices/device-settings` takes `devnode` as a query parameter, not a path segment. DevNode values like `/dev/sdb3` contain slashes — Starlette decodes `%2F` back to `/` before routing, so a path-segment route `/devices/{devnode}/device-settings` would never match. Always use `?devnode=` and `encodeURIComponent` on the JS side.
-- **iPod mediatype bitmask**: `gpod-ls` returns `mediatype` as a raw integer bitmask (AUDIO=1, VIDEO=2, PODCAST=4, AUDIOBOOK=8). Value `5` (PODCAST|AUDIO) is a valid podcast — use `raw & 4` to test for podcast, not a dict lookup. `_classify_mediatype` in `gpod.py` implements this.
-- **Podcast artist/album fallback in gpod.py**: for podcast and audiobook tracks where both `albumartist` and `artist` are null (common for podcasts), `_parse` uses `t.get("album")` (the show name) as the artist key. This matches how the source scanner sets `artist = show_name` via `_remap_podcast`.
-- **Podcast key matching**: `track.album` in source library track objects must equal the iPod's `album` field (the show name) for `isOnDevice` to match. Do not overwrite `album` with year/season in `_remap_podcast` — season grouping is done at library-build time by `_build_library` using `year` as `album_key`, while the track object retains `"album": show_name`.
-- **`filteredSrcArtists` null guard**: returns `[]` when `selectedSourceObj` is null. Without this, switching to a media type with no source still shows the library from the previous type's source (the `sourceLibrary` reference is not nulled on type switch when no matching source exists).
-- **Podcast artwork — `t.artwork` flag bypass**: `gpod-ls` reports `artwork: false` for podcast tracks even when an APIC frame is physically embedded in the MP3. `artUrl()` in `device.js` only gates on `t.artwork` for `mediaType === 'music'`; for podcasts and audiobooks it always attempts the `/artwork` request and lets the `@error` handler discard a 404. `artwork.py` logs all extraction failures at WARNING level.
-- **`ipod_track_playcounts` shared across tabs**: same normalized key is used by both the device and source panes. `persist_playcounts` stores all tracks (including those with 0 plays). The source tab attaches `played: bool | None` to each track — `true` means played, `false` means on iPod with 0 plays, `null` means no DB record. The unplayed blue dot renders on `played !== true` — both `false` and `null` (no record) are treated as unplayed.
-- **Podcast sort newest-first**: `gpod.py` and `_build_library` in `sources.py` both detect podcast albums by checking `tracks[0].mediatype === 'podcast'` (device) or `source_type == 'podcast'` (source) and reverse the sort. Season/year column key: `(1 if year<=0 else 0, -year, name)` so unknown years fall to the end. Episode sort for source: `pub_date` descending then `track_nr` descending; ISO strings compare lexicographically so no conversion needed. Device track sort: `track_nr` descending (gpod-ls has no pub_date), with 0/missing track numbers at the end.
-- **`pub_date` ISO datetime**: the `date` mutagen tag can be a full ISO-8601 datetime (`2026-05-19T12:12:40`). `fmtPubDate` in `utils.js` uses `s.match(/^(\d{4})-(\d{2})-(\d{2})/)` to extract the date components and constructs `new Date(+y, +m-1, +d)` (local time, no UTC shift) rather than parsing the full ISO string. This avoids timezone-driven off-by-one-day errors. `year` in the DB is extracted in Python via `date_str.split('-')[0]` which also works on full datetimes.
-- **`gpod-verify` uses `-M`, not env var**: unlike `gpod-ls`/`gpod-cp`/`gpod-rm` which read `IPOD_MOUNT_POINT`, `gpod-verify` requires an explicit `-M <mount>` argument. `_do_verify` constructs the command as `["gpod-verify", "-M", mount, flag]` — do not try to pass the mount via the environment variable.
-
----
-
-## Development setup (local, no Docker)
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# Run dev server with auto-reload
-IPOD_MOUNT_POINT=/mnt/ipod uvicorn app.main:app --reload --port 8080
-```
-
-`gpod-ls` and `ffmpeg` must be on `PATH`. Install gpod-utils from the pre-built deb or build from source. Without a real iPod, the app shows an empty device list — that's expected. The source library scanner works without an iPod.
-
----
-
-## Open questions / future work
-
-- **ALAC seeking**: Cache the ffmpeg-transcoded output to a temp file so Range requests work, enabling seek for ALAC tracks.
-- **Playlist management**: Creating and editing playlists is a v2 feature.
-- **Multi-user / auth**: Basic HTTP auth via nginx reverse proxy is the simplest path if needed.
-- **Synology package**: Packaging as a Synology SPK would broaden the audience significantly.
-- **Acoustic fingerprinting**: fpcalc/Chromaprint for matching re-encoded tracks — optional, useful when track numbers are absent.
+- **Mobile single-pane navigation**: On `≤768px` screens the three-column browser collapses to a single-pane slide view driven entirely by CSS `:has()` — no JS required.
+- **Light theme + FOUC**: The FOUC-prevention inline `<script>` runs before the CSS `<link>` in `<head>`. Do not move it after the stylesheet link.
+- **Theme CSS variable tokens**: Use `var(--surface-bg)`, `var(--card-bg)`, `var(--fill-bg)`, `var(--surface-border)`, `var(--card-border)`, `var(--hover-surface)`, `var(--chip-active)`, `var(--overlay-bg)`, `var(--detail-bg)`, `var(--player-bg)` — never hardcoded `rgba()` values. Override in `html.light { }` if the dark default is wrong for light mode.
+- **gpod-rm ID positional shift**: After each batch deletion, remaining track IDs shift down. Always sort delete IDs in descending order and process them highest-first.
+- **gpod-cp directory args**: `gpod-cp` accepts both file paths and directory paths. `_buildCopyPaths` exploits this to collapse complete album/artist selections into a single directory argument.
+- **WALKMAN dual-LUN**: some WALKMAN models expose INTERNAL storage and SD card as two separate USB mass-storage LUNs. Each is keyed by `serial + storage_type` in `walkman_devices`.
+- **WALKMAN NTFS/exFAT**: `devices.py` accepts `vfat`, `ntfs`, `exfat`, and `fuseblk` fstypes. VFAT mounts get `utf8` / `iocharset=utf8` mount options.
+- **SSE connectedAt guard**: `_connectOpEvents()` stamps `connectedAt = Date.now() / 1000` when the EventSource opens. The `justFinished` condition uses `op.started_at >= connectedAt` instead of `prevStartedAt != null` — the latter fails (JS `undefined == null` is true) when no prior op exists in the session.
+- **`_srcKeyMap` invalidation**: `_srcKeyMap` must be set to `null` wherever `sourceLibrary` is reassigned. Missing an invalidation point causes stale source-presence highlighting in the device pane.
+- **iPod service module**: `app/services/ipod.py` owns `IPOD_SENTINEL`, `is_ipod(mount)`, and `log_mount_contents(mount)`. `devices.py` imports these as `detect_ipod` / `log_ipod_mount_contents` to avoid shadowing the local `is_ipod` variable.
+- **Source switch flash prevention**: `pickSource()` does NOT null out `sourceLibrary` before fetching. Setting `sourceLibrary = null` before the fetch causes a blank flash. The stale-response guard `if (this.selectedSourceId !== id) return` handles rapid source switching.
+- **`_startSrcPoll` wasScanning guard**: records `wasScanning` before calling `loadSources`. Library reloads only when `wasScanning && !scanning` — without this, `_loadSourceLibrary` fires spuriously on the first tick after `pickSource()`.
+- **Sync confirmation bypass**: `syncNeedsConfirm` being `false` means the Sync button calls `confirmSync()` directly. Do not add `showSyncConfirm = true` to the Sync button unconditionally — it will break the fast-path.
+- **Track library structure**: `artists[].albums[].tracks[]` does not embed `album` or `albumartist` on individual track objects — those fields live at the parent level.
+- **`__ALL__` sentinel in album checkboxes**: `isAlbumSelected`, `isAlbumIndeterminate`, `toggleAlbum` (and source equivalents) accept an album object, not `(artistName, albumName)`. String-based lookup breaks when `selectedArtist === '__ALL__'`.
+- **`_normStr` empty fallback**: returns `norm || raw` so symbol-only strings like `#####` (which normalize to `''`) don't collide with each other.
+- **Status bar `.statusbar-right` width**: declared as `width: min(440px, 54%)`. Never change to `width: auto` — the right section will grow/shrink and cause the left content to jump. Do not add `flex-grow` to `.statusbar-op` children.
+- **Rating sync runs `gpod-ls`**: `_gpod_rating_sync` re-reads the full iPod library after copy/delete. Skipped via `COUNT(*)` pre-check when `ipod_track_ratings` is empty.
+- **Star picker uses nested `x-data` in `x-for`**: each track row's `.t-rating` span carries `x-data="{ hov: 0 }"` for per-row hover state. `@click.stop` prevents click from bubbling to `openDetail`.
+- **iPod rating deferred to sync**: `POST /library/rate` writes to `ipod_track_ratings` and mutates the in-memory cache, but `gpod-tag` is not called until next sync.
+- **`ipod_track_ratings` shared across tabs**: same normalized key used by both iPod library and source library. A rating set in one view is visible in the other after the next library load.
+- **Rating scale**: `ipod_track_ratings` stores 0–5 stars. iPod library cache stores 0–100 (`rating * 20`). `fmtRating(r)` takes 0–100; `fmtRatingStars(s)` takes 0–5.
+- **Device settings devnode in query param**: takes `devnode` as a query parameter, not a path segment. DevNode values contain slashes — Starlette decodes `%2F` before routing, so path-segment routes never match.
+- **iPod mediatype bitmask**: `gpod-ls` returns `mediatype` as a raw integer bitmask (AUDIO=1, VIDEO=2, PODCAST=4, AUDIOBOOK=8). Use `raw & 4` to test for podcast.
+- **Podcast artist/album fallback in gpod.py**: for podcast/audiobook tracks where both `albumartist` and `artist` are null, `_parse` uses `t.get("album")` (the show name) as the artist key.
+- **Podcast key matching**: `track.album` in source library track objects must equal the iPod's `album` field (the show name). Do not overwrite `album` with year/season in `_remap_podcast`.
+- **`filteredSrcArtists` null guard**: returns `[]` when `selectedSourceObj` is null.
+- **Podcast artwork — `t.artwork` flag bypass**: `gpod-ls` reports `artwork: false` for podcast tracks even when an APIC frame is embedded. `artUrl()` only gates on `t.artwork` for `mediaType === 'music'`; for podcasts/audiobooks it always attempts the request.
+- **`ipod_track_playcounts` shared across tabs**: `persist_playcounts` stores all tracks (including 0 plays). Source tab: `played: bool | None` — `null` means no record, `false` means 0 plays, `true` means played. The unplayed dot renders on `played !== true`.
+- **Podcast sort newest-first**: season/year column key: `(1 if year<=0 else 0, -year, name)` — unknown years fall to end. Episode sort for source: `pub_date` descending then `track_nr` descending. Device track sort: `track_nr` descending, 0/missing at end.
+- **`gpod-verify` uses `-M`, not env var**: construct command as `["gpod-verify", "-M", mount, flag]`. Do not pass the mount via `IPOD_MOUNT_POINT`.
+- **Tar download streaming**: `/library/download` uses an OS pipe + daemon thread writing `tarfile.open(mode='w|')` while the async handler reads from the read end. No temp files; OS pipe provides natural backpressure. Downloads do not check `op_service.is_busy()` since they are read-only.

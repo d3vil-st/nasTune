@@ -1,5 +1,7 @@
 import asyncio
+import json
 import logging
+import subprocess
 import time
 from pathlib import Path
 
@@ -11,7 +13,23 @@ log = logging.getLogger(__name__)
 AUDIO_EXT = {'.mp3', '.m4a', '.aac', '.flac', '.aiff', '.aif', '.wav', '.ogg'}
 
 
-def _read_track(file_path: Path) -> dict | None:
+def _ffprobe_date(file_path: Path) -> str | None:
+    """Run ffprobe to extract the date tag. ffprobe reads XMP private frames and
+    other sources that mutagen misses, so it returns the correct publication date
+    for podcasts where TDRC holds the download timestamp instead."""
+    try:
+        r = subprocess.run(
+            ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', str(file_path)],
+            capture_output=True, text=True, timeout=15,
+        )
+        tags = json.loads(r.stdout).get('format', {}).get('tags', {})
+        # ffprobe may return keys in either case depending on the container
+        return tags.get('date') or tags.get('DATE') or None
+    except Exception:
+        return None
+
+
+def _read_track(file_path: Path, source_type: str = 'music') -> dict | None:
     try:
         from mutagen import File as MFile
         audio = MFile(str(file_path), easy=True)
@@ -50,6 +68,8 @@ def _read_track(file_path: Path) -> dict | None:
             codec = codec.lower()
 
         date_str = g('date') or ''
+        if source_type == 'podcast':
+            date_str = _ffprobe_date(file_path) or date_str
         return {
             'path': str(file_path),
             'artist': g('artist'),
@@ -147,7 +167,7 @@ async def scan_source(source_id: int, root: str, source_type: str = 'music') -> 
         processed = 0
 
         for fpath in files:
-            track = await asyncio.to_thread(_read_track, fpath)
+            track = await asyncio.to_thread(_read_track, fpath, source_type)
             if track:
                 if source_type == 'podcast':
                     track = _remap_podcast(track)
