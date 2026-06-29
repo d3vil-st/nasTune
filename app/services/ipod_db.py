@@ -205,13 +205,12 @@ async def compute_auto_sync_paths(device_lib: dict, device_id: int,
     for artist in device_lib.get("artists", []):
         for album in artist["albums"]:
             for t in album["tracks"]:
-                key = _tk(
-                    t.get("artist") or artist["name"],
-                    album["name"],
-                    t.get("track_nr"),
-                    t.get("disc_nr"),
-                    t.get("title", ""),
-                )
+                # Podcasts key by album (show name) only — artist tag is irrelevant.
+                if t.get("mediatype") == "podcast":
+                    artist_key = album["name"]
+                else:
+                    artist_key = t.get("artist") or artist["name"]
+                key = _tk(artist_key, album["name"], t.get("track_nr"), t.get("disc_nr"), t.get("title", ""))
                 device_keys.add(key)
 
     paths: list[str] = []
@@ -229,7 +228,10 @@ async def compute_auto_sync_paths(device_lib: dict, device_id: int,
                 params = (media_type,)
             async with db.execute(q, params) as cur:
                 for path, artist, albumartist, album, track_nr, disc_nr, title in await cur.fetchall():
-                    key = _tk(artist or albumartist or "", album or "", track_nr, disc_nr, title or "")
+                    if media_type == "podcast":
+                        key = _tk(album or "", album or "", track_nr, disc_nr, title or "")
+                    else:
+                        key = _tk(artist or albumartist or "", album or "", track_nr, disc_nr, title or "")
                     if key not in device_keys:
                         paths.append(path)
     return paths

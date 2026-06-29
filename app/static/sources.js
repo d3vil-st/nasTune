@@ -264,7 +264,7 @@ function sourcesModule() {
       this.srcAlbum = null;
       this.srcAlbumArtUrl = null;
       this.srcSelectedTrack = null;
-      if (name !== '__ALL__' && window.innerWidth > 768) {
+      if (name !== '__ALL__' && (this.mediaType === 'podcast' || window.innerWidth > 768)) {
         const first = this.srcCurrentAlbums[0];
         if (first) this.pickSrcAlbum(first.name);
       }

@@ -97,7 +97,7 @@ function deviceModule() {
       this.selectedAlbum = null;
       this.selectedTrack = null;
       this.albumArtUrl = null;
-      if (name !== '__ALL__' && window.innerWidth > 768) {
+      if (name !== '__ALL__' && (this.mediaType === 'podcast' || window.innerWidth > 768)) {
         const first = this.currentAlbums[0];
         if (first) this.pickAlbum(first.name);
       }
@@ -139,7 +139,9 @@ function deviceModule() {
       for (const artist of (this.library?.artists || [])) {
         for (const album of artist.albums) {
           for (const t of album.tracks) {
-            this._deviceMap.set(this._trackKey(t.artist || artist.name, t.album || album.name, t.track_nr, t.title, t.disc_nr), t);
+            // Podcasts group by album (show name) — artist tag is not used for navigation.
+            const ak = t.mediatype === 'podcast' ? (t.album || album.name) : (t.artist || artist.name);
+            this._deviceMap.set(this._trackKey(ak, t.album || album.name, t.track_nr, t.title, t.disc_nr), t);
           }
         }
       }
@@ -149,6 +151,7 @@ function deviceModule() {
     isOnDevice(track) {
       if (!this.library) return false;
       if (!this._deviceMap) this._buildDeviceMap();
+      // For podcast source tracks, artist = show name (from _remap_podcast using album tag first).
       return this._deviceMap.has(this._trackKey(track.artist || track.albumartist, track.album, track.track_nr, track.title, track.disc_nr));
     },
 
@@ -157,8 +160,9 @@ function deviceModule() {
       for (const artist of (this.sourceLibrary?.artists || [])) {
         for (const album of artist.albums) {
           for (const t of album.tracks) {
+            const ak = this.mediaType === 'podcast' ? (t.album || album.name) : (t.artist || artist.name);
             this._srcKeyMap.set(
-              this._trackKey(t.artist || artist.name, t.album || album.name, t.track_nr, t.title, t.disc_nr),
+              this._trackKey(ak, t.album || album.name, t.track_nr, t.title, t.disc_nr),
               true
             );
           }
@@ -169,8 +173,10 @@ function deviceModule() {
     isTrackInSrc(track, artistName, albumName) {
       if (!this.selectedSourceId || !this.sourceLibrary) return true;
       if (!this._srcKeyMap) this._buildSrcKeyMap();
+      // For podcast device tracks, use albumName (show name) as the grouping key.
+      const ak = track.mediatype === 'podcast' ? albumName : (track.artist || artistName);
       return this._srcKeyMap.has(
-        this._trackKey(track.artist || artistName, albumName, track.track_nr, track.title, track.disc_nr)
+        this._trackKey(ak, albumName, track.track_nr, track.title, track.disc_nr)
       );
     },
 

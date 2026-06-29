@@ -324,10 +324,8 @@ def _build_library(tracks: list[dict], source_type: str = 'music') -> dict:
         year = t.get("year") or 0
 
         if source_type == 'podcast':
-            # Group by year (season) for display, but keep album = show name in track
-            # objects so _trackKey matches the iPod's album field (which is the show name).
-            album_key = str(year) if year else artist_key
-            track_album = (t.get("album") or artist_key).strip()
+            album_key = (t.get("album") or artist_key).strip()
+            track_album = album_key
         else:
             album_key = (t.get("album") or "Unknown Album").strip()
             track_album = album_key
@@ -361,13 +359,8 @@ def _build_library(tracks: list[dict], source_type: str = 'music') -> dict:
     result_artists = []
     for artist in _sorted_names(library):
         if source_type == 'podcast':
-            albums = sorted(
-                library[artist].values(),
-                key=lambda a: (1 if a["year"] <= 0 else 0, -(a["year"] or 0), a["name"].lower()),
-            )
+            albums = sorted(library[artist].values(), key=lambda a: a["name"].lower())
             for album in albums:
-                # Newest episodes first: pub_date ISO string sorts lexicographically;
-                # missing dates fall to end ('0000' < any real date, reversed → end)
                 album["tracks"].sort(
                     key=lambda t: (t["pub_date"] or '0000', t["track_nr"] or 0),
                     reverse=True,

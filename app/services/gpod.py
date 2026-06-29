@@ -49,8 +49,9 @@ def _parse(raw: dict, mount: Path) -> dict[str, Any]:
 
     for t in master["tracks"]:
         mt = _classify_mediatype(t.get("mediatype"))
-        if mt in ('podcast', 'audiobook') and not (t.get("albumartist") or t.get("artist")):
-            artist = t.get("album") or "Unknown Artist"
+        if mt in ('podcast', 'audiobook'):
+            # iPod groups podcasts by album (Show name) only — artist is irrelevant for navigation.
+            artist = t.get("album") or t.get("albumartist") or t.get("artist") or "Unknown Artist"
         else:
             artist = t.get("albumartist") or t.get("artist") or "Unknown Artist"
         album_name = t.get("album") or "Unknown Album"
@@ -89,31 +90,18 @@ def _parse(raw: dict, mount: Path) -> dict[str, Any]:
 
     for artist_albums in library.values():
         for album in artist_albums.values():
-            is_podcast = bool(album["tracks"]) and album["tracks"][0].get("mediatype") == "podcast"
-            if is_podcast:
-                # Newest episodes first; 0/missing track_nr falls to the end
-                album["tracks"].sort(
-                    key=lambda t: (-t["track_nr"] if t["track_nr"] else 99999)
-                )
+            if album["tracks"] and album["tracks"][0].get("mediatype") == "podcast":
+                album["tracks"].sort(key=lambda t: (-t["track_nr"] if t["track_nr"] else 99999))
             else:
                 album["tracks"].sort(key=lambda t: (t["disc_nr"], t["track_nr"]))
 
     artists_sorted = sorted(library.keys(), key=lambda a: _sort_key(a))
     result_artists = []
     for artist in artists_sorted:
-        first_track = next((t for a in library[artist].values() for t in a["tracks"]), {})
-        is_podcast = first_track.get("mediatype") == "podcast"
-        if is_podcast:
-            # Newest season first; year=0 (unknown) falls to the end
-            albums = sorted(
-                library[artist].values(),
-                key=lambda a: (1 if a["year"] <= 0 else 0, -(a["year"] or 0), a["name"].lower()),
-            )
-        else:
-            albums = sorted(
-                library[artist].values(),
-                key=lambda a: (a["year"] if a["year"] > 0 else 9999, a["name"].lower()),
-            )
+        albums = sorted(
+            library[artist].values(),
+            key=lambda a: (a["year"] if a["year"] > 0 else 9999, a["name"].lower()),
+        )
         track_count = sum(len(a["tracks"]) for a in albums)
         result_artists.append({"name": artist, "albums": albums, "track_count": track_count})
 

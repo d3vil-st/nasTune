@@ -347,7 +347,7 @@
           <span x-text="devLabels.artist + ' (' + filteredArtists.length + ')'"></span>
         </div>
         <div class="col-scroll">
-          <div class="artist-row all-row" x-show="library"
+          <div class="artist-row all-row" x-show="library && mediaType !== 'podcast'"
                :class="{ selected: selectedArtist === '__ALL__' }"
                @click="pickArtist('__ALL__')">
             <span class="artist-name" x-text="devLabels.allArtists"></span>
@@ -369,7 +369,7 @@
       </div>
 
       <!-- Albums -->
-      <div class="col col-albums">
+      <div class="col col-albums" x-show="mediaType !== 'podcast'">
         <div class="col-heading" @click="matchMedia('(max-width:768px)').matches && pickArtist(null)">
           <input type="checkbox" class="row-cb" @click.stop x-show="selectedArtist"
                  :checked="allCurrentAlbumsSelected()"
@@ -414,7 +414,7 @@
 
       <!-- Tracks -->
       <div class="col col-tracks">
-        <div class="col-heading" @click="pickAlbum(null)">
+        <div class="col-heading" @click="mediaType === 'podcast' ? pickArtist(null) : pickAlbum(null)">
           <span x-text="selectedAlbum || devLabels.trackLabel"></span>
         </div>
         <div class="tracks-head">
@@ -441,7 +441,7 @@
             </div>
             <div class="abar-info">
               <div class="abar-title" x-text="selectedAlbum"></div>
-              <div class="abar-artist" x-text="selectedArtist === '__ALL__' ? '' : selectedArtist"></div>
+              <div class="abar-artist" x-show="mediaType !== 'podcast'" x-text="selectedArtist === '__ALL__' ? '' : selectedArtist"></div>
               <div class="abar-stats" x-text="currentTracks.length + ' ' + devLabels.trackPl + ' · ' + fmtTotalDur(currentTracks)"></div>
             </div>
           </div>
@@ -451,8 +451,8 @@
           <template x-if="!selectedAlbum">
             <div class="empty">
               <span class="empty-icon" x-text="mediaType === 'podcast' ? '🎙' : mediaType === 'audiobook' ? '📖' : '♪'"></span>
-              <span class="empty-label" x-text="devLabels.selectAlbum"></span>
-              <span class="empty-sub" x-show="selectedArtist"
+              <span class="empty-label" x-text="mediaType === 'podcast' ? devLabels.selectArtist : devLabels.selectAlbum"></span>
+              <span class="empty-sub" x-show="selectedArtist && mediaType !== 'podcast'"
                     x-text="currentAlbums.length + ' ' + devLabels.album.toLowerCase() + ' by ' + (selectedArtist === '__ALL__' ? devLabels.allArtists : selectedArtist)"></span>
             </div>
           </template>
@@ -559,7 +559,7 @@
           </template>
           <template x-if="selectedSourceId && !sourceLibraryLoading">
             <div>
-              <div class="artist-row all-row"
+              <div class="artist-row all-row" x-show="mediaType !== 'podcast'"
                    :class="{ selected: srcArtist === '__ALL__' }"
                    @click="pickSrcArtist('__ALL__')">
                 <span class="artist-name" x-text="srcLabels.allArtists"></span>
@@ -583,7 +583,7 @@
       </div>
 
       <!-- Middle: Albums of selected artist -->
-      <div class="col col-albums">
+      <div class="col col-albums" x-show="mediaType !== 'podcast'">
         <div class="col-heading" @click="matchMedia('(max-width:768px)').matches && pickSrcArtist(null)">
           <input type="checkbox" class="row-cb" @click.stop x-show="srcArtist"
                  :checked="allSrcCurrentAlbumsSelected()"
@@ -630,7 +630,7 @@
 
       <!-- Right: Tracks with sync status -->
       <div class="col col-tracks">
-        <div class="col-heading" @click="pickSrcAlbum(null)">
+        <div class="col-heading" @click="mediaType === 'podcast' ? pickSrcArtist(null) : pickSrcAlbum(null)">
           <span x-text="srcAlbum || srcLabels.trackLabel"></span>
         </div>
         <div class="tracks-head" style="grid-template-columns: 16px 36px 1fr 50px 66px 72px;">
@@ -655,7 +655,7 @@
             </div>
             <div class="abar-info">
               <div class="abar-title" x-text="srcAlbum"></div>
-              <div class="abar-artist" x-text="srcArtist === '__ALL__' ? '' : srcArtist"></div>
+              <div class="abar-artist" x-show="mediaType !== 'podcast'" x-text="srcArtist === '__ALL__' ? '' : srcArtist"></div>
               <div class="abar-stats" x-text="srcCurrentTracks.length + ' tracks · ' + fmtTotalDur(srcCurrentTracks)"></div>
             </div>
           </div>
@@ -665,7 +665,7 @@
           <template x-if="!srcAlbum">
             <div class="empty">
               <span class="empty-icon" x-text="mediaType === 'podcast' ? '🎙' : mediaType === 'audiobook' ? '📖' : '♪'"></span>
-              <span class="empty-label">Select an album</span>
+              <span class="empty-label" x-text="mediaType === 'podcast' ? srcLabels.selectArtist : 'Select an album'"></span>
             </div>
           </template>
           <template x-if="srcAlbum">
