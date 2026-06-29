@@ -208,6 +208,7 @@ function settingsModule() {
         const lib = await r.json();
         this.library = lib;
         this._browsingOfflineDeviceId = deviceId;
+        this.selectedDevnode = null;
         this._deviceIndex = null;
         this._deviceMap = null;
         this.showDevicePicker = false;

@@ -126,13 +126,15 @@ function devicesModule() {
         const data = JSON.parse(e.data);
         this.devices = data.devices;
         if (this.selectedDevnode && !data.devices.find(d => d.devnode === this.selectedDevnode)) {
-          this.library = null;
           this.selectedDevnode = null;
-          this.selectedArtist = null;
-          this.selectedAlbum = null;
-          this.selectedTrack = null;
+          if (!this._browsingOfflineDeviceId) {
+            this.library = null;
+            this.selectedArtist = null;
+            this.selectedAlbum = null;
+            this.selectedTrack = null;
+          }
         }
-        if (!this.selectedDevnode && data.selected) {
+        if (!this.selectedDevnode && data.selected && !this._browsingOfflineDeviceId) {
           this.selectDevice(data.selected);
         }
         // Refresh the known-devices list whenever the connected set changes so the
