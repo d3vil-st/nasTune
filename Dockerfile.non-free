@@ -30,7 +30,7 @@ RUN cd /build/ffmpeg-* \
 FROM ubuntu:26.04
 
 ARG TARGETARCH=amd64
-ARG GPOD_VERSION=1.4.18
+ARG GPOD_VERSION=1.4.20
 ARG DISTRO=ubuntu26.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -49,6 +49,8 @@ RUN sed -i \
         udev \
         util-linux \
         mount \
+        hfsprogs \
+        dosfstools \
         libfdk-aac2 \
     && rm -rf /var/lib/apt/lists/*
 

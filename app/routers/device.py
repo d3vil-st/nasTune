@@ -58,8 +58,12 @@ class VerifyBody(BaseModel):
     mode: str  # 'add' | 'delete'
 
 
-def _get_mount(devnode: str) -> str:
-    """For iPod-only operations (gpod-rm/gpod-cp). Raises for WALKMAN."""
+class CheckFsBody(BaseModel):
+    devnode: str
+
+
+async def _get_mount(devnode: str) -> str:
+    """For iPod-only operations (gpod-rm/gpod-cp). Mounts on demand. Raises for WALKMAN."""
     info = device_service.get_device_info(devnode)
     if not info:
         raise HTTPException(404, "Device not found")
@@ -67,11 +71,14 @@ def _get_mount(devnode: str) -> str:
         raise HTTPException(400, "Not an iPod")
     if op_service.is_busy():
         raise HTTPException(409, "Another operation is already running")
-    return info.mount
+    try:
+        return await device_service.ensure_mounted(devnode)
+    except (KeyError, RuntimeError) as exc:
+        raise HTTPException(500, f"Mount failed: {exc}")
 
 
-def _get_device(devnode: str):
-    """For operations that support both iPod and WALKMAN."""
+async def _get_device_mount(devnode: str):
+    """For operations that support both iPod and WALKMAN. Mounts on demand. Returns (info, mount)."""
     info = device_service.get_device_info(devnode)
     if not info:
         raise HTTPException(404, "Device not found")
@@ -79,17 +86,26 @@ def _get_device(devnode: str):
         raise HTTPException(400, "Device does not support library operations")
     if op_service.is_busy():
         raise HTTPException(409, "Another operation is already running")
-    return info
+    try:
+        mount = await device_service.ensure_mounted(devnode)
+    except (KeyError, RuntimeError) as exc:
+        raise HTTPException(500, f"Mount failed: {exc}")
+    # Re-read info after mount (type may have been detected during first mount)
+    info = device_service.get_device_info(devnode) or info
+    return info, mount
 
 
-def _get_mount_ro(devnode: str) -> str:
-    """Mount lookup without busy check — downloads are read-only."""
+async def _get_mount_ro(devnode: str) -> str:
+    """Mount for read-only operations (download). No busy check."""
     info = device_service.get_device_info(devnode)
     if not info:
         raise HTTPException(404, "Device not found")
     if not info.is_ipod and not info.is_walkman:
         raise HTTPException(400, "Device does not support downloads")
-    return info.mount
+    try:
+        return await device_service.ensure_mounted(devnode)
+    except (KeyError, RuntimeError) as exc:
+        raise HTTPException(500, f"Mount failed: {exc}")
 
 
 def _safe(s: str) -> str:
@@ -164,41 +180,80 @@ def _resolve_device_id(devnode: str) -> str:
 async def verify_library(body: VerifyBody):
     if body.mode not in ("add", "delete", "check"):
         raise HTTPException(422, "mode must be 'add', 'delete', or 'check'")
-    mount = _get_mount(body.devnode)  # iPod-only; raises for WALKMAN and busy
+    mount = await _get_mount(body.devnode)  # iPod-only; mounts on demand; raises for WALKMAN
     device_id = _resolve_device_id(body.devnode)
-    await op_service.run_verify(body.mode, mount, device_id)
+    await op_service.run_verify(body.mode, mount, device_id, devnode=body.devnode)
+    return {"ok": True}
+
+
+_FSCK_SUPPORTED = {"hfsplus", "hfs", "vfat", "msdos"}
+
+
+@router.post("/library/check-fs")
+async def check_fs(body: CheckFsBody):
+    info = device_service.get_device_info(body.devnode)
+    if not info:
+        raise HTTPException(404, "Device not found")
+    if not info.is_ipod and not info.is_walkman:
+        raise HTTPException(400, "Device does not support filesystem check")
+    if op_service.is_busy():
+        raise HTTPException(409, "Another operation is already running")
+    if device_service._mount_refs.get(body.devnode, 0) > 0:
+        raise HTTPException(409, "Device is currently in use — wait for active operations to complete")
+
+    # Probe raw fstype directly from the block device (works unmounted)
+    fstype_raw = ""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "lsblk", "-no", "FSTYPE", body.devnode,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        out, _ = await proc.communicate()
+        fstype_raw = out.decode().strip().lower()
+    except Exception:
+        pass
+
+    if not fstype_raw:
+        raise HTTPException(422, "Could not detect filesystem type")
+    if fstype_raw not in _FSCK_SUPPORTED:
+        raise HTTPException(422, f"fsck not supported for filesystem: {fstype_raw}")
+
+    device_id = _resolve_device_id(body.devnode)
+    await op_service.run_check_fs(body.devnode, fstype_raw, device_id)
     return {"ok": True}
 
 
 @router.post("/library/delete")
 async def delete_tracks(body: DeleteBody):
-    info = _get_device(body.devnode)
+    info, mount = await _get_device_mount(body.devnode)
     device_id = _resolve_device_id(body.devnode)
     if info.is_walkman:
         ids = [int(i) for i in body.track_ids]
-        await op_service.run_walkman_delete(ids, info.mount, info.walkman_db_id, device_id)
+        await op_service.run_walkman_delete(ids, mount, info.walkman_db_id, device_id, devnode=body.devnode)
     else:
-        await op_service.run_delete(body.track_ids, info.mount, device_id=device_id)
+        await op_service.run_delete(body.track_ids, mount, device_id=device_id, devnode=body.devnode)
     return {"ok": True}
 
 
 @router.post("/library/sync")
 async def sync_tracks(body: SyncBody):
-    info = _get_device(body.devnode)
+    info, mount = await _get_device_mount(body.devnode)
     device_id = _resolve_device_id(body.devnode)
     if info.is_walkman:
         meta = device_service.get_walkman_meta(body.devnode)
         music_path = meta["cap"]["music_path"] if meta else "MUSIC"
         delete_ids = [int(i) for i in body.delete_ids]
         await op_service.run_walkman_sync(
-            body.copy_paths, delete_ids, info.mount, music_path,
+            body.copy_paths, delete_ids, mount, music_path,
             info.walkman_db_id, device_id, body.copy_track_count,
+            devnode=body.devnode,
         )
     else:
         await op_service.run_sync(
-            body.copy_paths, body.delete_ids, info.mount,
+            body.copy_paths, body.delete_ids, mount,
             device_id=device_id, copy_track_count=body.copy_track_count,
             media_type=body.media_type, ipod_db_id=info.ipod_db_id,
+            devnode=body.devnode,
         )
     return {"ok": True}
 
@@ -243,12 +298,20 @@ async def rate_track(body: RateBody):
 
 @router.post("/library/download")
 async def download_tracks(body: DownloadBody):
-    mount = _get_mount_ro(body.devnode)
     if not body.tracks:
         raise HTTPException(400, "No tracks specified")
+    mount = await _get_mount_ro(body.devnode)
+
+    async def _stream_and_release():
+        try:
+            async for chunk in _tar_stream(body.tracks, mount):
+                yield chunk
+        finally:
+            await device_service.release_mount(body.devnode)
+
     log.info("download: %d tracks from %s", len(body.tracks), mount)
     return StreamingResponse(
-        _tar_stream(body.tracks, mount),
+        _stream_and_release(),
         media_type="application/x-tar",
         headers={"Content-Disposition": 'attachment; filename="device_export.tar"'},
     )
@@ -313,9 +376,14 @@ async def list_known_devices():
             connected_uuids.add(info.usb_serial)
     ipods = await get_known_ipods(connected_uuids, connected_db_ids)
     walkmans = await get_known_walkmans()
+    connected_wm_serials: set[str] = {
+        info.usb_serial for info in device_service.devices.values()
+        if info.usb_serial and not info.is_ipod
+    }
     for wm in walkmans:
-        wm["connected"] = any(
-            d.walkman_db_id == wm["id"] for d in device_service.devices.values()
+        wm["connected"] = (
+            any(d.walkman_db_id == wm["id"] for d in device_service.devices.values())
+            or wm["serial"] in connected_wm_serials
         )
     return {"ipods": ipods, "walkmans": walkmans}
 
@@ -376,8 +444,11 @@ async def offline_library(device_id: int, device_type: str = "ipod"):
     if device_type == "ipod":
         from app.services.ipod_db import get_ipod_cached_library
         lib = await get_ipod_cached_library(device_id)
+    elif device_type == "walkman":
+        from app.services.walkman import fetch_library_offline
+        lib = await fetch_library_offline(device_id)
     else:
-        raise HTTPException(400, "Offline browsing only supported for iPod")
+        raise HTTPException(400, f"Unknown device type: {device_type}")
     if lib is None:
         raise HTTPException(404, "No cached library for this device")
     return lib
@@ -401,16 +472,20 @@ async def run_auto_sync(devnode: str):
     if not paths:
         return {"ok": True, "queued": 0, "message": "Nothing to sync"}
     device_id = _resolve_device_id(devnode)
+    try:
+        mount = await device_service.ensure_mounted(devnode)
+    except (KeyError, RuntimeError) as exc:
+        raise HTTPException(500, f"Mount failed: {exc}")
     await op_service.run_sync(
-        paths, [], info.mount,
+        paths, [], mount,
         device_id=device_id, copy_track_count=len(paths),
-        ipod_db_id=db_id,
+        ipod_db_id=db_id, devnode=devnode,
     )
     return {"ok": True, "queued": len(paths)}
 
 
 @router.get("/operations/log")
-async def get_op_log(from_line: int = 0):
+async def get_op_log(from_line: int = Query(0, alias="from")):
     return JSONResponse(op_service.current_log(from_line))
 
 

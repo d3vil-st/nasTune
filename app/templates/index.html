@@ -71,7 +71,7 @@
              x-text="library ? (library.walkman ? 'Serial ' + library.device.serial : 'UUID ' + library.device.uuid) : ''">
         </div>
         <div class="sub" x-show="!library"
-             x-text="libraryLoading ? 'Loading library…' : (libraryError ? 'Error loading library' : (selectedDevice && !selectedDevice.mounted ? 'Tap to mount device' : (devices.length ? 'Tap to select device' : 'No devices connected')))">
+             x-text="libraryLoading ? 'Loading library…' : (libraryError ? 'Error loading library' : (selectedDevice && !selectedDevice.mounted && !selectedDevice.is_walkman ? 'Tap to mount device' : (devices.length ? 'Tap to select device' : 'No devices connected')))">
         </div>
       </div>
 
@@ -86,8 +86,10 @@
               <div class="dp-row" :class="{ active: d.devnode === selectedDevnode }"
                    @click.stop="selectDevice(d.devnode)">
                 <div class="dp-info">
-                  <span class="dp-name" x-text="_connectedDeviceName(d) ? _connectedDeviceName(d) + ' — ' + d.devname : d.devname"></span>
-                  <span class="dp-meta" x-text="(d.size_bytes / 1073741824).toFixed(0) + ' GB ' + d.fstype + (d.mounted ? '' : ' — not mounted')"></span>
+                  <span class="dp-name" x-text="_connectedDeviceName(d) || d.devname"></span>
+                  <span class="dp-meta" x-show="_connectedDeviceName(d)" style="display:none"
+                        x-text="(d.usb_serial || d.devname) + (d.walkman_storage_type ? ' — ' + d.walkman_storage_type.charAt(0) + d.walkman_storage_type.slice(1).toLowerCase() : '')"></span>
+                  <span class="dp-meta" x-text="(d.size_bytes / 1073741824).toFixed(0) + ' GB ' + d.fstype"></span>
                 </div>
                 <button class="dp-gear" title="Device settings"
                         @click.stop="openDeviceSettings(d.devnode)">
@@ -119,10 +121,10 @@
               </div>
             </template>
             <template x-for="d in offlineWalkmans" :key="'kw'+d.id">
-              <div class="dp-row dp-offline">
+              <div class="dp-row dp-offline" @click.stop="browseOfflineLibrary(d.id, 'walkman')">
                 <div class="dp-info">
                   <span class="dp-name" x-text="d.marketing_name || d.model"></span>
-                  <span class="dp-meta">Disconnected</span>
+                  <span class="dp-meta" x-text="(d.serial || '') + (d.storage_type ? ' — ' + d.storage_type.charAt(0) + d.storage_type.slice(1).toLowerCase() : '')"></span>
                 </div>
                 <button class="dp-gear" title="Device settings"
                         @click.stop="openDeviceSettingsForKnown(d.id, 'walkman')">
@@ -154,11 +156,11 @@
       <button class="icon-btn" x-show="selectedDevice?.is_walkman"
               @click="triggerWalkmanScan(true)"
               :disabled="walkmanScanning || currentOp?.status === 'running'"
-              title="Force full rescan — re-reads all tags">&#x21BB;&#xFE0E;</button>
+              title="Force full rescan — re-reads all tags"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg></button>
       <button class="icon-btn" x-show="selectedDevnode && library && !selectedDevice?.is_walkman"
-              @click="refreshLibrary" :disabled="libraryRefreshing || currentOp?.status === 'running'" title="Reload library"><span :class="{ spinning: libraryRefreshing }">&#x21BB;&#xFE0E;</span></button>
-      <button class="icon-btn danger" x-show="selectedDevnode" @click="ejectDevice"
-              :disabled="currentOp?.status === 'running'" title="Eject device">&#x23CF;&#xFE0E;</button>
+              @click="refreshLibrary" :disabled="libraryRefreshing || currentOp?.status === 'running'" title="Reload library"><span :class="{ spinning: libraryRefreshing }" style="display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg></span></button>
+      <button class="icon-btn danger" x-show="selectedDevice?.mounted" @click="ejectDevice"
+              :disabled="currentOp?.status === 'running'" title="Eject device"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M5 20h14v-2H5v2zM12 4L5.5 14h13L12 4z"/></svg></button>
     </div>
 
     <!-- Storage bar (only when library loaded) -->
@@ -240,8 +242,8 @@
       </button>
       <div x-show="open" @click.outside="open = false" style="display:none;position:absolute;top:calc(100% + 8px);left:0;background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:5px;z-index:500;min-width:130px;box-shadow:0 8px 28px rgba(0,0,0,.6)">
         <div class="dp-row" :class="{ active: mediaType === 'music' }"     @click="setMediaType('music'); open = false"><div class="dp-info"><span class="dp-name">♫ Music</span></div></div>
-        <div class="dp-row" :class="{ active: mediaType === 'audiobook' }" @click="setMediaType('audiobook'); open = false"><div class="dp-info"><span class="dp-name">📖 Audiobooks</span></div></div>
-        <div class="dp-row" :class="{ active: mediaType === 'podcast' }"   @click="setMediaType('podcast'); open = false"><div class="dp-info"><span class="dp-name">🎙 Podcasts</span></div></div>
+        <div class="dp-row" :class="{ active: mediaType === 'audiobook' }" @click="setMediaType('audiobook'); open = false" x-show="!selectedDevice?.is_walkman" style="display:none"><div class="dp-info"><span class="dp-name">📖 Audiobooks</span></div></div>
+        <div class="dp-row" :class="{ active: mediaType === 'podcast' }"   @click="setMediaType('podcast'); open = false" x-show="!selectedDevice?.is_walkman" style="display:none"><div class="dp-info"><span class="dp-name">🎙 Podcasts</span></div></div>
       </div>
     </div>
 
@@ -395,7 +397,7 @@
                   <div class="album-thumb" :style="gradientFor(al.name)">
                     <span x-text="mediaType === 'podcast' ? '🎙' : mediaType === 'audiobook' ? '📖' : '♫'"></span>
                     <img :src="artUrl(al)" @error="$el.style.display='none'" loading="lazy" alt="">
-                    <div class="album-play-overlay" @click.stop="pickAlbum(al.name); playAlbum(al)">&#x25B6;</div>
+                    <div class="album-play-overlay" @click.stop="pickAlbum(al.name); playAlbum(al)"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
                   </div>
                   <div class="album-text">
                     <div class="album-name" x-text="al.name"></div>
@@ -466,12 +468,13 @@
                          :checked="isTrackSelected(t)"
                          @change="toggleTrack(t, $event.target.checked)">
                   <span class="t-dot-cell"><span class="t-unplayed-dot" :class="{ show: mediaType === 'podcast' && !t.playcount }"></span></span>
-                  <span class="t-play-cell" @click.stop="!t.missing && playTrack(t)">
+                  <span class="t-play-cell" @click.stop="!t.missing && (isCurrentTrack(t) ? togglePlay() : playTrack(t))">
                     <span class="t-nr-text" x-show="!isCurrentTrack(t)" x-text="t.track_nr || '·'"></span>
-                    <span class="t-nr-play">&#x25B6;&#xFE0E;</span>
-                    <span class="t-nr-playing" x-show="isCurrentTrack(t)"
-                          @click.stop="togglePlay()"
-                          x-text="playing ? '⏸︎' : '▶︎'"></span>
+                    <span class="t-nr-play"><svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+                    <span class="t-nr-playing" x-show="isCurrentTrack(t)">
+                      <svg x-show="!playing" viewBox="0 0 24 24" width="11" height="11" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                      <svg x-show="playing" viewBox="0 0 24 24" width="11" height="11" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                    </span>
                   </span>
                   <span class="t-title">
                     <span x-text="t.title"></span>
@@ -609,7 +612,7 @@
                        @click.stop="pickSrcAlbum(al.name); playSrcAlbum(al)">
                     <span x-text="mediaType === 'podcast' ? '🎙' : mediaType === 'audiobook' ? '📖' : '♫'"></span>
                     <img x-effect="$el.style.display=''; $el.src=sourceArtUrl(al)" @error="$el.style.display='none'" loading="lazy" alt="">
-                    <div class="album-play-overlay">&#x25B6;</div>
+                    <div class="album-play-overlay"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
                   </div>
                   <div class="album-text">
                     <div class="album-name" x-text="al.name"></div>
@@ -677,12 +680,13 @@
                          :checked="isSrcTrackChecked(t)"
                          @change="toggleSrcTrack(t, $event.target.checked)">
                   <span class="t-dot-cell"><span class="t-unplayed-dot" :class="{ show: mediaType === 'podcast' && t.played !== true }"></span></span>
-                  <span class="t-play-cell" @click.stop="playSrcTrack(t)">
+                  <span class="t-play-cell" @click.stop="isSrcCurrentTrack(t) ? togglePlay() : playSrcTrack(t)">
                     <span class="t-nr-text" x-show="!isSrcCurrentTrack(t)" x-text="t.track_nr || '·'"></span>
-                    <span class="t-nr-play">&#x25B6;&#xFE0E;</span>
-                    <span class="t-nr-playing" x-show="isSrcCurrentTrack(t)"
-                          @click.stop="togglePlay()"
-                          x-text="playing ? '⏸︎' : '▶︎'"></span>
+                    <span class="t-nr-play"><svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+                    <span class="t-nr-playing" x-show="isSrcCurrentTrack(t)">
+                      <svg x-show="!playing" viewBox="0 0 24 24" width="11" height="11" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                      <svg x-show="playing" viewBox="0 0 24 24" width="11" height="11" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                    </span>
                   </span>
                   <span class="t-title">
                     <span x-text="t.title"></span>
@@ -770,11 +774,11 @@
               <button class="src-action-btn"
                       @click="rescanSource(s.id)"
                       :disabled="s.scan_status === 'scanning'"
-                      title="Rescan">&#x21BB;&#xFE0E;</button>
+                      title="Rescan"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg></button>
               <button class="src-action-btn"
                       @click="rescanSource(s.id, true)"
                       :disabled="s.scan_status === 'scanning'"
-                      title="Force full rescan — re-reads all tags">&#x21BA;&#xFE0E;</button>
+                      title="Force full rescan — re-reads all tags"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg></button>
               <button class="src-action-btn danger"
                       @click="deleteSource(s.id)"
                       title="Remove source">&#x2715;</button>
@@ -986,8 +990,8 @@
               :style="currentOp.kind === 'delete' ? 'background:#ff453a' : 'background:#30d158'"></span>
         <span style="font-weight:500;flex-shrink:0"
               :style="currentOp.kind === 'delete' ? 'color:#ff453a' : 'color:#30d158'"
-              x-text="currentOp.kind === 'delete' ? 'Deleting…' : currentOp.kind === 'verify' ? 'Verifying…' : 'Syncing…'"></span>
-        <span class="statusbar-op-count" x-text="currentOp.processed + ' / ' + currentOp.total"></span>
+              x-text="currentOp.kind === 'delete' ? 'Deleting…' : currentOp.kind === 'verify' ? 'Verifying…' : currentOp.kind === 'check_fs' ? 'Checking FS…' : 'Syncing…'"></span>
+        <span class="statusbar-op-count" x-show="currentOp.total > 0" x-text="currentOp.processed + ' / ' + currentOp.total"></span>
         <template x-if="currentOp.current">
           <span class="statusbar-op-current" x-text="currentOp.current"></span>
         </template>
@@ -1001,7 +1005,7 @@
               :style="lastOp.status === 'done' ? 'color:#30d158' : 'color:#ff453a'"
               x-text="lastOp.status === 'done' ? '✓' : '✗'"></span>
         <span style="color:var(--muted);flex-shrink:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px"
-              x-text="(lastOp.kind === 'sync' ? 'Sync' : lastOp.kind === 'verify' ? 'Verify' : 'Delete') + (lastOp.kind === 'verify' ? '' : ' · ' + lastOp.total + ' tracks') + (fmtOpDuration(lastOp) ? ' · ' + fmtOpDuration(lastOp) : '')"></span>
+              x-text="(lastOp.kind === 'sync' ? 'Sync' : lastOp.kind === 'verify' ? 'Verify' : lastOp.kind === 'check_fs' ? 'Check FS' : 'Delete') + (lastOp.total > 0 ? ' · ' + lastOp.total + ' tracks' : '') + (fmtOpDuration(lastOp) ? ' · ' + fmtOpDuration(lastOp) : '')"></span>
         <span style="color:var(--dim);flex-shrink:0;font-variant-numeric:tabular-nums" x-text="fmtAgo(lastOp.finished_at)"></span>
       </span>
     </template>
@@ -1052,9 +1056,12 @@
           </div>
         </div>
 
-        <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;padding:0">
-          <button class="btn-ghost" @click="showSettings = false">Cancel</button>
-          <button class="btn-primary" @click="saveSettings()">Save</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding-top:4px;border-top:1px solid var(--surface-border)">
+          <button class="btn-ghost" style="color:var(--muted);font-size:12px" @click="dropArtworkCache()">Drop artwork cache</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn-ghost" @click="showSettings = false">Cancel</button>
+            <button class="btn-primary" @click="saveSettings()">Save</button>
+          </div>
         </div>
       </div>
 
@@ -1153,6 +1160,20 @@
               </div>
             </div>
 
+            <!-- Check filesystem -->
+            <template x-if="_deviceSettingsDevnode && devices.find(d => d.devnode === _deviceSettingsDevnode)">
+              <div>
+                <div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:10px">Filesystem</div>
+                <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface-bg);border-radius:6px;border:1px solid var(--card-border)">
+                  <div style="flex:1">
+                    <div style="font-size:12px;font-weight:500;color:var(--text)">Check filesystem</div>
+                    <div style="font-size:11px;color:var(--muted);margin-top:1px">Unmount, run fsck (hfsplus / vfat), remount — checks and repairs errors</div>
+                  </div>
+                  <button class="manage-btn" style="font-size:12px;white-space:nowrap" @click="runCheckFs()">&#x25B6;&#xFE0E; Run</button>
+                </div>
+              </div>
+            </template>
+
             <!-- Verify library -->
             <template x-if="_deviceSettingsDevnode && devices.find(d => d.devnode === _deviceSettingsDevnode)?.mounted">
               <div>
@@ -1186,7 +1207,7 @@
           </div>
         </template>
 
-        <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;padding:0">
+        <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;padding:0;border-top:none">
           <button class="btn-ghost" @click="showDeviceSettings = false">Cancel</button>
           <button class="btn-primary" @click="saveDeviceSettings()" :disabled="!deviceSettingsDraft">Save</button>
         </div>
@@ -1205,7 +1226,7 @@
     <template x-if="showOpLog && (historyViewOp || currentOp)">
       <div class="op-log-modal">
         <div class="op-log-header">
-          <span x-text="(historyViewOp || currentOp).kind === 'delete' ? 'Delete output' : (historyViewOp || currentOp).kind === 'verify' ? 'Verify output' : 'Sync output'"></span>
+          <span x-text="{ delete: 'Delete output', verify: 'Verify output', check_fs: 'Check FS output', sync: 'Sync output' }[(historyViewOp || currentOp).kind] || 'Sync output'"></span>
           <template x-if="historyViewOp">
             <span style="color:var(--dim);font-size:11px;font-weight:400" x-text="fmtAgo(historyViewOp.finished_at)"></span>
           </template>
@@ -1264,16 +1285,18 @@
     </div>
 
     <div class="player-controls">
-      <button class="ctrl-btn" :class="{ active: shuffle }" @click="toggleShuffle" title="Shuffle">&#x21C4;&#xFE0E;</button>
-      <button class="ctrl-btn" @click="prevTrack" title="Previous">&#x23EE;&#xFE0E;</button>
-      <button class="ctrl-btn play-btn" @click="togglePlay"
-              x-text="playing ? '⏸︎' : '▶︎'" title="Play/Pause"></button>
-      <button class="ctrl-btn" @click="nextTrack" title="Next">&#x23ED;&#xFE0E;</button>
+      <button class="ctrl-btn" :class="{ active: shuffle }" @click="toggleShuffle" title="Shuffle"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg></button>
+      <button class="ctrl-btn" @click="prevTrack" title="Previous"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>
+      <button class="ctrl-btn play-btn" @click="togglePlay" title="Play/Pause">
+        <svg x-show="!playing" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        <svg x-show="playing" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+      </button>
+      <button class="ctrl-btn" @click="nextTrack" title="Next"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" style="transform:scaleX(-1)"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>
       <button class="ctrl-btn" :class="{ active: repeat !== 'none' }" @click="toggleRepeat"
               :title="repeat === 'one' ? 'Repeat one' : repeat === 'all' ? 'Repeat all' : 'Repeat off'">
-        &#x21BB;&#xFE0E;<sup x-show="repeat === 'one'" style="font-size:8px;line-height:1">1</sup>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg><sup x-show="repeat === 'one'" style="font-size:8px;line-height:1">1</sup>
       </button>
-      <button class="ctrl-btn" @click="stopPlayback" title="Stop" style="margin-left:8px">&#x25A0;&#xFE0E;</button>
+      <button class="ctrl-btn" @click="stopPlayback" title="Stop" style="margin-left:8px"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg></button>
     </div>
 
     <div class="player-progress">

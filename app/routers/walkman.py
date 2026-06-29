@@ -25,11 +25,17 @@ def _get_walkman(devnode: str):
 @router.post("/scan")
 async def trigger_scan(devnode: str = Query(...), full: bool = Query(False)):
     info = _get_walkman(devnode)
-    if not info.mounted or not info.mount:
-        raise HTTPException(400, "Device is not mounted")
     meta = device_service.get_walkman_meta(devnode)
     if not meta:
-        raise HTTPException(500, "WALKMAN metadata not available")
+        # Metadata only available after first mount — ensure mounted to get it
+        try:
+            await device_service.ensure_mounted(devnode)
+            await device_service.release_mount(devnode)
+            meta = device_service.get_walkman_meta(devnode)
+        except Exception:
+            pass
+    if not meta:
+        raise HTTPException(500, "WALKMAN metadata not available — try selecting the device first")
     cap = meta["cap"]
     if full:
         async with aiosqlite.connect(DB_PATH) as db:
@@ -37,7 +43,12 @@ async def trigger_scan(devnode: str = Query(...), full: bool = Query(False)):
             await db.execute("UPDATE walkman_devices SET track_count=0 WHERE id=?", (info.walkman_db_id,))
             await db.commit()
         log.info("Full rescan requested for WALKMAN db_id=%d — tracks cleared", info.walkman_db_id)
-    wm_svc.start_scan(info.walkman_db_id, Path(info.mount), cap["music_path"])
+    # Mount for the scan; _scan will release when done
+    try:
+        mount_str = await device_service.ensure_mounted(devnode)
+    except (KeyError, RuntimeError) as exc:
+        raise HTTPException(500, f"Mount failed: {exc}")
+    wm_svc.start_scan(info.walkman_db_id, Path(mount_str), cap["music_path"], devnode=devnode)
     return {"ok": True, "db_id": info.walkman_db_id}
 
 

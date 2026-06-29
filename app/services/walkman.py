@@ -20,6 +20,8 @@ AUDIO_EXT = {
     '.dsf', '.dff', '.ape', '.wma', '.mp4', '.3gp',
 }
 
+PODCASTS_DIR = "PODCASTS"
+
 # devnode -> asyncio.Task, to prevent concurrent scans per device
 _scan_tasks: dict[int, asyncio.Task] = {}
 
@@ -117,7 +119,7 @@ async def fetch_library(mount: str, db_device_id: int, serial: str, cap: dict) -
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            'SELECT * FROM walkman_tracks WHERE device_id=? ORDER BY albumartist, album, disc_nr, track_nr, title',
+            'SELECT *, COALESCE(mediatype, "music") AS mediatype FROM walkman_tracks WHERE device_id=? ORDER BY albumartist, album, disc_nr, track_nr, title',
             (db_device_id,),
         ) as cur:
             rows = await cur.fetchall()
@@ -140,7 +142,7 @@ async def fetch_library(mount: str, db_device_id: int, serial: str, cap: dict) -
         if artist not in library:
             library[artist] = {}
         if album_name not in library[artist]:
-            library[artist][album_name] = {'name': album_name, 'year': year, 'tracks': []}
+            library[artist][album_name] = {'name': album_name, 'albumartist': artist, 'year': year, 'tracks': []}
 
         library[artist][album_name]['tracks'].append({
             'id':          t['id'],
@@ -163,6 +165,7 @@ async def fetch_library(mount: str, db_device_id: int, serial: str, cap: dict) -
             'time_added':  0,
             'time_played': 0,
             'missing':     not (mount_path / t['path']).exists(),
+            'mediatype':   t['mediatype'] or 'music',
         })
 
     for al_dict in library.values():
@@ -233,17 +236,17 @@ async def scan_status(db_device_id: int) -> dict:
     }
 
 
-def start_scan(db_device_id: int, mount: Path, music_path: str) -> None:
+def start_scan(db_device_id: int, mount: Path, music_path: str, devnode: str = "") -> None:
     """Start or restart a background scan task for the given walkman device."""
     existing = _scan_tasks.get(db_device_id)
     if existing and not existing.done():
         log.info("WALKMAN %d: scan already running, skipping", db_device_id)
         return
-    task = asyncio.create_task(_scan(db_device_id, mount, music_path))
+    task = asyncio.create_task(_scan(db_device_id, mount, music_path, devnode))
     _scan_tasks[db_device_id] = task
 
 
-async def _scan(db_device_id: int, mount: Path, music_path: str) -> None:
+async def _scan(db_device_id: int, mount: Path, music_path: str, devnode: str = "") -> None:
     music_root = mount / music_path
     now = int(time.time())
     log.info("WALKMAN %d: scanning %s", db_device_id, music_root)
@@ -269,8 +272,8 @@ async def _scan(db_device_id: int, mount: Path, music_path: str) -> None:
                 db_rows = {row[1]: row[0] for row in await cur.fetchall()}  # path -> id
 
         # Files currently on disk (relative path -> absolute path)
-        files = await asyncio.to_thread(_find_files, music_root)
-        disk_files: dict[str, Path] = {str(f.relative_to(mount)): f for f in files}
+        music_files = await asyncio.to_thread(_find_files, music_root)
+        disk_files: dict[str, Path] = {str(f.relative_to(mount)): f for f in music_files}
         total = len(disk_files)
         log.info("WALKMAN %d: %d on disk, %d in DB", db_device_id, total, len(db_rows))
         await _write_progress(db_device_id, 0, total, '')
@@ -302,6 +305,7 @@ async def _scan(db_device_id: int, mount: Path, music_path: str) -> None:
 
             track = await asyncio.to_thread(_read_track, fpath, mount)
             if track:
+                _apply_podcast_overrides(track, rel_path)
                 track['device_id'] = db_device_id
                 track['scanned_at'] = now
                 batch.append(track)
@@ -336,10 +340,27 @@ async def _scan(db_device_id: int, mount: Path, music_path: str) -> None:
                 (str(exc), db_device_id),
             )
             await db.commit()
+    finally:
+        if devnode:
+            from app.services.devices import device_service
+            await device_service.release_mount(devnode)
 
 
 def _find_files(root: Path) -> list[Path]:
     return [p for p in root.rglob('*') if p.is_file() and p.suffix.lower() in AUDIO_EXT]
+
+
+def _apply_podcast_overrides(track: dict, rel_path: str) -> None:
+    """For PODCASTS/<show>/<file> paths: set mediatype='podcast' and derive artist/album from folder name."""
+    parts = Path(rel_path).parts  # e.g. ('PODCASTS', 'My Show', 'ep.mp3')
+    if len(parts) == 3 and parts[0].upper() == PODCASTS_DIR:
+        show_name = parts[1]
+        track['albumartist'] = show_name
+        track['artist'] = show_name
+        track['album'] = show_name
+        track['mediatype'] = 'podcast'
+    else:
+        track.setdefault('mediatype', 'music')
 
 
 def _read_track(file_path: Path, mount: Path) -> dict | None:
@@ -439,11 +460,11 @@ async def _flush_batch(batch: list[dict]) -> None:
             """INSERT INTO walkman_tracks
                    (device_id, path, title, artist, albumartist, album, disc_nr, track_nr,
                     duration_ms, bitrate, samplerate, bits_per_sample, year, size, filetype,
-                    genre, composer, has_artwork, scanned_at)
+                    genre, composer, has_artwork, mediatype, scanned_at)
                VALUES
                    (:device_id, :path, :title, :artist, :albumartist, :album, :disc_nr, :track_nr,
                     :duration_ms, :bitrate, :samplerate, :bits_per_sample, :year, :size, :filetype,
-                    :genre, :composer, :has_artwork, :scanned_at)
+                    :genre, :composer, :has_artwork, :mediatype, :scanned_at)
                ON CONFLICT(device_id, path) DO UPDATE SET
                    title=excluded.title, artist=excluded.artist, albumartist=excluded.albumartist,
                    album=excluded.album, disc_nr=excluded.disc_nr, track_nr=excluded.track_nr,
@@ -451,7 +472,8 @@ async def _flush_batch(batch: list[dict]) -> None:
                    samplerate=excluded.samplerate, bits_per_sample=excluded.bits_per_sample,
                    year=excluded.year, size=excluded.size, filetype=excluded.filetype,
                    genre=excluded.genre, composer=excluded.composer,
-                   has_artwork=excluded.has_artwork, scanned_at=excluded.scanned_at""",
+                   has_artwork=excluded.has_artwork, mediatype=excluded.mediatype,
+                   scanned_at=excluded.scanned_at""",
             batch,
         )
         await db.commit()
@@ -480,6 +502,20 @@ async def get_known_walkmans() -> list[dict]:
         }
         for r in rows
     ]
+
+
+async def fetch_library_offline(db_device_id: int) -> dict | None:
+    """Return the WALKMAN library from SQLite without needing a mount."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT id, serial, storage_type, model, marketing_name, track_count FROM walkman_devices WHERE id=?",
+            (db_device_id,),
+        ) as cur:
+            dev_row = await cur.fetchone()
+    if not dev_row:
+        return None
+    cap = {"model": dev_row[3] or "WALKMAN", "marketing_name": dev_row[4], "storage_type": dev_row[2]}
+    return await fetch_library("", db_device_id, dev_row[1] or "", cap)
 
 
 async def delete_walkman_device(device_id: int) -> None:

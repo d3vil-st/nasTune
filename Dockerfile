@@ -1,7 +1,7 @@
 FROM ubuntu:26.04
 
 ARG TARGETARCH=amd64
-ARG GPOD_VERSION=1.4.18
+ARG GPOD_VERSION=1.4.20
 ARG DISTRO=ubuntu26.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -17,6 +17,8 @@ RUN apt-get update \
         util-linux \
         ffmpeg \
         mount \
+        hfsprogs \
+        dosfstools \
     && curl -fsSL \
       "https://github.com/d3vil-st/gpod-utils/releases/download/v${GPOD_VERSION}/gpod-utils_${GPOD_VERSION}.${DISTRO}_${TARGETARCH}.deb" \
       -o /tmp/gpod-utils.deb \

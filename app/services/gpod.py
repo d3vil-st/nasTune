@@ -61,7 +61,7 @@ def _parse(raw: dict, mount: Path) -> dict[str, Any]:
             library[artist] = {}
 
         if album_name not in library[artist]:
-            library[artist][album_name] = {"name": album_name, "year": year, "tracks": []}
+            library[artist][album_name] = {"name": album_name, "albumartist": artist, "year": year, "tracks": []}
 
         library[artist][album_name]["tracks"].append({
             "id": t["id"],

@@ -143,16 +143,16 @@ class OperationService:
     def is_busy(self) -> bool:
         return self._op is not None and self._op.status == "running"
 
-    async def run_delete(self, track_ids: list, mount: str, device_id: str = "") -> None:
+    async def run_delete(self, track_ids: list, mount: str, device_id: str = "", devnode: str = "") -> None:
         op = _Op("delete", len(track_ids))
         self._op = op
-        asyncio.create_task(self._do_delete(op, track_ids, mount, device_id))
+        asyncio.create_task(self._do_delete(op, track_ids, mount, device_id, devnode))
 
-    async def run_sync(self, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "", copy_track_count: int | None = None, media_type: str = "music", ipod_db_id: int | None = None) -> None:
+    async def run_sync(self, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "", copy_track_count: int | None = None, media_type: str = "music", ipod_db_id: int | None = None, devnode: str = "") -> None:
         total = (copy_track_count if copy_track_count is not None else len(copy_paths)) + len(delete_ids)
         op = _Op("sync", total)
         self._op = op
-        asyncio.create_task(self._do_sync(op, copy_paths, delete_ids, mount, device_id, media_type, ipod_db_id))
+        asyncio.create_task(self._do_sync(op, copy_paths, delete_ids, mount, device_id, media_type, ipod_db_id, devnode))
 
     async def _gpod_rm_batch(self, track_ids: list, mount: str, op: _Op) -> str | None:
         ids_str = list(dict.fromkeys(str(t) for t in track_ids))
@@ -292,27 +292,32 @@ class OperationService:
                 return msg, batch_total
         return None, batch_total
 
-    async def _do_delete(self, op: _Op, track_ids: list, mount: str, device_id: str = "") -> None:
-        async with self._lock:
-            track_ids = sorted(track_ids, key=lambda x: int(x), reverse=True)
-            i = 0
-            while i < len(track_ids):
-                batch = track_ids[i:i + BATCH_SIZE]
-                err = await self._gpod_rm_batch(batch, mount, op)
-                op.processed += len(batch)
-                if err:
-                    op.status = "error"
-                    op.error = err
-                    log.error("gpod-rm batch failed: %s", err)
-                    if device_id:
-                        _save_op_history(op, device_id)
-                    return
-                i += BATCH_SIZE
-            op.status = "done"
-            op.current = ""
-            log.info("Delete done: %d tracks", op.total)
-            if device_id:
-                _save_op_history(op, device_id)
+    async def _do_delete(self, op: _Op, track_ids: list, mount: str, device_id: str = "", devnode: str = "") -> None:
+        try:
+            async with self._lock:
+                track_ids = sorted(track_ids, key=lambda x: int(x), reverse=True)
+                i = 0
+                while i < len(track_ids):
+                    batch = track_ids[i:i + BATCH_SIZE]
+                    err = await self._gpod_rm_batch(batch, mount, op)
+                    op.processed += len(batch)
+                    if err:
+                        op.status = "error"
+                        op.error = err
+                        log.error("gpod-rm batch failed: %s", err)
+                        if device_id:
+                            _save_op_history(op, device_id)
+                        return
+                    i += BATCH_SIZE
+                op.status = "done"
+                op.current = ""
+                log.info("Delete done: %d tracks", op.total)
+                if device_id:
+                    _save_op_history(op, device_id)
+        finally:
+            if devnode:
+                from app.services.devices import device_service
+                await device_service.release_mount(devnode)
 
     async def _gpod_rating_sync(self, mount: str, op: _Op) -> None:
         """Run gpod-ls then apply stored DB ratings to iPod tracks that need updating."""
@@ -403,91 +408,185 @@ class OperationService:
             else:
                 log.info("gpod-tag --rating %d applied to %d track(s)", stars, len(track_ids))
 
-    async def _do_sync(self, op: _Op, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "", media_type: str = "music", ipod_db_id: int | None = None) -> None:
-        force_aac, threads = await _load_sync_settings(ipod_db_id=ipod_db_id)
-        media_type_args = ['--tracks-media-type', media_type] if media_type in ('audiobook', 'podcast') else []
-        async with self._lock:
-            # Delete highest IDs first so lower IDs don't shift after each batch commit
-            delete_ids = sorted(delete_ids, key=lambda x: int(x), reverse=True)
-            i = 0
-            while i < len(delete_ids):
-                batch = delete_ids[i:i + BATCH_SIZE]
-                err = await self._gpod_rm_batch(batch, mount, op)
-                op.processed += len(batch)
-                if err:
-                    op.status = "error"
-                    op.error = err
-                    log.error("gpod-rm batch failed: %s", err)
-                    return
-                i += BATCH_SIZE
+    async def _do_sync(self, op: _Op, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "", media_type: str = "music", ipod_db_id: int | None = None, devnode: str = "") -> None:
+        try:
+            force_aac, threads = await _load_sync_settings(ipod_db_id=ipod_db_id)
+            media_type_args = ['--tracks-media-type', media_type] if media_type in ('audiobook', 'podcast') else []
+            async with self._lock:
+                # Delete highest IDs first so lower IDs don't shift after each batch commit
+                delete_ids = sorted(delete_ids, key=lambda x: int(x), reverse=True)
+                i = 0
+                while i < len(delete_ids):
+                    batch = delete_ids[i:i + BATCH_SIZE]
+                    err = await self._gpod_rm_batch(batch, mount, op)
+                    op.processed += len(batch)
+                    if err:
+                        op.status = "error"
+                        op.error = err
+                        log.error("gpod-rm batch failed: %s", err)
+                        return
+                    i += BATCH_SIZE
 
-            copy_offset = 0
-            i = 0
-            while i < len(copy_paths):
-                batch = copy_paths[i:i + BATCH_SIZE]
-                err, batch_tracks = await self._gpod_cp_batch(
-                    batch, mount, op, proc_offset=len(delete_ids) + copy_offset,
-                    force_aac=force_aac, threads=threads, media_type_args=media_type_args,
-                )
-                copy_offset += batch_tracks
-                op.processed = len(delete_ids) + copy_offset
-                if err:
-                    op.status = "error"
-                    op.error = err
-                    log.error("gpod-cp batch failed: %s", err)
-                    if device_id:
-                        _save_op_history(op, device_id)
-                    return
-                i += BATCH_SIZE
+                copy_offset = 0
+                i = 0
+                while i < len(copy_paths):
+                    batch = copy_paths[i:i + BATCH_SIZE]
+                    err, batch_tracks = await self._gpod_cp_batch(
+                        batch, mount, op, proc_offset=len(delete_ids) + copy_offset,
+                        force_aac=force_aac, threads=threads, media_type_args=media_type_args,
+                    )
+                    copy_offset += batch_tracks
+                    op.processed = len(delete_ids) + copy_offset
+                    if err:
+                        op.status = "error"
+                        op.error = err
+                        log.error("gpod-cp batch failed: %s", err)
+                        if device_id:
+                            _save_op_history(op, device_id)
+                        return
+                    i += BATCH_SIZE
 
-            await self._gpod_rating_sync(mount, op)
+                await self._gpod_rating_sync(mount, op)
 
-            op.status = "done"
-            op.current = ""
-            log.info("Sync done: deleted %d, copied %d", len(delete_ids), len(copy_paths))
-            if device_id:
-                _save_op_history(op, device_id)
+                op.status = "done"
+                op.current = ""
+                log.info("Sync done: deleted %d, copied %d", len(delete_ids), len(copy_paths))
+                if device_id:
+                    _save_op_history(op, device_id)
+        finally:
+            if devnode:
+                from app.services.devices import device_service
+                await device_service.release_mount(devnode)
 
 
     # ── gpod-verify ──────────────────────────────────────────────────
 
-    async def run_verify(self, mode: str, mount: str, device_id: str = "") -> None:
+    async def run_verify(self, mode: str, mount: str, device_id: str = "", devnode: str = "") -> None:
         op = _Op("verify", 0)
         self._op = op
-        asyncio.create_task(self._do_verify(op, mode, mount, device_id))
+        asyncio.create_task(self._do_verify(op, mode, mount, device_id, devnode))
 
-    async def _do_verify(self, op: _Op, mode: str, mount: str, device_id: str) -> None:
-        flag = {"add": "--add", "delete": "--delete"}.get(mode)
-        cmd = ["gpod-verify", "-M", mount] + ([flag] if flag else [])
-        log.info("exec: %s", " ".join(cmd))
-        op.log.append(f"$ {' '.join(cmd)}")
-        async with self._lock:
-            if GPOD_DRY_RUN:
-                op.log.append("[dry-run] skipped")
-                op.status = "done"
-                if device_id:
-                    _save_op_history(op, device_id)
-                return
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.STDOUT,
-                )
-                async for raw in proc.stdout:
-                    line = raw.decode().rstrip()
-                    op.log.append(line)
-                    op.current = line
-                await proc.wait()
-                if proc.returncode != 0:
-                    op.status = "error"
-                    op.error = f"gpod-verify exited {proc.returncode}"
-                else:
+    async def _do_verify(self, op: _Op, mode: str, mount: str, device_id: str, devnode: str = "") -> None:
+        try:
+            flag = {"add": "--add", "delete": "--delete"}.get(mode)
+            cmd = ["gpod-verify", "-M", mount] + ([flag] if flag else [])
+            log.info("exec: %s", " ".join(cmd))
+            op.log.append(f"$ {' '.join(cmd)}")
+            async with self._lock:
+                if GPOD_DRY_RUN:
+                    op.log.append("[dry-run] skipped")
                     op.status = "done"
-                    op.current = ""
+                    if device_id:
+                        _save_op_history(op, device_id)
+                    return
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        *cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT,
+                    )
+                    async for raw in proc.stdout:
+                        line = raw.decode().rstrip()
+                        op.log.append(line)
+                        op.current = line
+                    await proc.wait()
+                    if proc.returncode != 0:
+                        op.status = "error"
+                        op.error = f"gpod-verify exited {proc.returncode}"
+                    else:
+                        op.status = "done"
+                        op.current = ""
+                except Exception as exc:
+                    op.status = "error"
+                    op.error = str(exc)
+                finally:
+                    if device_id:
+                        _save_op_history(op, device_id)
+        finally:
+            if devnode:
+                from app.services.devices import device_service
+                await device_service.release_mount(devnode)
+
+    # ── Filesystem check (fsck) ──────────────────────────────────────
+
+    async def run_check_fs(self, devnode: str, fstype_raw: str, device_id: str = "") -> None:
+        op = _Op("check_fs", 0)
+        self._op = op
+        asyncio.create_task(self._do_check_fs(op, devnode, fstype_raw, device_id))
+
+    async def _do_check_fs(self, op: _Op, devnode: str, fstype_raw: str, device_id: str) -> None:
+        from app.services.devices import device_service
+        # Device is unmounted on entry (on-demand mount model).
+        # Detach from tracking so the poll loop cannot auto-mount during fsck.
+        saved: dict | None = None
+        async with self._lock:
+            try:
+                saved = await device_service.detach_for_fsck(devnode)
+
+                if fstype_raw in ("hfsplus", "hfs"):
+                    cmd = ["fsck.hfsplus", "-f", devnode]
+                elif fstype_raw in ("vfat", "msdos"):
+                    cmd = ["fsck.vfat", "-a", devnode]
+                else:
+                    op.status = "error"
+                    op.error = f"No fsck tool for filesystem type: {fstype_raw}"
+                    await device_service.reattach_without_mount(devnode, saved)
+                    saved = None
+                    return
+
+                op.log.append(f"$ {' '.join(cmd)}")
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        *cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                except FileNotFoundError:
+                    msg = f"Command not found: {cmd[0]} — install the required package in the container"
+                    op.log.append(msg)
+                    op.status = "error"
+                    op.error = msg
+                    await device_service.reattach_without_mount(devnode, saved)
+                    saved = None
+                    return
+
+                async def _drain(stream):
+                    lines = []
+                    async for raw in stream:
+                        lines.append(raw.decode().rstrip())
+                    return lines
+
+                stdout_lines, stderr_lines = await asyncio.gather(
+                    _drain(proc.stdout), _drain(proc.stderr)
+                )
+                await proc.wait()
+
+                for line in stdout_lines:
+                    op.log.append(line)
+                for line in stderr_lines:
+                    if line:
+                        op.log.append(line)
+                if stderr_lines:
+                    op.current = stderr_lines[-1]
+                elif stdout_lines:
+                    op.current = stdout_lines[-1]
+
+                op.log.append(f"Exit code: {proc.returncode}")
+                op.current = ""
+
+                await device_service.reattach_without_mount(devnode, saved)
+                saved = None
+                op.status = "done"
             except Exception as exc:
+                msg = str(exc)
+                op.log.append(f"Error: {msg}")
                 op.status = "error"
-                op.error = str(exc)
+                op.error = msg
+                if saved:
+                    try:
+                        await device_service.reattach_without_mount(devnode, saved)
+                    except Exception:
+                        pass
             finally:
                 if device_id:
                     _save_op_history(op, device_id)
@@ -495,109 +594,41 @@ class OperationService:
     # ── WALKMAN operations (cp/rm via shutil) ────────────────────────
 
     async def run_walkman_delete(self, track_db_ids: list[int], mount: str,
-                                  walkman_db_id: int, device_id: str = "") -> None:
+                                  walkman_db_id: int, device_id: str = "", devnode: str = "") -> None:
         op = _Op("delete", len(track_db_ids))
         self._op = op
-        asyncio.create_task(self._do_walkman_delete(op, track_db_ids, mount, walkman_db_id, device_id))
+        asyncio.create_task(self._do_walkman_delete(op, track_db_ids, mount, walkman_db_id, device_id, devnode))
 
     async def run_walkman_sync(self, copy_paths: list[str], delete_db_ids: list[int],
                                 mount: str, music_path: str, walkman_db_id: int,
-                                device_id: str = "", copy_track_count: int | None = None) -> None:
+                                device_id: str = "", copy_track_count: int | None = None,
+                                devnode: str = "") -> None:
         total = (copy_track_count if copy_track_count is not None else len(copy_paths)) + len(delete_db_ids)
         op = _Op("sync", total)
         self._op = op
         asyncio.create_task(self._do_walkman_sync(
-            op, copy_paths, delete_db_ids, mount, music_path, walkman_db_id, device_id))
+            op, copy_paths, delete_db_ids, mount, music_path, walkman_db_id, device_id, devnode))
 
     async def _do_walkman_delete(self, op: _Op, track_db_ids: list[int], mount: str,
-                                   walkman_db_id: int, device_id: str) -> None:
+                                   walkman_db_id: int, device_id: str, devnode: str = "") -> None:
         import aiosqlite
-        async with self._lock:
-            mount_path = Path(mount)
-            async with aiosqlite.connect(_DB_PATH) as db:
-                placeholders = ','.join('?' * len(track_db_ids))
-                async with db.execute(
-                    f'SELECT id, path FROM walkman_tracks WHERE id IN ({placeholders}) AND device_id=?',
-                    (*track_db_ids, walkman_db_id),
-                ) as cur:
-                    rows = await cur.fetchall()
-
-            for row_id, rel_path in rows:
-                full = mount_path / rel_path
-                op.log.append(f"$ rm {full}")
-                try:
-                    await asyncio.to_thread(os.remove, str(full))
-                    # Remove empty parent dirs up to music root (best-effort)
-                    try:
-                        parent = full.parent
-                        while parent != mount_path and not any(parent.iterdir()):
-                            parent.rmdir()
-                            parent = parent.parent
-                    except OSError:
-                        pass
-                except FileNotFoundError:
-                    op.log.append(f"  WARN: already gone: {full}")
-                except Exception as exc:
-                    op.status = "error"
-                    op.error = str(exc)
-                    log.error("rm failed for %s: %s", full, exc)
-                    if device_id:
-                        _save_op_history(op, device_id)
-                    return
-                op.processed += 1
-                op.current = full.name
-
-            async with aiosqlite.connect(_DB_PATH) as db:
-                placeholders = ','.join('?' * len(track_db_ids))
-                await db.execute(
-                    f'DELETE FROM walkman_tracks WHERE id IN ({placeholders}) AND device_id=?',
-                    (*track_db_ids, walkman_db_id),
-                )
-                async with db.execute(
-                    'SELECT COUNT(*) FROM walkman_tracks WHERE device_id=?', (walkman_db_id,)
-                ) as cur:
-                    count = (await cur.fetchone())[0]
-                await db.execute(
-                    'UPDATE walkman_devices SET track_count=? WHERE id=?', (count, walkman_db_id)
-                )
-                await db.commit()
-
-            from app.services.devices import device_service as _ds
-            _ds.invalidate_walkman_cache(walkman_db_id)
-
-            op.status = "done"
-            op.current = ""
-            log.info("WALKMAN delete done: %d tracks", op.total)
-            if device_id:
-                _save_op_history(op, device_id)
-
-    async def _do_walkman_sync(self, op: _Op, copy_paths: list[str], delete_db_ids: list[int],
-                                 mount: str, music_path: str, walkman_db_id: int, device_id: str) -> None:
-        import aiosqlite
-        async with self._lock:
-            mount_path = Path(mount)
-            music_dir = mount_path / music_path
-
-            # Fetch source roots for computing dest paths
-            async with aiosqlite.connect(_DB_PATH) as db:
-                async with db.execute('SELECT path FROM sources') as cur:
-                    source_roots = [row[0] for row in await cur.fetchall()]
-
-            # 1. Delete
-            if delete_db_ids:
+        try:
+            async with self._lock:
+                mount_path = Path(mount)
                 async with aiosqlite.connect(_DB_PATH) as db:
-                    placeholders = ','.join('?' * len(delete_db_ids))
+                    placeholders = ','.join('?' * len(track_db_ids))
                     async with db.execute(
                         f'SELECT id, path FROM walkman_tracks WHERE id IN ({placeholders}) AND device_id=?',
-                        (*delete_db_ids, walkman_db_id),
+                        (*track_db_ids, walkman_db_id),
                     ) as cur:
-                        del_rows = await cur.fetchall()
+                        rows = await cur.fetchall()
 
-                for row_id, rel_path in del_rows:
+                for row_id, rel_path in rows:
                     full = mount_path / rel_path
                     op.log.append(f"$ rm {full}")
                     try:
                         await asyncio.to_thread(os.remove, str(full))
+                        # Remove empty parent dirs up to music root (best-effort)
                         try:
                             parent = full.parent
                             while parent != mount_path and not any(parent.iterdir()):
@@ -618,83 +649,194 @@ class OperationService:
                     op.current = full.name
 
                 async with aiosqlite.connect(_DB_PATH) as db:
-                    placeholders = ','.join('?' * len(delete_db_ids))
+                    placeholders = ','.join('?' * len(track_db_ids))
                     await db.execute(
                         f'DELETE FROM walkman_tracks WHERE id IN ({placeholders}) AND device_id=?',
-                        (*delete_db_ids, walkman_db_id),
+                        (*track_db_ids, walkman_db_id),
+                    )
+                    async with db.execute(
+                        'SELECT COUNT(*) FROM walkman_tracks WHERE device_id=?', (walkman_db_id,)
+                    ) as cur:
+                        count = (await cur.fetchone())[0]
+                    await db.execute(
+                        'UPDATE walkman_devices SET track_count=? WHERE id=?', (count, walkman_db_id)
                     )
                     await db.commit()
 
-            # 2. Copy — track destination files so we can index them in the DB immediately
-            newly_copied: list[Path] = []
-            for src_str in copy_paths:
-                src = Path(src_str)
-                rel = _find_rel(src, source_roots)
-                if rel is None:
-                    op.log.append(f"WARN: {src} not under any source root, skipping")
-                    continue
-                dest = music_dir / rel
-                try:
-                    if src.is_file():
-                        dest.parent.mkdir(parents=True, exist_ok=True)
-                        op.log.append(f"$ cp {src} {dest}")
-                        await asyncio.to_thread(shutil.copy2, str(src), str(dest))
-                        newly_copied.append(dest)
+                from app.services.devices import device_service as _ds
+                _ds.invalidate_walkman_cache(walkman_db_id)
+
+                op.status = "done"
+                op.current = ""
+                log.info("WALKMAN delete done: %d tracks", op.total)
+                if device_id:
+                    _save_op_history(op, device_id)
+        finally:
+            if devnode:
+                from app.services.devices import device_service
+                await device_service.release_mount(devnode)
+
+    async def _do_walkman_sync(self, op: _Op, copy_paths: list[str], delete_db_ids: list[int],
+                                 mount: str, music_path: str, walkman_db_id: int, device_id: str,
+                                 devnode: str = "") -> None:
+        import aiosqlite
+        try:
+            async with self._lock:
+                mount_path = Path(mount)
+                music_dir = mount_path / music_path
+
+                # Fetch source roots for computing dest paths
+                async with aiosqlite.connect(_DB_PATH) as db:
+                    async with db.execute('SELECT path FROM sources') as cur:
+                        source_roots = [row[0] for row in await cur.fetchall()]
+
+                # 1. Delete
+                if delete_db_ids:
+                    async with aiosqlite.connect(_DB_PATH) as db:
+                        placeholders = ','.join('?' * len(delete_db_ids))
+                        async with db.execute(
+                            f'SELECT id, path FROM walkman_tracks WHERE id IN ({placeholders}) AND device_id=?',
+                            (*delete_db_ids, walkman_db_id),
+                        ) as cur:
+                            del_rows = await cur.fetchall()
+
+                    for row_id, rel_path in del_rows:
+                        full = mount_path / rel_path
+                        op.log.append(f"$ rm {full}")
+                        try:
+                            await asyncio.to_thread(os.remove, str(full))
+                            try:
+                                parent = full.parent
+                                while parent != mount_path and not any(parent.iterdir()):
+                                    parent.rmdir()
+                                    parent = parent.parent
+                            except OSError:
+                                pass
+                        except FileNotFoundError:
+                            op.log.append(f"  WARN: already gone: {full}")
+                        except Exception as exc:
+                            op.status = "error"
+                            op.error = str(exc)
+                            log.error("rm failed for %s: %s", full, exc)
+                            if device_id:
+                                _save_op_history(op, device_id)
+                            return
                         op.processed += 1
-                        op.current = src.name
-                    else:
-                        # Walk directory, copy file by file for per-track progress
-                        for fpath in sorted(src.rglob('*')):
-                            if not fpath.is_file():
-                                continue
-                            fdest = dest / fpath.relative_to(src)
-                            fdest.parent.mkdir(parents=True, exist_ok=True)
-                            op.log.append(f"$ cp {fpath} {fdest}")
-                            await asyncio.to_thread(shutil.copy2, str(fpath), str(fdest))
-                            newly_copied.append(fdest)
+                        op.current = full.name
+
+                    async with aiosqlite.connect(_DB_PATH) as db:
+                        placeholders = ','.join('?' * len(delete_db_ids))
+                        await db.execute(
+                            f'DELETE FROM walkman_tracks WHERE id IN ({placeholders}) AND device_id=?',
+                            (*delete_db_ids, walkman_db_id),
+                        )
+                        await db.commit()
+
+                # 2. Copy — track destination files so we can index them in the DB immediately
+                newly_copied: list[Path] = []
+                for src_str in copy_paths:
+                    src = Path(src_str)
+                    try:
+                        rel = _find_rel(src, source_roots)
+                        if rel is None:
+                            op.log.append(f"WARN: {src} not under any source root, skipping")
+                            continue
+                        dest = music_dir / rel
+                        if src.is_file():
+                            dest.parent.mkdir(parents=True, exist_ok=True)
+                            op.log.append(f"$ cp {src} {dest}")
+                            await asyncio.to_thread(shutil.copy2, str(src), str(dest))
+                            newly_copied.append(dest)
                             op.processed += 1
-                            op.current = fpath.name
-                except Exception as exc:
-                    op.status = "error"
-                    op.error = str(exc)
-                    log.error("cp failed for %s: %s", src, exc)
-                    if device_id:
-                        _save_op_history(op, device_id)
-                    return
+                            op.current = src.name
+                        else:
+                            for fpath in sorted(src.rglob('*')):
+                                if not fpath.is_file():
+                                    continue
+                                fdest = dest / fpath.relative_to(src)
+                                fdest.parent.mkdir(parents=True, exist_ok=True)
+                                op.log.append(f"$ cp {fpath} {fdest}")
+                                await asyncio.to_thread(shutil.copy2, str(fpath), str(fdest))
+                                newly_copied.append(fdest)
+                                op.processed += 1
+                                op.current = fpath.name
+                    except Exception as exc:
+                        op.status = "error"
+                        op.error = str(exc)
+                        log.error("cp failed for %s: %s", src, exc)
+                        if device_id:
+                            _save_op_history(op, device_id)
+                        return
 
-            # 3. Index newly copied files directly into the DB (no full rescan needed)
-            if newly_copied:
-                from app.services.walkman import _read_track as wm_read, _flush_batch as wm_flush
-                now = int(time.time())
-                batch: list[dict] = []
-                for dest_file in newly_copied:
-                    track = await asyncio.to_thread(wm_read, dest_file, mount_path)
-                    if track:
-                        track['device_id'] = walkman_db_id
-                        track['scanned_at'] = now
-                        batch.append(track)
-                if batch:
-                    await wm_flush(batch)
+                # 3. Index newly copied files directly into the DB (no full rescan needed)
+                if newly_copied:
+                    from app.services.walkman import (
+                        _read_track as wm_read,
+                        _flush_batch as wm_flush,
+                        _apply_podcast_overrides as wm_podcast,
+                    )
+                    now = int(time.time())
+                    batch: list[dict] = []
+                    for dest_file in newly_copied:
+                        track = await asyncio.to_thread(wm_read, dest_file, mount_path)
+                        if track:
+                            wm_podcast(track, str(dest_file.relative_to(mount_path)))
+                            track['device_id'] = walkman_db_id
+                            track['scanned_at'] = now
+                            batch.append(track)
+                    if batch:
+                        await wm_flush(batch)
 
-            # 4. Refresh track_count
-            async with aiosqlite.connect(_DB_PATH) as db:
-                async with db.execute(
-                    'SELECT COUNT(*) FROM walkman_tracks WHERE device_id=?', (walkman_db_id,)
-                ) as cur:
-                    count = (await cur.fetchone())[0]
-                await db.execute(
-                    'UPDATE walkman_devices SET track_count=? WHERE id=?', (count, walkman_db_id)
-                )
-                await db.commit()
+                # 4. Refresh track_count
+                async with aiosqlite.connect(_DB_PATH) as db:
+                    async with db.execute(
+                        'SELECT COUNT(*) FROM walkman_tracks WHERE device_id=?', (walkman_db_id,)
+                    ) as cur:
+                        count = (await cur.fetchone())[0]
+                    await db.execute(
+                        'UPDATE walkman_devices SET track_count=? WHERE id=?', (count, walkman_db_id)
+                    )
+                    await db.commit()
 
-            from app.services.devices import device_service as _ds
-            _ds.invalidate_walkman_cache(walkman_db_id)
+                from app.services.devices import device_service as _ds
+                _ds.invalidate_walkman_cache(walkman_db_id)
 
-            op.status = "done"
-            op.current = ""
-            log.info("WALKMAN sync done: deleted %d, copied %d files", len(delete_db_ids), len(newly_copied))
-            if device_id:
-                _save_op_history(op, device_id)
+                op.status = "done"
+                op.current = ""
+                log.info("WALKMAN sync done: deleted %d, copied %d files", len(delete_db_ids), len(newly_copied))
+                if device_id:
+                    _save_op_history(op, device_id)
+        finally:
+            if devnode:
+                from app.services.devices import device_service
+                await device_service.release_mount(devnode)
+
+
+def _podcast_episode_dest(fpath: Path) -> tuple[str, str]:
+    """Return (show_name, dest_filename) for a podcast file.
+
+    Reads title/album tags so that files generically named 'podcast.mp3' get a
+    unique, human-readable name on the WALKMAN. Falls back to parent folder name
+    when tags are absent.
+    """
+    show_name = None
+    title = None
+    try:
+        from mutagen import File as MFile
+        audio = MFile(str(fpath), easy=True)
+        if audio:
+            if audio.get('album'):
+                show_name = str(audio['album'][0]).strip()
+            if audio.get('title'):
+                title = str(audio['title'][0]).strip()
+    except Exception:
+        pass
+    if not show_name:
+        show_name = fpath.parent.name
+    if not title:
+        title = fpath.parent.name  # episode folder name as fallback
+    safe = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', title).strip('. ')
+    return show_name, (safe or fpath.stem) + fpath.suffix.lower()
 
 
 def _find_rel(src: Path, source_roots: list[str]):

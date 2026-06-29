@@ -437,9 +437,8 @@ function selectionModule() {
           if (r.ok && this._logSession === session) {
             const { lines, total } = await r.json();
             if (lines.length) {
-              // Only advance the cursor if lines were actually rendered.
-              // If the ref isn't ready yet (first tick), retry next poll.
-              if (this._appendLogLines(lines)) this._logRenderedCount = total;
+              this._appendLogLines(lines);
+              this._logRenderedCount = total;
             }
           }
         } catch { /* network hiccup — keep polling */ }

@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS walkman_tracks (
     size            INTEGER,
     filetype        TEXT,
     has_artwork     INTEGER NOT NULL DEFAULT 0,
+    mediatype       TEXT    NOT NULL DEFAULT 'music',
     scanned_at      INTEGER NOT NULL,
     UNIQUE(device_id, path)
 );
@@ -150,6 +151,26 @@ CREATE TABLE IF NOT EXISTS walkman_sync_rules (
     source_id   INTEGER REFERENCES sources(id) ON DELETE SET NULL,
     UNIQUE(device_id, media_type)
 );
+
+CREATE TABLE IF NOT EXISTS artwork_cache (
+    id           INTEGER PRIMARY KEY,
+    artist_key   TEXT NOT NULL,
+    album_key    TEXT NOT NULL,
+    path         TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    UNIQUE(artist_key, album_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_artwork_keys ON artwork_cache(artist_key, album_key);
+
+CREATE TABLE IF NOT EXISTS artwork_refs (
+    artwork_id   INTEGER NOT NULL REFERENCES artwork_cache(id) ON DELETE CASCADE,
+    owner_type   TEXT NOT NULL,
+    owner_id     TEXT NOT NULL,
+    PRIMARY KEY (artwork_id, owner_type, owner_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_artwork_refs ON artwork_refs(owner_type, owner_id);
 """
 
 
@@ -183,6 +204,8 @@ async def init_db() -> None:
             wt_cols = {row[1] for row in await cur.fetchall()}
         if "has_artwork" not in wt_cols:
             await db.execute("ALTER TABLE walkman_tracks ADD COLUMN has_artwork INTEGER NOT NULL DEFAULT 0")
+        if "mediatype" not in wt_cols:
+            await db.execute("ALTER TABLE walkman_tracks ADD COLUMN mediatype TEXT NOT NULL DEFAULT 'music'")
 
         async with db.execute("PRAGMA table_info(ipod_devices)") as cur:
             ipod_cols = {row[1] for row in await cur.fetchall()}

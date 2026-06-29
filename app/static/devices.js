@@ -35,23 +35,7 @@ function devicesModule() {
       if (this.selectedDevnode === devnode) { this.showDevicePicker = false; return; }
       this.showDevicePicker = false;
       this._browsingOfflineDeviceId = null;
-      const device = this.devices.find(d => d.devnode === devnode);
-      if (device && !device.mounted) {
-        this.libraryLoading = true;
-        this.libraryError = null;
-        const mr = await this.apiFetch('/devices/mount', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ devnode }),
-        });
-        if (!mr.ok) {
-          const d = await mr.json().catch(() => ({}));
-          this.libraryError = d.detail || 'Mount failed';
-          this.libraryLoading = false;
-          return;
-        }
-        await new Promise(r => setTimeout(r, 500));
-      }
+      // On-demand mounting: server mounts automatically during select/library load.
       this._stopWalkmanPoll();
       this.walkmanScanning = false;
       this.walkmanScanProgress = {};
@@ -105,6 +89,7 @@ function devicesModule() {
           : await this.apiFetch('/library');
         if (!r.ok) { this.libraryError = await r.text(); return; }
         this.library = await r.json();
+        if (this.library?.walkman && (this.mediaType === 'audiobook' || this.mediaType === 'podcast')) this.setMediaType('music');
         if (refresh) this._validateIpodSelection();
         // Backend registers the iPod UUID in DB during library load; refresh the
         // known-devices list so a connected iPod no longer appears as "Disconnected".
@@ -248,9 +233,15 @@ function devicesModule() {
           const k = this.knownDevices.walkmans.find(i => i.id === d.walkman_db_id);
           if (k) return k.marketing_name || k.model || null;
         }
-      } else if (d.usb_serial && this.knownDevices?.ipods) {
-        const k = this.knownDevices.ipods.find(i => i.uuid === d.usb_serial);
-        if (k?.ipod_name) return k.ipod_name;
+      } else if (d.usb_serial) {
+        if (this.knownDevices?.ipods) {
+          const k = this.knownDevices.ipods.find(i => i.uuid === d.usb_serial);
+          if (k?.ipod_name) return k.ipod_name;
+        }
+        if (this.knownDevices?.walkmans) {
+          const k = this.knownDevices.walkmans.find(i => i.serial === d.usb_serial);
+          if (k) return k.marketing_name || k.model || null;
+        }
       }
       return null;
     },
