@@ -141,6 +141,17 @@ function devicesModule() {
         if (devnodes !== _prevDevnodes) {
           _prevDevnodes = devnodes;
           this._loadKnownDevices();
+          // If browsing an offline device and it just connected, switch to live.
+          if (this._browsingOfflineDeviceId != null) {
+            const match = data.devices.find(d =>
+              d.ipod_db_id === this._browsingOfflineDeviceId ||
+              d.walkman_db_id === this._browsingOfflineDeviceId
+            );
+            if (match) {
+              this._browsingOfflineDeviceId = null;
+              this.selectDevice(match.devnode);
+            }
+          }
         }
       };
       es.onerror = () => { this._probeAuth(); };
