@@ -86,6 +86,10 @@ async def delete_source(source_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("DELETE FROM sources WHERE id=?", (source_id,))
         await db.commit()
+
+    from app.services.artwork_cache import prune_refs
+    await prune_refs("source", str(source_id), set())
+
     return {"ok": True}
 
 
@@ -331,7 +335,7 @@ def _build_library(tracks: list[dict], source_type: str = 'music') -> dict:
         if artist_key not in library:
             library[artist_key] = {}
         if album_key not in library[artist_key]:
-            library[artist_key][album_key] = {"name": album_key, "year": year, "tracks": []}
+            library[artist_key][album_key] = {"name": album_key, "albumartist": artist_key, "year": year, "tracks": []}
 
         library[artist_key][album_key]["tracks"].append({
             "id": t["id"],
@@ -396,4 +400,13 @@ def _start_scan(source_id: int, path: str, source_type: str = 'music') -> None:
     existing = _scan_tasks.get(source_id)
     if existing and not existing.done():
         return
-    _scan_tasks[source_id] = asyncio.create_task(scan_source(source_id, path, source_type))
+
+    async def _scan_and_cache():
+        await scan_source(source_id, path, source_type)
+        from app.services.artwork_cache import cache_source_artwork
+        try:
+            await cache_source_artwork(source_id)
+        except Exception:
+            log.exception("artwork cache failed for source %d", source_id)
+
+    _scan_tasks[source_id] = asyncio.create_task(_scan_and_cache())

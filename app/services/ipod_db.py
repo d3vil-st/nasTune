@@ -54,7 +54,13 @@ async def get_ipod_cached_library(device_id: int) -> dict | None:
             row = await cur.fetchone()
     if row and row[0]:
         try:
-            return json.loads(row[0])
+            lib = json.loads(row[0])
+            # Ensure albumartist is set on album objects (heals stale cached libraries)
+            for artist in lib.get("artists", []):
+                for album in artist.get("albums", []):
+                    if not album.get("albumartist"):
+                        album["albumartist"] = artist["name"]
+            return lib
         except Exception:
             return None
     return None

@@ -6,7 +6,8 @@ from contextlib import asynccontextmanager
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(levelname)-8s %(name)s: %(message)s",
+    format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 
 
@@ -136,6 +137,19 @@ async def device_events(request: Request):
     )
 
 
+@app.get("/artwork/album")
+async def get_album_artwork(artist: str, album: str):
+    from app.services.artwork_cache import lookup_artwork
+    path = await lookup_artwork(artist, album)
+    if not path:
+        raise HTTPException(status_code=404, detail="Artwork not cached")
+    return FileResponse(
+        str(path),
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 @app.get("/artwork")
 async def get_artwork(path: str, devnode: str = ""):
     target = devnode or device_service.selected
@@ -147,11 +161,18 @@ async def get_artwork(path: str, devnode: str = ""):
         raise HTTPException(status_code=404, detail="Device not found")
 
     try:
-        result = await asyncio.to_thread(extract_artwork, path, info.mount)
+        mount_str = await device_service.ensure_mounted(target)
+    except (KeyError, RuntimeError) as exc:
+        raise HTTPException(status_code=500, detail=f"Mount failed: {exc}")
+
+    try:
+        result = await asyncio.to_thread(extract_artwork, path, mount_str)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        await device_service.release_mount(target)
 
     if result is None:
         raise HTTPException(status_code=404, detail="No artwork found")
@@ -193,11 +214,18 @@ async def get_audio(path: str, devnode: str = "", background_tasks: BackgroundTa
     if not info:
         raise HTTPException(status_code=404, detail="Device not found")
 
-    mount = Path(info.mount).resolve()
+    try:
+        mount_str = await device_service.ensure_mounted(target)
+    except (KeyError, RuntimeError) as exc:
+        raise HTTPException(status_code=500, detail=f"Mount failed: {exc}")
+
+    mount = Path(mount_str).resolve()
     full = (mount / path.lstrip("/")).resolve()
     if not str(full).startswith(str(mount)):
+        await device_service.release_mount(target)
         raise HTTPException(status_code=400, detail="Path outside mount point")
     if not full.exists():
+        await device_service.release_mount(target)
         raise HTTPException(status_code=404, detail="File not found")
 
     ext = full.suffix.lower().lstrip(".")
@@ -206,6 +234,8 @@ async def get_audio(path: str, devnode: str = "", background_tasks: BackgroundTa
     if ext in ("m4a", "aac") and await asyncio.to_thread(_is_alac, full):
         try:
             cached = await transcode_cache.get(str(full))
+            # Transcoding is done; release mount now (cached file no longer needs the mount)
+            await device_service.release_mount(target)
             transcode_cache.acquire(str(full))
             background_tasks.add_task(transcode_cache.release, str(full))
             return FileResponse(str(cached), media_type="audio/flac")
@@ -213,7 +243,16 @@ async def get_audio(path: str, devnode: str = "", background_tasks: BackgroundTa
             log.exception("Transcode failed for %s, falling back to raw file", full)
 
     mime = _AUDIO_MIMES.get(ext, "application/octet-stream")
+    # Release mount after file transfer completes
+    background_tasks.add_task(device_service.release_mount, target)
     return FileResponse(str(full), media_type=mime)
+
+
+@app.post("/artwork/cache/drop")
+async def drop_artwork_cache():
+    from app.services.artwork_cache import drop_all_artwork
+    removed = await drop_all_artwork()
+    return {"ok": True, "removed": removed}
 
 
 @app.post("/audio/cache/evict")

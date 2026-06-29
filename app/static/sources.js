@@ -295,11 +295,13 @@ function sourcesModule() {
 
     sourceArtUrl(album) {
       if (!album) return '';
-      const t = album.tracks && album.tracks[0];
-      if (!t) return '';
-      let url = '/sources/artwork?path=' + encodeURIComponent(t.path);
-      if (this.sourceLibrary?.last_scanned_at) url += '&_v=' + this.sourceLibrary.last_scanned_at;
-      return url;
+      const albumartist = album.albumartist || album.tracks?.[0]?.albumartist || '';
+      // For podcasts/audiobooks _build_library sets album.name to the year/display key,
+      // but the actual album tag (show name) is on the track — use that for cache lookup.
+      const albumName = album.tracks?.[0]?.album || album.name || '';
+      if (!albumartist && !albumName) return '';
+      return '/artwork/album?artist=' + encodeURIComponent(albumartist) +
+             '&album=' + encodeURIComponent(albumName);
     },
 
     _buildSrcTrackMap() {

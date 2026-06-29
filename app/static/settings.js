@@ -87,11 +87,16 @@ function settingsModule() {
     async openDeviceSettings(devnode) {
       this.showDevicePicker = false;
       const dev = this.devices.find(d => d.devnode === devnode);
-      // Unmounted device: is_ipod=False on backend so devnode endpoint can't resolve it.
-      // Redirect to the known-device path via USB serial → iPod UUID match.
-      if (dev && !dev.mounted && dev.usb_serial && this.knownDevices?.ipods) {
-        const known = this.knownDevices.ipods.find(k => k.uuid === dev.usb_serial);
-        if (known) { await this.openDeviceSettingsForKnown(known.id, 'ipod'); return; }
+      if (dev && !dev.mounted) {
+        // Unmounted iPod: is_ipod=False on backend, redirect via USB serial → UUID match.
+        if (dev.usb_serial && this.knownDevices?.ipods) {
+          const known = this.knownDevices.ipods.find(k => k.uuid === dev.usb_serial);
+          if (known) { await this.openDeviceSettingsForKnown(known.id, 'ipod'); return; }
+        }
+        // Unmounted WALKMAN: redirect via walkman_db_id.
+        if (dev.is_walkman && dev.walkman_db_id) {
+          await this.openDeviceSettingsForKnown(dev.walkman_db_id, 'walkman'); return;
+        }
       }
       this._deviceSettingsDevnode = devnode;
       this._deviceSettingsDbId = null;
@@ -129,6 +134,16 @@ function settingsModule() {
         this.deviceSettings = await r.json();
         this.deviceSettingsDraft = JSON.parse(JSON.stringify(this.deviceSettings));
       } catch (e) { console.error('_loadDeviceSettings:', e); }
+    },
+
+    async dropArtworkCache() {
+      if (!confirm('Delete all cached artwork files? They will be re-extracted on next library load.')) return;
+      try {
+        const r = await this.apiFetch('/artwork/cache/drop', { method: 'POST' });
+        if (!r.ok) { alert('Failed to drop artwork cache'); return; }
+        const d = await r.json();
+        alert(`Artwork cache cleared (${d.removed} file${d.removed !== 1 ? 's' : ''} removed).`);
+      } catch (e) { alert('Drop artwork cache failed: ' + e.message); }
     },
 
     async saveSettings() {
@@ -186,9 +201,9 @@ function settingsModule() {
       } catch (e) { alert('Remove failed: ' + e.message); }
     },
 
-    async browseOfflineLibrary(deviceId) {
+    async browseOfflineLibrary(deviceId, deviceType = 'ipod') {
       try {
-        const r = await fetch('/devices/offline-library?device_id=' + deviceId + '&device_type=ipod');
+        const r = await fetch('/devices/offline-library?device_id=' + deviceId + '&device_type=' + deviceType);
         if (!r.ok) { alert('No cached library for this device'); return; }
         const lib = await r.json();
         this.library = lib;
@@ -225,6 +240,22 @@ function settingsModule() {
         if (!r.ok) { alert(data.detail || 'Verify failed'); return; }
         this.showDeviceSettings = false;
       } catch (e) { alert('Verify failed: ' + e.message); }
+    },
+
+    async runCheckFs() {
+      const devnode = this._deviceSettingsDevnode;
+      if (!devnode) return;
+      if (!confirm('Unmount device, run filesystem check (fsck), then remount.\n\nThis may take several minutes. Continue?')) return;
+      try {
+        const r = await fetch('/library/check-fs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ devnode }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) { alert(data.detail || 'Filesystem check failed'); return; }
+        this.showDeviceSettings = false;
+      } catch (e) { alert('Filesystem check failed: ' + e.message); }
     },
 
     cycleDeviceForceAac() {

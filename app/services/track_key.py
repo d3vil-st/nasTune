@@ -12,6 +12,9 @@ def _norm_str(s: str) -> str:
     return norm or raw  # symbol-only strings mustn't all collapse to the same empty key
 
 
+norm_str = _norm_str  # public alias used by artwork_cache
+
+
 def track_key(artist: str, album: str, track_nr: int | None, disc_nr: int | None, title: str) -> str:
     disc_prefix = f"{disc_nr}." if (disc_nr or 0) > 1 else ""
     if disc_prefix:

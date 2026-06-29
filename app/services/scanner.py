@@ -134,7 +134,8 @@ def _remap_podcast(track: dict) -> dict:
     """Remap podcast tags: album tag = show name (artist/albumartist for key matching).
     album is intentionally kept as the show name so the track key matches the iPod's
     album field. Season/year grouping is done at library-build time, not in the DB."""
-    show = track.get('album') or track.get('albumartist') or track.get('artist') or 'Unknown Show'
+    # Mirror gpod.py: use artist/albumartist when set; fall back to album only when both are empty.
+    show = track.get('albumartist') or track.get('artist') or track.get('album') or 'Unknown Show'
     track['artist'] = show
     track['albumartist'] = show
     # album stays as the original tag value (show name) — do NOT overwrite with year

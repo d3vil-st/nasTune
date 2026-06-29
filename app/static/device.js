@@ -128,14 +128,10 @@ function deviceModule() {
 
     artUrl(album) {
       if (!album) return null;
-      // For music, trust libgpod's artwork flag to avoid unnecessary requests.
-      // For podcasts/audiobooks gpod-ls often reports artwork=false even when an
-      // APIC frame is embedded — always attempt and let @error discard the 404.
-      const requireFlag = this.mediaType === 'music';
-      const t = album.tracks.find(t => t.ipod_path && (!requireFlag || t.artwork));
-      if (!t) return null;
-      return '/artwork?devnode=' + encodeURIComponent(this.selectedDevnode || '') +
-             '&path=' + encodeURIComponent(t.ipod_path);
+      const albumartist = album.albumartist || '';
+      if (!albumartist && !album.name) return null;
+      return '/artwork/album?artist=' + encodeURIComponent(albumartist) +
+             '&album=' + encodeURIComponent(album.name || '');
     },
 
     _buildDeviceMap() {
