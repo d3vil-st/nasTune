@@ -94,7 +94,7 @@ function sourcesModule() {
       const artists = this.sourceLibrary.artists;
       let albums;
       if (this.srcArtist === '__ALL__') {
-        albums = artists.flatMap(a => a.albums);
+        albums = artists.flatMap(a => a.albums.map(al => ({ ...al, _artist: a.name })));
         if (this.search) {
           const q = this.search.toLowerCase();
           albums = albums.filter(al =>
@@ -125,7 +125,7 @@ function sourcesModule() {
 
     get srcCurrentTracks() {
       if (!this.srcAlbum) return [];
-      const al = this.srcCurrentAlbums.find(a => a.name === this.srcAlbum);
+      const al = this._findSelectedAlbum(this.srcCurrentAlbums, this.srcAlbum);
       if (!al) return [];
       let tracks = al.tracks;
       if (this.search) {
@@ -274,7 +274,7 @@ function sourcesModule() {
       this.srcAlbum = name;
       this.srcAlbumArtUrl = null;
       this.srcSelectedTrack = null;
-      const al = this.srcCurrentAlbums.find(a => a.name === name);
+      const al = this._findSelectedAlbum(this.srcCurrentAlbums, name);
       const url = this.sourceArtUrl(al);
       if (url) this.srcAlbumArtUrl = url;
     },

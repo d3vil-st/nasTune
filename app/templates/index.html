@@ -349,14 +349,14 @@
         <div class="col-scroll">
           <div class="artist-row all-row" x-show="library && mediaType !== 'podcast'"
                :class="{ selected: selectedArtist === '__ALL__' }"
-               @click="pickArtist('__ALL__')">
+               @click="_focusedCol = 'artist'; pickArtist('__ALL__')">
             <span class="artist-name" x-text="devLabels.allArtists"></span>
             <span class="artist-count" x-text="filteredArtists.reduce((s, a) => s + a.albums.length, 0)"></span>
           </div>
           <template x-for="a in filteredArtists" :key="a.name">
             <div class="artist-row"
                  :class="{ selected: selectedArtist === a.name, 'not-in-src': !isArtistInSrc(a) }"
-                 @click="pickArtist(a.name)">
+                 @click="_focusedCol = 'artist'; pickArtist(a.name)">
               <input type="checkbox" class="row-cb" @click.stop
                      :checked="isArtistSelected(a.name)"
                      x-effect="$el.indeterminate = isArtistIndeterminate(a.name)"
@@ -386,10 +386,10 @@
           </template>
           <template x-if="selectedArtist">
             <div>
-              <template x-for="al in currentAlbums" :key="al.name">
+              <template x-for="al in currentAlbums" :key="(al._artist || '') + ':::' + al.name">
                 <div class="album-row"
-                     :class="{ selected: selectedAlbum === al.name, 'not-in-src': !isAlbumInSrc(al, selectedArtist === '__ALL__' ? '' : selectedArtist) }"
-                     @click="pickAlbum(al.name)">
+                     :class="{ selected: selectedAlbum === al.name && (!_selectedAlbumArtist || al._artist === _selectedAlbumArtist), 'not-in-src': !isAlbumInSrc(al, selectedArtist === '__ALL__' ? '' : selectedArtist) }"
+                     @click="_focusedCol = 'album'; _selectedAlbumArtist = al._artist || null; pickAlbum(al.name)">
                   <input type="checkbox" class="row-cb" @click.stop
                          :checked="isAlbumSelected(al)"
                          x-effect="$el.indeterminate = isAlbumIndeterminate(al)"
@@ -400,6 +400,7 @@
                     <div class="album-play-overlay" @click.stop="pickAlbum(al.name); playAlbum(al)"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
                   </div>
                   <div class="album-text">
+                    <div class="album-artist-label" x-show="selectedArtist === '__ALL__'" x-text="al._artist"></div>
                     <div class="album-name" x-text="al.name"></div>
                     <div class="album-meta">
                       <span x-text="al.year > 0 ? al.year + ' · ' : ''"></span><span x-text="al.tracks.length + ' ' + (al.tracks.length === 1 ? devLabels.trackSg : devLabels.trackPl)"></span>
@@ -463,7 +464,7 @@
                      style="grid-template-columns: 16px 8px 36px 1fr 54px 50px 66px 72px;"
                      :class="{ active: selectedTrack?.id === t.id, missing: t.missing, 'not-in-src': !isTrackInSrc(t, selectedArtist === '__ALL__' ? '' : selectedArtist, selectedAlbum), 'now-playing': isCurrentTrack(t), 'disc-sep-before': t.disc_nr > 0 && (i === 0 ? currentTracks.some(x => x.disc_nr > 0 && x.disc_nr !== t.disc_nr) : t.disc_nr !== currentTracks[i-1].disc_nr) }"
                      :data-disc-nr="t.disc_nr || ''"
-                     @click="openDetail(t)">
+                     @click="_focusedCol = 'track'; openDetail(t)">
                   <input type="checkbox" class="row-cb" @click.stop
                          :checked="isTrackSelected(t)"
                          @change="toggleTrack(t, $event.target.checked)">
@@ -561,14 +562,14 @@
             <div>
               <div class="artist-row all-row" x-show="mediaType !== 'podcast'"
                    :class="{ selected: srcArtist === '__ALL__' }"
-                   @click="pickSrcArtist('__ALL__')">
+                   @click="_focusedCol = 'artist'; pickSrcArtist('__ALL__')">
                 <span class="artist-name" x-text="srcLabels.allArtists"></span>
                 <span class="artist-count" x-text="(sourceLibrary?.artists || []).reduce((s,a) => s + a.albums.length, 0)"></span>
               </div>
               <template x-for="a in filteredSrcArtists" :key="a.name">
                 <div class="artist-row"
                      :class="{ selected: srcArtist === a.name }"
-                     @click="pickSrcArtist(a.name)">
+                     @click="_focusedCol = 'artist'; pickSrcArtist(a.name)">
                   <input type="checkbox" class="row-cb" @click.stop
                          :checked="isSrcArtistChecked(a.name)"
                          x-effect="$el.indeterminate = isSrcArtistIndeterminate(a.name)"
@@ -600,10 +601,10 @@
           </template>
           <template x-if="srcArtist">
             <div>
-              <template x-for="al in srcCurrentAlbums" :key="al.name">
+              <template x-for="al in srcCurrentAlbums" :key="(al._artist || '') + ':::' + al.name">
                 <div class="album-row"
-                     :class="{ selected: srcAlbum === al.name }"
-                     @click="pickSrcAlbum(al.name)">
+                     :class="{ selected: srcAlbum === al.name && (!_selectedAlbumArtist || al._artist === _selectedAlbumArtist) }"
+                     @click="_focusedCol = 'album'; _selectedAlbumArtist = al._artist || null; pickSrcAlbum(al.name)">
                   <input type="checkbox" class="row-cb" @click.stop
                          :checked="isSrcAlbumChecked(al)"
                          x-effect="$el.indeterminate = isSrcAlbumIndeterminate(al)"
@@ -615,6 +616,7 @@
                     <div class="album-play-overlay"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
                   </div>
                   <div class="album-text">
+                    <div class="album-artist-label" x-show="srcArtist === '__ALL__'" x-text="al._artist"></div>
                     <div class="album-name" x-text="al.name"></div>
                     <div class="album-meta">
                       <span x-text="al.year > 0 ? al.year + ' · ' : ''"></span>
@@ -675,7 +677,7 @@
                      style="grid-template-columns: 16px 8px 36px 1fr 54px 50px 66px 72px;"
                      :class="{ active: srcSelectedTrack?.id === t.id, 'now-playing': isSrcCurrentTrack(t), 'disc-sep-before': t.disc_nr > 0 && (i === 0 ? srcCurrentTracks.some(x => x.disc_nr > 0 && x.disc_nr !== t.disc_nr) : t.disc_nr !== srcCurrentTracks[i-1].disc_nr) }"
                      :data-disc-nr="t.disc_nr || ''"
-                     @click="openSrcDetail(t)">
+                     @click="_focusedCol = 'track'; openSrcDetail(t)">
                   <input type="checkbox" class="row-cb" @click.stop
                          :checked="isSrcTrackChecked(t)"
                          @change="toggleSrcTrack(t, $event.target.checked)">

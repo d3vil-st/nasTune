@@ -89,6 +89,24 @@ function app() {
       }
     }
 
+    // Keyboard column navigation
+    window.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      const anyModal = this.showSettings || this.showManageSources || this.showAddSource ||
+                       this.showDeleteConfirm || this.showSyncConfirm || this.showDeviceSettings ||
+                       this.showOpLog || this.coverPopupUrl || this.showDevicePicker || this.showSourcePicker;
+      if (anyModal) return;
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        if (!this._focusedCol) return;
+        e.preventDefault();
+        this._navArrow(e.key === 'ArrowDown' ? 1 : -1);
+      } else if (e.key === ' ') {
+        if (!this._focusedCol) return;
+        e.preventDefault();
+        this._navSpace();
+      }
+    });
+
     // Persist unsynced filter toggle
     this.$watch('srcShowUnsynced', v => localStorage.setItem('nastune-src-unsynced', v ? '1' : '0'));
 

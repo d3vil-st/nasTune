@@ -30,10 +30,11 @@ function utilsModule() {
       return ft.split(' ')[0].slice(0, 5).toUpperCase();
     },
 
-    fmtClass(ft) {
-      const s = this.fmtShort(ft);
-      return { ALAC: 'fmt-alac', AAC: 'fmt-aac', MP3: 'fmt-mp3', WAV: 'fmt-wav' }[s] || 'fmt-other';
+    _fmtClassFor(label) {
+      return { ALAC: 'fmt-alac', FLAC: 'fmt-flac', AAC: 'fmt-aac', MP3: 'fmt-mp3', WAV: 'fmt-wav', AIFF: 'fmt-aiff', OGG: 'fmt-ogg' }[label] || 'fmt-other';
     },
+
+    fmtClass(ft) { return this._fmtClassFor(this.fmtShort(ft)); },
 
     fmtRating(r) {
       if (!r) return '—';
@@ -152,10 +153,7 @@ function utilsModule() {
       return map[ext] || ext.toUpperCase().slice(0, 5) || '?';
     },
 
-    srcFmtClass(t) {
-      const s = this.srcFmtShort(t);
-      return { ALAC: 'fmt-alac', FLAC: 'fmt-alac', AAC: 'fmt-aac', MP3: 'fmt-mp3', WAV: 'fmt-wav' }[s] || 'fmt-other';
-    },
+    srcFmtClass(t) { return this._fmtClassFor(this.srcFmtShort(t)); },
 
     srcQuality(t) {
       const fmt = this.srcFmtShort(t);

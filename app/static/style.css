@@ -552,6 +552,17 @@
 
     .album-text { overflow: hidden; flex: 1; min-width: 0; }
 
+    .album-artist-label {
+      font-size: 10px;
+      color: var(--dim);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 1px;
+    }
+
+    .album-row.selected .album-artist-label { color: rgba(255,255,255,.6); }
+
     .album-name {
       font-size: 13px;
       font-weight: 500;
@@ -849,9 +860,12 @@
     }
 
     .fmt-alac { background: #0c2d4a; color: #4cc2ff; }
+    .fmt-flac { background: #0a2a2a; color: #2dd4bf; }
     .fmt-aac  { background: #2d1a42; color: #bf8bff; }
     .fmt-mp3  { background: #3d2600; color: #ff9f0a; }
     .fmt-wav  { background: #0d2d18; color: #34c759; }
+    .fmt-aiff { background: #1a2d0a; color: #a3e635; }
+    .fmt-ogg  { background: #2d1020; color: #fb7185; }
     .fmt-other{ background: var(--bg3); color: var(--muted); }
 
     .t-kbps {
@@ -1644,9 +1658,12 @@
     html.light .ds-icon svg [fill="#888"]   { fill:   #636366; }
 
     html.light .fmt-alac { background: #ddf0ff; color: #0040b0; }
+    html.light .fmt-flac { background: #d0f5f2; color: #0e6b62; }
     html.light .fmt-aac  { background: #efe5ff; color: #6600cc; }
     html.light .fmt-mp3  { background: #fff3d8; color: #885500; }
     html.light .fmt-wav  { background: #ddfbea; color: #005520; }
+    html.light .fmt-aiff { background: #edffd0; color: #3a6b00; }
+    html.light .fmt-ogg  { background: #ffe0ea; color: #a50030; }
     html.light .fmt-other { background: var(--bg3); color: var(--muted); }
 
     /* Override inline Alpine gradient for placeholder art in light mode */
