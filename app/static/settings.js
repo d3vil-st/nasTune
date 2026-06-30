@@ -3,8 +3,8 @@ function settingsModule() {
     // Global settings modal
     showSettings: false,
     settingsCpuCount: 1,
-    settings: { force_aac: false, max_threads: 1 },
-    settingsDraft: { force_aac: false, max_threads: 1 },
+    settings: { force_aac: false, max_threads: 1, auto_mount: false },
+    settingsDraft: { force_aac: false, max_threads: 1, auto_mount: false },
 
     // Device settings modal (independent from global)
     showDeviceSettings: false,

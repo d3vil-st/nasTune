@@ -13,6 +13,7 @@ router = APIRouter(tags=["settings"])
 class SettingsBody(BaseModel):
     force_aac: bool = False
     max_threads: int = 0
+    auto_mount: bool = False
 
 
 @router.get("/settings")
@@ -28,6 +29,7 @@ async def get_settings():
         "force_aac": stored.get("force_aac", "false") == "true",
         "max_threads": max_threads,
         "cpu_count": cpu_count,
+        "auto_mount": stored.get("auto_mount", "false") == "true",
     })
 
 
@@ -41,6 +43,10 @@ async def save_settings(body: SettingsBody):
         await db.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
             ("max_threads", str(max(0, body.max_threads))),
+        )
+        await db.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            ("auto_mount", "true" if body.auto_mount else "false"),
         )
         await db.commit()
     return {"ok": True}

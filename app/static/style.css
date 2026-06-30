@@ -1243,7 +1243,6 @@
     .modal-body::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 3px; }
     .modal-footer {
       padding: 12px 20px;
-      border-top: 1px solid var(--border);
     }
     /* ── Settings modal ── */
     .setting-row {
@@ -1625,6 +1624,7 @@
       --bg:        #f2f2f7;
       --bg2:       #ffffff;
       --bg3:       #e5e5ea;
+      --fill-bg:   #d1d1d6;
       --border:    rgba(0,0,0,.1);
       --border2:   rgba(0,0,0,.06);
       --text:      #1c1c1e;
