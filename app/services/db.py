@@ -171,6 +171,50 @@ CREATE TABLE IF NOT EXISTS artwork_refs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_artwork_refs ON artwork_refs(owner_type, owner_id);
+
+CREATE TABLE IF NOT EXISTS plex_sessions (
+    token        TEXT PRIMARY KEY,
+    plex_user_id INTEGER NOT NULL,
+    username     TEXT,
+    thumb        TEXT,
+    created_at   INTEGER NOT NULL,
+    expires_at   INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS plex_users (
+    plex_user_id  INTEGER PRIMARY KEY,
+    username      TEXT,
+    email         TEXT,
+    thumb         TEXT,
+    role          TEXT    NOT NULL DEFAULT 'user',
+    enabled       INTEGER NOT NULL DEFAULT 0,
+    created_at    INTEGER NOT NULL,
+    last_login_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS plex_tracks (
+    rating_key  TEXT PRIMARY KEY,
+    track_key   TEXT NOT NULL,
+    title       TEXT,
+    artist      TEXT,
+    album       TEXT,
+    updated_at  INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_plex_tracks_key ON plex_tracks(track_key);
+
+CREATE TABLE IF NOT EXISTS smart_playlists (
+    id         INTEGER PRIMARY KEY,
+    name       TEXT NOT NULL,
+    match_all  INTEGER NOT NULL DEFAULT 1,
+    limit_n    INTEGER,
+    limit_unit TEXT NOT NULL DEFAULT 'items',
+    limit_by   TEXT NOT NULL DEFAULT 'random',
+    live       INTEGER NOT NULL DEFAULT 0,
+    rules      TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
 """
 
 

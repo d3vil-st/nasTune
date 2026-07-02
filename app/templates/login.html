@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign in — nasTune</title>
+  <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+  <script>
+    (function(){
+      var t=localStorage.getItem('nastune-theme')||'auto';
+      var mq=matchMedia('(prefers-color-scheme: light)');
+      if(t==='light'||(t==='auto'&&mq.matches)) document.documentElement.classList.add('light');
+    })();
+  </script>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body class="login-body">
+  <div class="login-card">
+    <img src="/static/logo.svg" alt="" class="login-logo">
+    <h1>nasTune</h1>
+    <p class="login-hint">Sign in with your Plex account to continue.</p>
+
+    <button id="plex-btn" class="btn-primary login-plex-btn">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+        <path d="M4 2h6.75L17.5 12l-6.75 10H4l6.75-10L4 2z"/>
+      </svg>
+      Sign in with Plex
+    </button>
+
+    <p id="login-status" class="login-status"></p>
+    <a id="login-fallback" class="login-fallback" target="_blank" rel="noopener" style="display:none">
+      Popup blocked — click here to open Plex sign-in
+    </a>
+  </div>
+
+  <script>
+    (function () {
+      var btn = document.getElementById('plex-btn');
+      var statusEl = document.getElementById('login-status');
+      var fallback = document.getElementById('login-fallback');
+      var pollTimer = null;
+
+      function setStatus(msg, isError) {
+        statusEl.textContent = msg;
+        statusEl.classList.toggle('error', !!isError);
+      }
+
+      btn.addEventListener('click', function () {
+        // Must open synchronously in the click handler or popup blockers eat it.
+        var popup = window.open('about:blank', 'plexauth', 'width=600,height=700');
+        btn.disabled = true;
+        setStatus('Contacting plex.tv…');
+
+        fetch('/auth/plex/pin', { method: 'POST' })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+          .then(function (res) {
+            if (!res.ok) throw new Error(res.d.detail || 'Failed to start sign-in');
+            if (popup) {
+              popup.location = res.d.auth_url;
+            } else {
+              fallback.href = res.d.auth_url;
+              fallback.style.display = 'block';
+            }
+            setStatus('Waiting for you to approve in Plex…');
+            poll(res.d.pin_id, res.d.code, Date.now());
+          })
+          .catch(function (e) {
+            if (popup) popup.close();
+            btn.disabled = false;
+            setStatus(e.message, true);
+          });
+      });
+
+      function poll(pinId, code, startedAt) {
+        pollTimer = setInterval(function () {
+          if (Date.now() - startedAt > 5 * 60 * 1000) {
+            clearInterval(pollTimer);
+            btn.disabled = false;
+            setStatus('Sign-in timed out. Try again.', true);
+            return;
+          }
+          fetch('/auth/plex/pin/check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pin_id: pinId, code: code }),
+          })
+            .then(function (r) { return r.json().then(function (d) { return { s: r.status, d: d }; }); })
+            .then(function (res) {
+              if (res.d.pending) return;
+              clearInterval(pollTimer);
+              if (res.d.ok) {
+                window.location = '/';
+              } else {
+                btn.disabled = false;
+                setStatus(res.d.detail || 'Sign-in failed.', true);
+              }
+            })
+            .catch(function () { /* transient network error — keep polling */ });
+        }, 2000);
+      }
+    })();
+  </script>
+</body>
+</html>

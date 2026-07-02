@@ -32,6 +32,7 @@ function deviceModule() {
     get devLabels() {
       if (this.mediaType === 'audiobook') return { artist: 'Authors', allArtists: 'All Authors', album: 'Books', trackLabel: 'Chapters', trackSg: 'chapter', trackPl: 'chapters', selectArtist: 'Select an author', selectAlbum: 'Select a book' };
       if (this.mediaType === 'podcast')   return { artist: 'Shows',   allArtists: 'All Shows',   album: 'Seasons', trackLabel: 'Episodes', trackSg: 'episode', trackPl: 'episodes', selectArtist: 'Select a show',   selectAlbum: 'Select a season' };
+      if (this.mediaType === 'playlist')  return { artist: 'Playlists', allArtists: 'All Playlists', album: 'Playlists', trackLabel: 'Tracks', trackSg: 'track', trackPl: 'tracks', selectArtist: 'Select a playlist', selectAlbum: 'Select a playlist' };
       return                                     { artist: 'Artists', allArtists: 'All Artists', album: 'Albums',  trackLabel: 'Tracks',   trackSg: 'track',   trackPl: 'tracks',   selectArtist: 'Select an artist', selectAlbum: 'Select an album' };
     },
 

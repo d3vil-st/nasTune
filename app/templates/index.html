@@ -20,6 +20,8 @@
   <script src="/static/sources.js"></script>
   <script src="/static/selection.js"></script>
   <script src="/static/settings.js"></script>
+  <script src="/static/plex.js"></script>
+  <script src="/static/playlists.js"></script>
   <script src="/static/app.js"></script>
   <script defer src="/static/alpine.min.js"></script>
 </head>
@@ -204,14 +206,27 @@
       <button class="btn-danger" x-show="selectedDevnode && viewMode === 'library' && deviceSelection.size > 0"
               :disabled="currentOp?.status === 'running'"
               @click="showDeleteConfirm = true">Delete</button>
-      <button class="btn-primary" x-show="selectedDevnode && viewMode === 'sources' && hasSyncChanges"
+      <button class="btn-primary" x-show="selectedDevnode && viewMode === 'sources' && mediaType !== 'playlist' && hasSyncChanges"
               :disabled="currentOp?.status === 'running'"
               @click="syncNeedsConfirm ? (showSyncConfirm = true) : confirmSync()">Sync</button>
     </div>
 
     <!-- Theme switcher + search (right side) -->
     <div class="header-right">
-      <button class="icon-btn" @click="openSettings()" title="Settings" style="margin-right:2px">
+      <div class="plex-user-chip" x-show="plexUser" x-data="{ open: false }" style="display:none">
+        <button class="plex-chip-btn" @click.stop="open = !open" :title="plexUser?.username">
+          <img x-show="plexUser?.thumb" :src="plexUser?.thumb" alt="" referrerpolicy="no-referrer">
+          <span class="plex-chip-initial" x-show="!plexUser?.thumb" x-text="(plexUser?.username || '?').slice(0, 1).toUpperCase()"></span>
+        </button>
+        <div class="plex-chip-menu" x-show="open" @click.outside="open = false" style="display:none">
+          <div class="plex-chip-name">
+            <span x-text="plexUser?.username"></span>
+            <span class="plex-chip-role" x-show="plexUser?.role === 'admin'">admin</span>
+          </div>
+          <button class="plex-chip-signout" @click="logoutPlex()">Sign out</button>
+        </div>
+      </div>
+      <button class="icon-btn" x-show="plexIsAdmin" @click="openSettings()" title="Settings" style="margin-right:2px">
         <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
           <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 0 1-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 0 1 .947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 0 1 2.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 0 1 2.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 0 1 .947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 0 1-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 0 1-2.287-.947zM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" clip-rule="evenodd"/>
         </svg>
@@ -238,12 +253,13 @@
     <!-- Media type dropdown -->
     <div class="tab-combo" x-data="{ open: false }">
       <button class="tab-type-btn" @click.stop="open = !open"
-              x-text="mediaType === 'music' ? '♫ Music' : mediaType === 'audiobook' ? '📖 Audiobooks' : '🎙 Podcasts'">
+              x-text="mediaType === 'music' ? '♫ Music' : mediaType === 'audiobook' ? '📖 Audiobooks' : mediaType === 'playlist' ? '♪ Playlists' : '🎙 Podcasts'">
       </button>
       <div x-show="open" @click.outside="open = false" style="display:none;position:absolute;top:calc(100% + 8px);left:0;background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:5px;z-index:500;min-width:130px;box-shadow:0 8px 28px rgba(0,0,0,.6)">
         <div class="dp-row" :class="{ active: mediaType === 'music' }"     @click="setMediaType('music'); open = false"><div class="dp-info"><span class="dp-name">♫ Music</span></div></div>
         <div class="dp-row" :class="{ active: mediaType === 'audiobook' }" @click="setMediaType('audiobook'); open = false" x-show="!selectedDevice?.is_walkman" style="display:none"><div class="dp-info"><span class="dp-name">📖 Audiobooks</span></div></div>
         <div class="dp-row" :class="{ active: mediaType === 'podcast' }"   @click="setMediaType('podcast'); open = false" x-show="!selectedDevice?.is_walkman" style="display:none"><div class="dp-info"><span class="dp-name">🎙 Podcasts</span></div></div>
+        <div class="dp-row" :class="{ active: mediaType === 'playlist' }"  @click="setMediaType('playlist'); open = false" x-show="!selectedDevice?.is_walkman" style="display:none"><div class="dp-info"><span class="dp-name">♪ Playlists</span></div></div>
       </div>
     </div>
 
@@ -259,11 +275,11 @@
   <div class="sources-bar" x-show="viewMode === 'sources'" style="display:none">
     <div style="position:relative">
       <button class="source-select-btn"
-              @click="showSourcePicker = !showSourcePicker"
+              @click="mediaType !== 'playlist' && (showSourcePicker = !showSourcePicker)"
               @keydown.escape.window="showSourcePicker = false">
-        <span class="source-status-dot" :class="sourceDotClass(selectedSourceObj)"></span>
-        <span class="src-name" x-text="selectedSourceObj ? selectedSourceObj.name : 'No source selected'"></span>
-        <span style="color:var(--dim);font-size:10px">&#x25BE;</span>
+        <span class="source-status-dot" :class="mediaType === 'playlist' ? 'src-dot-done' : sourceDotClass(selectedSourceObj)"></span>
+        <span class="src-name" x-text="mediaType === 'playlist' ? ('Plex · ' + (plexStatus?.server_name || 'Playlists')) : (selectedSourceObj ? selectedSourceObj.name : 'No source selected')"></span>
+        <span style="color:var(--dim);font-size:10px" x-show="mediaType !== 'playlist'">&#x25BE;</span>
       </button>
       <div class="sources-picker"
            x-show="showSourcePicker"
@@ -284,25 +300,33 @@
         </div>
       </div>
     </div>
-    <span x-show="selectedSourceObj && selectedSourceObj.scan_status === 'scanning'"
+    <span x-show="mediaType !== 'playlist' && selectedSourceObj && selectedSourceObj.scan_status === 'scanning'"
           style="font-size:11px;color:#ffd60a">Scanning&hellip;</span>
-    <span x-show="selectedSourceObj && selectedSourceObj.scan_status === 'error'"
+    <span x-show="mediaType !== 'playlist' && selectedSourceObj && selectedSourceObj.scan_status === 'error'"
           style="font-size:11px;color:#ff453a"
           :title="selectedSourceObj?.scan_error">Scan error</span>
-    <span x-show="selectedSourceObj && selectedSourceObj.scan_status === 'done'"
+    <span x-show="mediaType !== 'playlist' && selectedSourceObj && selectedSourceObj.scan_status === 'done'"
           style="font-size:11px;color:var(--muted)"
           x-text="selectedSourceObj ? (library && sourceLibrary ? srcInitialOnIpod.size + ' / ' + selectedSourceObj.track_count + ' synced' : selectedSourceObj.track_count + ' tracks') : ''"></span>
-    <button class="manage-btn" x-show="selectedSourceId && library && sourceLibrary"
+    <span x-show="mediaType === 'playlist' && plexPlaylist"
+          style="font-size:11px;color:var(--muted)"
+          x-text="plexPlaylist ? plexPlaylist.matched_count + ' / ' + plexPlaylist.total + ' in library' : ''"></span>
+    <button class="manage-btn" x-show="mediaType !== 'playlist' && selectedSourceId && library && sourceLibrary"
             :class="{ active: srcShowUnsynced }"
             @click="srcShowUnsynced = !srcShowUnsynced">Unsynced only</button>
-    <button class="manage-btn" x-show="selectedSourceId"
+    <button class="manage-btn" x-show="mediaType !== 'playlist' && selectedSourceId"
             :disabled="selectedSourceObj?.scan_status === 'scanning'"
             @click="rescanSource(selectedSourceId)">Rescan</button>
-    <button class="manage-btn" x-show="selectedSourceId"
+    <button class="manage-btn" x-show="mediaType !== 'playlist' && selectedSourceId"
             :disabled="selectedSourceObj?.scan_status === 'scanning'"
             @click="rescanSource(selectedSourceId, true)"
             title="Re-read all tags from disk">Full rescan</button>
-    <button class="manage-btn" @click="showManageSources = true">Manage Sources</button>
+    <button class="manage-btn" x-show="mediaType === 'playlist' && plexPlaylist && selectedDevnode && !selectedDevice?.is_walkman"
+            :disabled="currentOp?.status === 'running' || plexPlaylist?.matched_count === 0"
+            :title="plexPlaylist?.matched_count === 0 ? 'No playlist tracks matched in your NAS sources' : (plexSyncablePaths.length ? plexSyncablePaths.length + ' track(s) will be copied' : 'All matched tracks are already on the device — playlist will be updated')"
+            @click="syncPlexPlaylist()"
+            x-text="'Sync playlist' + (plexSyncablePaths.length ? ' (+' + plexSyncablePaths.length + ')' : '')"></button>
+    <button class="manage-btn" x-show="mediaType !== 'playlist'" @click="showManageSources = true">Manage Sources</button>
   </div>
 
   <!-- ── Error banner ── -->
@@ -335,7 +359,7 @@
     </div>
 
     <!-- Three-column browser (library mode) -->
-    <div class="content" x-show="viewMode === 'library' && library" style="flex:1;">
+    <div class="content" x-show="viewMode === 'library' && library && mediaType !== 'playlist'" style="flex:1;">
 
       <!-- Artists -->
       <div class="col col-artists">
@@ -536,7 +560,7 @@
 
     </div><!-- .content -->
     <!-- Sources mode 3-pane browser -->
-    <div class="content" x-show="viewMode === 'sources'" style="flex:1;display:none">
+    <div class="content" x-show="viewMode === 'sources' && mediaType !== 'playlist'" style="flex:1;display:none">
 
       <!-- Left: Source artist list -->
       <div class="col col-artists">
@@ -738,6 +762,209 @@
 
     </div><!-- sources .content -->
 
+    <!-- ── Plex playlists browser (sources mode, Playlists media type) ── -->
+    <div class="content" x-show="viewMode === 'sources' && mediaType === 'playlist'" style="flex:1;display:none">
+
+      <!-- Left: Playlists -->
+      <div class="col col-artists">
+        <div class="col-heading">
+          <span x-text="'Playlists' + (plexPlaylists.length ? ' (' + plexPlaylists.length + ')' : '')"></span>
+        </div>
+        <div class="col-scroll">
+          <template x-if="plexPlaylistsLoading">
+            <div class="empty"><span class="empty-label">Loading&hellip;</span></div>
+          </template>
+          <template x-if="!plexPlaylistsLoading && plexError">
+            <div class="empty">
+              <span class="empty-icon">&#x26A0;</span>
+              <span class="empty-label">Plex unavailable</span>
+              <span class="empty-sub" x-text="plexError"></span>
+            </div>
+          </template>
+          <template x-if="!plexPlaylistsLoading && !plexError && plexPlaylists.length === 0">
+            <div class="empty">
+              <span class="empty-icon">&#x266B;</span>
+              <span class="empty-label">No audio playlists</span>
+              <span class="empty-sub">Create playlists in Plex and they will appear here</span>
+            </div>
+          </template>
+          <template x-for="p in plexPlaylists" :key="p.rating_key">
+            <div class="artist-row"
+                 :class="{ selected: selectedPlexPlaylistKey === p.rating_key }"
+                 @click="pickPlexPlaylist(p.rating_key)">
+              <span class="artist-name">
+                <span x-text="p.title"></span>
+                <span class="plex-smart-badge" x-show="p.smart" title="Smart playlist">smart</span>
+              </span>
+              <span class="artist-count" x-text="p.leaf_count"></span>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Right: Playlist tracks -->
+      <div class="col col-tracks">
+        <div class="col-heading">
+          <span x-text="selectedPlexPlaylistObj?.title || 'Tracks'"></span>
+        </div>
+        <div class="tracks-head" style="grid-template-columns: 36px 1fr 1fr 54px 50px;">
+          <span style="text-align:right">#</span>
+          <span>Title</span>
+          <span>Artist / Album</span>
+          <span></span>
+          <span style="text-align:right">Time</span>
+        </div>
+        <div class="col-scroll">
+          <template x-if="!selectedPlexPlaylistKey">
+            <div class="empty">
+              <span class="empty-icon">&#x266A;</span>
+              <span class="empty-label">Select a playlist</span>
+            </div>
+          </template>
+          <template x-if="selectedPlexPlaylistKey && plexPlaylistLoading">
+            <div class="empty"><span class="empty-label">Loading&hellip;</span></div>
+          </template>
+          <template x-if="selectedPlexPlaylistKey && !plexPlaylistLoading && plexPlaylist">
+            <div>
+              <template x-for="(t, i) in plexPlaylist.tracks" :key="t.rating_key + ':' + i">
+                <div class="track-row plex-track-row"
+                     style="grid-template-columns: 36px 1fr 1fr 54px 50px;"
+                     :class="{ 'plex-unmatched': !t.matched }">
+                  <span style="text-align:right;color:var(--dim)" x-text="i + 1"></span>
+                  <span class="t-title">
+                    <span x-text="t.title"></span>
+                    <span class="plex-unmatched-badge" x-show="!t.matched" title="No matching file in your NAS sources">not in library</span>
+                  </span>
+                  <span class="plex-t-sub">
+                    <span x-text="t.artist"></span>
+                    <span style="color:var(--dim)" x-text="t.album ? ' · ' + t.album : ''"></span>
+                  </span>
+                  <span class="t-rating"><template x-for="s in [1,2,3,4,5]" :key="s"><span class="sp-s" :class="{ lit: s <= (t.rating || 0) }">★</span></template></span>
+                  <span class="t-dur" x-text="fmtDur(t.duration_ms)"></span>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
+      </div>
+
+    </div><!-- plex .content -->
+
+    <!-- ── Device playlists browser (library mode, Playlists media type) ── -->
+    <div class="content" x-show="viewMode === 'library' && library && mediaType === 'playlist'" style="flex:1;display:none">
+
+      <!-- Left: iPod playlists -->
+      <div class="col col-artists">
+        <div class="col-heading" style="display:flex;align-items:center">
+          <span x-text="'Playlists' + (devPlaylists.length ? ' (' + devPlaylists.length + ')' : '')"></span>
+          <button class="manage-btn" style="margin-left:auto"
+                  x-show="!selectedDevice?.is_walkman"
+                  title="New smart playlist"
+                  @click="openSmartModal()">&#xFF0B; Smart</button>
+        </div>
+        <div class="col-scroll">
+          <template x-if="devPlaylists.length === 0 && smartPlaylists.length === 0">
+            <div class="empty">
+              <span class="empty-icon">&#x266B;</span>
+              <span class="empty-label">No playlists on this device</span>
+              <span class="empty-sub">Sync a Plex playlist from the Sources tab, or create a smart playlist</span>
+            </div>
+          </template>
+          <template x-for="(p, i) in devPlaylists" :key="i + ':' + p.name">
+            <div class="artist-row spl-list-row"
+                 :class="{ selected: selectedDevPlaylistIdx === i }"
+                 @click="pickDevPlaylist(i)">
+              <span class="artist-name">
+                <span x-text="p.name"></span>
+                <span class="plex-smart-badge" x-show="p.smartpl" title="Smart playlist (created in iTunes)">smart</span>
+                <template x-if="smartPlaylists.find(s => s.name === p.name)">
+                  <span class="spl-gear" title="Edit smart playlist rules"
+                        @click.stop="openSmartModal(smartPlaylists.find(s => s.name === p.name))">
+                    <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 0 1-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 0 1 .947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 0 1 2.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 0 1 2.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 0 1 .947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 0 1-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 0 1-2.287-.947zM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" clip-rule="evenodd"/></svg>
+                  </span>
+                </template>
+              </span>
+              <span class="artist-count" x-text="p.count"></span>
+            </div>
+          </template>
+          <!-- Smart playlist definitions not yet applied to this device -->
+          <template x-for="s in smartPlaylists.filter(s => smartDeviceIdx(s) === -1)" :key="'spl' + s.id">
+            <div class="artist-row spl-list-row" style="opacity:.6"
+                 @click="openSmartModal(s)"
+                 title="Not on this device yet — open to edit and apply">
+              <span class="artist-name">
+                <span x-text="s.name"></span>
+                <span class="plex-smart-badge">smart</span>
+              </span>
+              <span class="artist-count">—</span>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Right: playlist tracks -->
+      <div class="col col-tracks">
+        <div class="col-heading">
+          <span x-text="selectedDevPlaylist?.name || 'Tracks'"></span>
+        </div>
+        <template x-if="selectedDevPlaylist">
+          <div class="album-bar">
+            <div class="abar-info">
+              <div class="abar-title" x-text="selectedDevPlaylist?.name"></div>
+              <div class="abar-stats" x-text="devPlaylistTracks.length + ' tracks · ' + fmtTotalDur(devPlaylistTracks)"></div>
+            </div>
+            <button class="manage-btn" style="margin-left:auto"
+                    x-show="plexStatus?.linked && !selectedDevPlaylist?.smartpl"
+                    :disabled="publishBusy || devPlaylistTracks.length === 0"
+                    title="Create or replace this playlist in Plex (tracks must be in Plex — run the import first)"
+                    @click="publishPlaylistToPlex()"
+                    x-text="publishBusy ? 'Publishing…' : 'Publish to Plex'"></button>
+          </div>
+        </template>
+        <div class="tracks-head" style="grid-template-columns: 36px 1fr 1fr 54px 50px;">
+          <span style="text-align:right">#</span>
+          <span>Title</span>
+          <span>Artist / Album</span>
+          <span></span>
+          <span style="text-align:right">Time</span>
+        </div>
+        <div class="col-scroll">
+          <template x-if="!selectedDevPlaylist">
+            <div class="empty">
+              <span class="empty-icon">&#x266A;</span>
+              <span class="empty-label">Select a playlist</span>
+            </div>
+          </template>
+          <template x-if="selectedDevPlaylist">
+            <div>
+              <div class="plex-publish-result" x-show="publishResult"
+                   :class="publishResult?.ok ? 'ok' : 'err'"
+                   x-text="publishResult?.msg"></div>
+              <template x-for="(t, i) in devPlaylistTracks" :key="i + ':' + t.id">
+                <div class="track-row plex-track-row"
+                     style="grid-template-columns: 36px 1fr 1fr 54px 50px;"
+                     :class="{ 'plex-unmatched': t._unresolved, 'now-playing': !t._unresolved && isCurrentTrack(t) }"
+                     @click="!t._unresolved && !t.missing && playTrack(t)">
+                  <span style="text-align:right;color:var(--dim)" x-text="i + 1"></span>
+                  <span class="t-title">
+                    <span x-text="t.title"></span>
+                    <span class="missing-tag" x-show="t.missing">MISSING</span>
+                  </span>
+                  <span class="plex-t-sub">
+                    <span x-text="t._artist"></span>
+                    <span style="color:var(--dim)" x-text="t._album ? ' · ' + t._album : ''"></span>
+                  </span>
+                  <span class="t-rating"><template x-for="s in [1,2,3,4,5]" :key="s"><span class="sp-s" :class="{ lit: s <= Math.round((t.rating || 0) / 20) }">★</span></template></span>
+                  <span class="t-dur" x-text="fmtDur(t.duration_ms)"></span>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
+      </div>
+
+    </div><!-- device playlists .content -->
+
   </div><!-- flex wrapper -->
 
 
@@ -882,6 +1109,112 @@
         <div style="padding:12px 20px;display:flex;justify-content:flex-end;gap:8px">
           <button class="btn-ghost" @click="showDeleteConfirm = false">Cancel</button>
           <button class="btn-danger" @click="deleteSelectedTracks()">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Smart playlist editor modal ── -->
+    <div class="modal-overlay"
+         x-show="showSmartModal"
+         x-transition.opacity
+         @click.self="showSmartModal = false"
+         @keydown.escape.window="showSmartModal = false"
+         style="display:none">
+      <div class="modal" style="max-width:640px" x-show="smartSpec">
+        <div class="modal-header">
+          <span class="modal-title" x-text="smartSpec?.id ? 'Edit Smart Playlist' : 'New Smart Playlist'"></span>
+          <button class="modal-close" @click="showSmartModal = false">&#x2715;</button>
+        </div>
+        <div style="padding:16px 20px" x-show="smartSpec">
+
+          <div class="spl-row">
+            <span style="color:var(--muted);flex:0 0 auto">Name</span>
+            <input class="spl-input" style="flex:1" x-model="smartSpec.name" placeholder="e.g. Top 50 Most Played">
+          </div>
+
+          <div class="spl-row">
+            <span>Match</span>
+            <select class="spl-select" x-model="smartSpec.match_all" @change="scheduleSmartPreview()">
+              <option :value="true">all</option>
+              <option :value="false">any</option>
+            </select>
+            <span>of the following rules:</span>
+          </div>
+
+          <template x-for="(rule, i) in smartSpec?.rules || []" :key="i">
+            <div class="spl-rule-row">
+              <select class="spl-select" x-model="rule.field" @change="onSmartFieldChange(rule)">
+                <template x-for="f in smartFields" :key="f.key">
+                  <option :value="f.key" x-text="f.label"></option>
+                </template>
+              </select>
+              <select class="spl-select" x-model="rule.op" @change="scheduleSmartPreview()">
+                <template x-for="op in smartOpsFor(rule.field)" :key="op[0]">
+                  <option :value="op[0]" x-text="op[1]"></option>
+                </template>
+              </select>
+              <template x-if="smartFieldDef(rule.field).kind === 'enum'">
+                <select class="spl-select" style="flex:1" x-model="rule.value" @change="scheduleSmartPreview()">
+                  <template x-for="o in smartFieldDef(rule.field).options" :key="o">
+                    <option :value="o" x-text="o"></option>
+                  </template>
+                </select>
+              </template>
+              <template x-if="smartFieldDef(rule.field).kind === 'text'">
+                <input class="spl-input" x-model="rule.value" @input="scheduleSmartPreview()">
+              </template>
+              <template x-if="smartFieldDef(rule.field).kind === 'number'">
+                <input class="spl-input" type="number" x-model="rule.value" @input="scheduleSmartPreview()">
+              </template>
+              <template x-if="smartFieldDef(rule.field).kind === 'number' && rule.op === 'in_range'">
+                <input class="spl-input" type="number" x-model="rule.value2" @input="scheduleSmartPreview()" placeholder="to">
+              </template>
+              <template x-if="smartFieldDef(rule.field).kind === 'date' && (rule.op === 'in_last' || rule.op === 'not_in_last')">
+                <input class="spl-input" type="number" x-model="rule.value" @input="scheduleSmartPreview()" placeholder="days">
+              </template>
+              <template x-if="smartFieldDef(rule.field).kind === 'date' && (rule.op === 'before' || rule.op === 'after')">
+                <input class="spl-input" type="date" x-model="rule.value" @change="scheduleSmartPreview()">
+              </template>
+              <span class="spl-rule-btn" @click="removeSmartRule(i)" title="Remove rule">&#x2212;</span>
+              <span class="spl-rule-btn" @click="addSmartRule(i)" title="Add rule">+</span>
+            </div>
+          </template>
+
+          <div class="spl-row" style="margin-top:8px">
+            <input type="checkbox" class="row-cb" x-model="smartLimitOn" @change="scheduleSmartPreview()">
+            <span>Limit to</span>
+            <input class="spl-input" type="number" style="width:64px;flex:0 0 auto" min="1"
+                   x-model="smartSpec.limit_n" :disabled="!smartLimitOn" @input="scheduleSmartPreview()">
+            <select class="spl-select" x-model="smartSpec.limit_unit" :disabled="!smartLimitOn" @change="scheduleSmartPreview()">
+              <template x-for="u in smartLimitUnits" :key="u"><option :value="u" x-text="u"></option></template>
+            </select>
+            <span>selected by</span>
+            <select class="spl-select" x-model="smartSpec.limit_by" :disabled="!smartLimitOn" @change="scheduleSmartPreview()">
+              <template x-for="s in smartLimitBy" :key="s[0]"><option :value="s[0]" x-text="s[1]"></option></template>
+            </select>
+          </div>
+
+          <div class="spl-row">
+            <input type="checkbox" class="row-cb" x-model="smartSpec.live">
+            <span>Live updating</span>
+            <span style="color:var(--dim);font-size:11px">— re-applied to the iPod after every sync</span>
+          </div>
+
+          <div class="spl-preview" x-show="smartPreview"
+               x-text="smartPreview ? (smartPreview.count + ' track(s) match · ' + fmtDur(smartPreview.duration_ms) + ' · ' + fmtSize(smartPreview.size_bytes)) : ''"></div>
+          <div class="spl-preview" x-show="!smartPreview && (!selectedDevnode || !library || library?.walkman)">
+            Connect an iPod to preview matches
+          </div>
+          <div class="spl-error" x-show="smartError" x-text="smartError"></div>
+        </div>
+        <div style="padding:12px 20px;display:flex;gap:8px">
+          <button class="btn-danger" x-show="smartSpec?.id" @click="deleteSmartPlaylist()">Delete</button>
+          <span style="flex:1"></span>
+          <button class="btn-ghost" @click="showSmartModal = false">Cancel</button>
+          <button class="btn-primary" :disabled="smartBusy" @click="saveSmartPlaylist(false)">Save</button>
+          <button class="btn-primary" :disabled="smartBusy || !selectedDevnode || !library || library?.walkman || currentOp?.status === 'running'"
+                  :title="!selectedDevnode || !library || library?.walkman ? 'Connect an iPod to apply' : ''"
+                  @click="saveSmartPlaylist(true)">Save &amp; Apply</button>
         </div>
       </div>
     </div>
@@ -1069,6 +1402,93 @@
                    x-model.number="settingsDraft.max_threads"
                    :style="`--fill:${settingsCpuCount > 1 ? ((settingsDraft.max_threads - 1) / (settingsCpuCount - 1) * 100).toFixed(1) : 100}%`">
           </div>
+        </div>
+
+        <!-- ── Plex integration ── -->
+        <div class="plex-settings">
+          <div class="plex-settings-head">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="#e5a00d" aria-hidden="true"><path d="M4 2h6.75L17.5 12l-6.75 10H4l6.75-10L4 2z"/></svg>
+            <span>Plex</span>
+          </div>
+
+          <!-- Not linked -->
+          <template x-if="!plexStatus?.linked">
+            <div class="setting-row" style="align-items:center">
+              <div style="flex:1">
+                <div style="font-size:13px;font-weight:500;color:var(--text)">Connect a Plex server</div>
+                <div style="font-size:11px;color:var(--muted);margin-top:2px">Browse Plex playlists, sync ratings and play counts, and optionally require Plex sign-in.</div>
+              </div>
+              <button class="btn-primary" :disabled="plexLinkBusy" @click="startPlexLink()">Connect Plex</button>
+            </div>
+          </template>
+
+          <!-- Server picker (after PIN approval) -->
+          <template x-if="plexLinkServers">
+            <div class="setting-row" style="align-items:center;gap:8px">
+              <select class="plex-server-select" x-model="plexLinkServerId">
+                <option value="" disabled>Choose a server…</option>
+                <template x-for="s in plexLinkServers" :key="s.machine_id">
+                  <option :value="s.machine_id" x-text="s.name + (s.owned ? '' : ' (shared)')"></option>
+                </template>
+              </select>
+              <button class="btn-primary" :disabled="!plexLinkServerId || plexLinkBusy" @click="finishPlexLink()">Link</button>
+            </div>
+          </template>
+
+          <div x-show="plexLinkStatus" style="font-size:11px;color:var(--muted)" x-text="plexLinkStatus"></div>
+
+          <!-- Linked -->
+          <template x-if="plexStatus?.linked">
+            <div style="display:flex;flex-direction:column;gap:14px">
+              <div class="setting-row" style="align-items:center">
+                <div style="flex:1">
+                  <div style="font-size:13px;font-weight:500;color:var(--text)" x-text="plexStatus.server_name"></div>
+                  <div style="font-size:11px;color:var(--muted);margin-top:2px" x-text="'Linked by ' + (plexStatus.owner_username || 'owner')"></div>
+                </div>
+                <button class="btn-ghost" style="color:var(--muted)" @click="unlinkPlex()">Unlink</button>
+              </div>
+
+              <label class="setting-row" style="cursor:pointer">
+                <div style="flex:1">
+                  <div style="font-size:13px;font-weight:500;color:var(--text)">Require Plex sign-in</div>
+                  <div style="font-size:11px;color:var(--muted);margin-top:2px">Gate the whole app behind Plex login. Only your account and approved users with access to this server can sign in.</div>
+                </div>
+                <div class="setting-toggle" :class="{ active: plexStatus.auth_enabled }"
+                     @click.stop="togglePlexAuth()" role="switch"
+                     :aria-checked="plexStatus.auth_enabled" tabindex="0"
+                     @keydown.space.prevent="togglePlexAuth()">
+                  <div class="setting-toggle-thumb"></div>
+                </div>
+              </label>
+
+              <div class="setting-row" style="align-items:center">
+                <div style="flex:1">
+                  <div style="font-size:13px;font-weight:500;color:var(--text)">Import ratings &amp; play counts</div>
+                  <div style="font-size:11px;color:var(--muted);margin-top:2px">
+                    <span x-show="!plexImport">Pull star ratings and play counts from Plex into the shared library database.</span>
+                    <span x-show="plexImport" x-text="plexImportLabel()"></span>
+                  </div>
+                </div>
+                <button class="btn-ghost" :disabled="plexImport?.status === 'running'" @click="startPlexImport()">Import</button>
+              </div>
+
+              <div x-show="plexUsers.length > 1 || plexPendingUsers.length > 0">
+                <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px">Users</div>
+                <template x-for="u in plexUsers" :key="u.plex_user_id">
+                  <div class="plex-user-row">
+                    <img class="plex-user-avatar" x-show="u.thumb" :src="u.thumb" alt="" referrerpolicy="no-referrer">
+                    <span class="plex-user-name" x-text="u.username"></span>
+                    <span class="plex-user-role" x-show="u.role === 'admin'">admin</span>
+                    <span class="plex-user-pending" x-show="u.role !== 'admin' && !u.enabled">pending</span>
+                    <button class="btn-ghost plex-user-btn" x-show="u.role !== 'admin' && !u.enabled"
+                            @click="setPlexUserEnabled(u, true)">Approve</button>
+                    <button class="btn-ghost plex-user-btn" style="color:var(--muted)" x-show="u.role !== 'admin' && u.enabled"
+                            @click="setPlexUserEnabled(u, false)">Disable</button>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
         </div>
 
         <div style="display:flex;justify-content:space-between;align-items:center;padding-top:4px">

@@ -24,12 +24,18 @@ class DeleteBody(BaseModel):
     track_ids: list[int | str]
 
 
+class PlaylistSyncBody(BaseModel):
+    name: str
+    track_keys: list[list[str]] = []  # one candidate-key list per member, in playlist order
+
+
 class SyncBody(BaseModel):
     devnode: str
     copy_paths: list[str] = []
     delete_ids: list[int | str] = []
     copy_track_count: int | None = None
     media_type: str = 'music'
+    playlist: PlaylistSyncBody | None = None
 
 
 class DownloadTrack(BaseModel):
@@ -240,6 +246,9 @@ async def sync_tracks(body: SyncBody):
     info, mount = await _get_device_mount(body.devnode)
     device_id = _resolve_device_id(body.devnode)
     if info.is_walkman:
+        if body.playlist:
+            await device_service.release_mount(body.devnode)
+            raise HTTPException(400, "Playlist sync is not supported for WALKMAN devices")
         meta = device_service.get_walkman_meta(body.devnode)
         music_path = meta["cap"]["music_path"] if meta else "MUSIC"
         delete_ids = [int(i) for i in body.delete_ids]
@@ -254,6 +263,7 @@ async def sync_tracks(body: SyncBody):
             device_id=device_id, copy_track_count=body.copy_track_count,
             media_type=body.media_type, ipod_db_id=info.ipod_db_id,
             devnode=body.devnode,
+            playlist=body.playlist.model_dump() if body.playlist else None,
         )
     return {"ok": True}
 
@@ -291,6 +301,8 @@ async def rate_track(body: RateBody):
                             else:
                                 await db.execute("DELETE FROM ipod_track_ratings WHERE track_key=?", (key,))
                             await db.commit()
+                        from app.services import plex as plex_svc
+                        asyncio.create_task(plex_svc.push_rating(key, body.rating))
                         break
 
     return {"ok": True}

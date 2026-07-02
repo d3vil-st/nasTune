@@ -31,10 +31,14 @@ from app.services.artwork import extract_artwork
 from app.services.db import init_db
 from app.services.devices import device_service
 from app.services.transcode_cache import transcode_cache
+from app.services.plex_sessions import PlexAuthMiddleware, load_auth_flag
 from app.routers.sources import router as sources_router
 from app.routers.device import router as device_router
 from app.routers.walkman import router as walkman_router
 from app.routers.settings import router as settings_router
+from app.routers.auth import router as auth_router
+from app.routers.plex import router as plex_router
+from app.routers.smart_playlists import router as smart_playlists_router
 
 log = logging.getLogger(__name__)
 
@@ -53,6 +57,7 @@ async def _cache_cleanup_loop():
 @asynccontextmanager
 async def lifespan(_app):
     await init_db()
+    await load_auth_flag()
     await device_service.start()
     asyncio.create_task(_cache_cleanup_loop())
     yield
@@ -65,10 +70,14 @@ async def lifespan(_app):
 
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(PlexAuthMiddleware)
 app.include_router(sources_router)
 app.include_router(device_router)
 app.include_router(walkman_router)
 app.include_router(settings_router)
+app.include_router(auth_router)
+app.include_router(plex_router)
+app.include_router(smart_playlists_router)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 templates.env.filters["tojson"] = lambda v: Markup(json.dumps(v, ensure_ascii=False))

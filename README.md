@@ -26,7 +26,7 @@ iPod support is built around [gpod-utils](https://github.com/d3vil-st/gpod-utils
 ## Features
 
 - **Browse** your iPod or WALKMAN library in a 3-pane iTunes-style view (artists → albums → tracks)
-- **Media types** — separate Music, Podcasts, and Audiobooks tabs in both the device and source panes; each tab maintains its own artist/album selection and remembers the last selected source across switches
+- **Media types** — separate Music, Podcasts, Audiobooks, and Playlists tabs in both the device and source panes; each tab maintains its own artist/album selection and remembers the last selected source across switches
 - **All Artists** — select the top row in the artist column to browse all albums across every artist in a single flat view
 - **Sony WALKMAN support** — detected automatically via `default-capability.xml`; tag-based scan (mutagen) indexes the device into SQLite; delete and sync use direct file operations with immediate DB update — no rescan needed; dual-LUN models (separate INTERNAL and Card storage) are identified on USB connect by a brief read-only probe-mount of each LUN, so both appear with the correct storage type label in the device picker before any user action
 - **Offline WALKMAN library** — disconnected WALKMANs appear in the Disconnected section of the device picker and can be browsed without remounting; library is served directly from SQLite
@@ -42,6 +42,10 @@ iPod support is built around [gpod-utils](https://github.com/d3vil-st/gpod-utils
 - **Delete** selected tracks from the device
 - **Download** selected tracks as a `.tar` archive with restored directory structure (`Artist/[Year] - Album/NN - Title.ext`)
 - **Star ratings** — clickable inline 1–5 star picker on every track row in both the iPod and NAS source tabs; ratings are stored in SQLite and reflected across both views; clicking the active star clears the rating
+- **Playlists** — browse the iPod's playlists (including On-The-Go), sync Plex playlists to the device, and publish device playlists back to Plex; see [Playlists](#playlists)
+- **Smart playlists** — iTunes-style rule editor (field / operator / value rows, match all/any, limit with selection criteria, live updating); rules are evaluated against the iPod library and written to the device as a regular playlist; live-updating playlists are re-applied automatically after every sync
+- **Plex integration** (optional) — link your Plex Media Server to sync playlists both ways, import star ratings and play counts from Plex, and push ratings set in nasTune back to Plex; see [Plex integration](#plex-integration)
+- **Sign in with Plex** (optional) — gate the whole app behind Plex PIN OAuth (Overseerr-style); access limited to the server owner and approved users the server is shared with
 - **Play** tracks directly in the browser (iPod/WALKMAN and NAS source), with ALAC→FLAC transcoding on the fly for Firefox compatibility
 - **Compare** device contents against your NAS library — checkboxes show what's already synced
 - **Storage bar** — shows used / net change / free with a live delete/add counter overlay during operations
@@ -98,6 +102,7 @@ All configuration is done via environment variables in `docker-compose.yml`:
 | `IPOD_AUTOMOUNT` | `0` | Set to `1` to auto-mount USB block devices detected by lsblk. Requires `privileged: true`. |
 | `DB_PATH` | `/data/nastune.db` | SQLite database for the NAS source library index. |
 | `GPOD_DRY_RUN` | `0` | Set to `1` to log all write commands without executing them. Safe for testing. |
+| `NASTUNE_DISABLE_AUTH` | `0` | Set to `1` to bypass the Plex sign-in gate. Escape hatch if you lock yourself out (e.g. plex.tv unreachable or server unlinked by accident). |
 
 ---
 
@@ -123,6 +128,60 @@ Supported formats: MP3, FLAC, AAC/M4A (including ALAC), AIFF, WAV, OGG.
 - **Smart encoder selection**: lossless files (FLAC, WAV, AIFF, APE, WV, ALAC) are transcoded to ALAC; MP3 and AAC M4A files are copied as-is without re-encoding; other lossy formats (OGG, WMA, etc.) are transcoded to AAC via fdk-aac; the `force_aac` setting overrides this and routes everything through fdk-aac
 - **iPod rating sync**: after copying tracks, nasTune runs `gpod-ls` to get fresh IDs, then applies any stored ratings to newly copied tracks via `gpod-tag`; only tracks where the stored rating is higher than the current iPod rating are updated
 - **WALKMAN**: sync uses `shutil.copy2` / `os.remove`; the SQLite library is updated immediately on completion without a rescan
+
+---
+
+## Playlists
+
+Select **♪ Playlists** in the media type dropdown (iPod only — hidden for WALKMANs):
+
+- **Device tab** lists the playlists on the iPod, including On-The-Go playlists created on the click wheel. Selecting one shows its tracks with inline playback. **Publish to Plex** creates (or replaces) a playlist with the same name on the linked Plex server — useful for getting On-The-Go playlists back into your library (run the Plex import first so tracks can be matched by rating key).
+- **Sources tab** shows the linked Plex server's audio playlists for syncing to the device (see [Plex integration](#plex-integration)).
+
+### Smart playlists
+
+**＋ Smart** in the device playlists column opens an iTunes-style rule editor:
+
+- Rules combine a field (title, artist, album, genre, rating, plays, year, duration, size, date added, last played, media kind, …) with an operator and value; match **all** or **any**
+- **Limit to** N items / minutes / hours / MB / GB, selected by random, most played, highest rating, most recently added, and more
+- A live preview shows how many tracks on the connected iPod match the current rules
+- **Save & Apply** evaluates the rules and writes the result to the iPod as a regular playlist (the iPod firmware never evaluates rules itself — same as iTunes, evaluation happens on the computer)
+- **Live updating** re-evaluates and rewrites the playlist automatically after every sync, so rules like *rating ≥ 4* or *added in the last 30 days* stay current as the library changes
+
+Definitions are stored in nasTune's database; device playlists whose name matches a stored definition show a gear icon for editing the rules.
+
+---
+
+## Plex integration
+
+All Plex features are optional — nasTune runs exactly as before if you never link a server.
+
+### Linking a server
+
+1. Open **Settings** (gear icon) → **Plex** → **Connect Plex**
+2. Approve the sign-in in the Plex popup (PIN OAuth — no password ever touches nasTune)
+3. Pick the server to link; nasTune probes its connections and prefers local direct access over relay
+
+The account that links the server becomes the **admin**. Unlinking removes all Plex sessions, users, and track mappings.
+
+### Playlists
+
+Once linked, the **Playlists** media type's Sources tab shows your Plex audio playlists. Selecting a playlist shows its tracks matched against your NAS source libraries — first by file path (trailing-components match, so Plex and nasTune can mount the same files under different prefixes with no configuration), then by normalized artist/album/track tags as a fallback. Unmatched tracks are dimmed with a *not in library* badge. **Sync playlist** copies the matched tracks that are not yet on the device and then creates (or replaces) a playlist with the same name on the iPod via `gpod-playlist`, using the normal sync pipeline (encoder selection, progress bar, operation log).
+
+### Ratings and play counts
+
+- **Import** (Settings → Plex → Import) walks the whole Plex music library and merges `userRating` (converted 0–10 → 1–5 stars) and `viewCount` into nasTune's shared rating/play-count tables — highest value wins, so re-importing is safe. Imported ratings flow to the iPod on the next sync via `gpod-tag`.
+- **Push-back**: rating a track in the nasTune UI (device or source pane) updates Plex within seconds. Clearing a rating clears it in Plex too.
+
+### Sign in with Plex
+
+Settings → Plex → **Require Plex sign-in** gates the entire app behind Plex login:
+
+- Only the admin and users your Plex server is shared with (friends / Plex Home) can authenticate
+- New users land as **pending** and must be approved by the admin in the Settings users list; disabling a user revokes their sessions immediately
+- Non-admin users get full app access except settings and Plex management
+- Sessions last 30 days (HttpOnly cookie); plex.tv is only contacted at login, so an internet outage doesn't lock out existing sessions
+- Locked out anyway? Start the container with `NASTUNE_DISABLE_AUTH=1`
 
 ---
 
@@ -153,6 +212,7 @@ The archive is streamed directly from the iPod to your browser — no temporary 
 | Audio transcode | ffmpeg (ALAC→FLAC, streaming + seekable tmpfs cache) |
 | Library index | SQLite + aiosqlite |
 | Device discovery | lsblk polling every 3 s |
+| Plex API | httpx (PIN OAuth via plex.tv, playlists/ratings via server API) |
 
 No Node.js. No build step. No bundler.
 

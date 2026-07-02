@@ -7,6 +7,8 @@ function app() {
     sourcesModule(),
     selectionModule(),
     settingsModule(),
+    plexModule(),
+    playlistsModule(),
   ];
 
   // Use defineProperties to preserve getters across module boundaries
@@ -35,6 +37,8 @@ function app() {
     this.initTheme();
     await this.loadSettings();
     this._loadKnownDevices();  // fire-and-forget; populates picker before first open
+    this.loadPlexMe();         // fire-and-forget; header chip + admin gating
+    this.loadPlexStatus();     // fire-and-forget; Plex playlists entry in source picker
 
     const hash = location.hash.slice(1);
     const url = hash ? new URLSearchParams(hash) : null;
@@ -89,12 +93,20 @@ function app() {
       }
     }
 
+    // Restore Plex playlists pane when the URL landed on mt=playlist
+    if (this.mediaType === 'playlist') {
+      await this.loadPlexStatus();
+      this.loadPlexPlaylists();
+      this.loadSmartPlaylists();
+    }
+
     // Keyboard column navigation
     window.addEventListener('keydown', (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
       const anyModal = this.showSettings || this.showManageSources || this.showAddSource ||
                        this.showDeleteConfirm || this.showSyncConfirm || this.showDeviceSettings ||
-                       this.showOpLog || this.coverPopupUrl || this.showDevicePicker || this.showSourcePicker;
+                       this.showOpLog || this.coverPopupUrl || this.showDevicePicker || this.showSourcePicker ||
+                       this.showSmartModal;
       if (anyModal) return;
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         if (!this._focusedCol) return;

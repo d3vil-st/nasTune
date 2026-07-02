@@ -81,6 +81,7 @@ function settingsModule() {
     openSettings() {
       this.settingsDraft = { ...this.settings };
       this.showSettings = true;
+      this.loadPlexStatus().then(() => this.loadPlexUsers());  // fire-and-forget refresh
     },
 
     // Open device settings modal from picker gear icon (connected device)

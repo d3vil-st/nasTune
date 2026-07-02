@@ -1,6 +1,7 @@
 services:
   nastune:
-    image: ghcr.io/d3vil-st/nastune:latest
+    # image: ghcr.io/d3vil-st/nastune:latest
+    build: .
     privileged: true          # required for mount syscalls inside the container
     ports:
       - "127.0.0.1:8080:8080"
@@ -16,6 +17,4 @@ services:
           size: 536870912     # 512 MB for ALAC transcode cache
     devices:
       - /dev/bus/usb
-    environment:
-      IPOD_AUTOMOUNT: 1
     restart: unless-stopped

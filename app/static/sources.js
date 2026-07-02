@@ -31,6 +31,7 @@ function sourcesModule() {
     get srcLabels() {
       if (this.mediaType === 'audiobook') return { artist: 'Authors', allArtists: 'All Authors', album: 'Books',   albumPl: 'books',   trackSg: 'chapter', trackPl: 'chapters', trackLabel: 'Chapters', selectArtist: 'Select an author' };
       if (this.mediaType === 'podcast')   return { artist: 'Shows',   allArtists: 'All Shows',   album: 'Seasons', albumPl: 'seasons', trackSg: 'episode', trackPl: 'episodes', trackLabel: 'Episodes', selectArtist: 'Select a show' };
+      if (this.mediaType === 'playlist')  return { artist: 'Playlists', allArtists: 'All Playlists', album: 'Playlists', albumPl: 'playlists', trackSg: 'track', trackPl: 'tracks', trackLabel: 'Tracks', selectArtist: 'Select a playlist' };
       return                                     { artist: 'Artists', allArtists: 'All Artists', album: 'Albums',  albumPl: 'albums',  trackSg: 'track',   trackPl: 'tracks',   trackLabel: 'Tracks',   selectArtist: 'Select an artist' };
     },
 
@@ -40,8 +41,8 @@ function sourcesModule() {
 
     async setMediaType(type) {
       if (this.mediaType === type) return;
-      // Remember the current source for the type we're leaving
-      if (this.selectedSourceId != null) {
+      // Remember the current source for the type we're leaving (playlist mode has no sources)
+      if (this.selectedSourceId != null && this.mediaType !== 'playlist') {
         localStorage.setItem('nastune-src-' + this.mediaType, String(this.selectedSourceId));
       }
       this.mediaType = type;
@@ -50,6 +51,13 @@ function sourcesModule() {
       this.selectedAlbum = null;
       this.srcArtist = null;
       this.srcAlbum = null;
+      this.selectedDevPlaylistIdx = null;
+      if (type === 'playlist') {
+        // Sources pane shows Plex playlists instead of NAS sources
+        this.loadPlexPlaylists();
+        this.loadSmartPlaylists();
+        return;
+      }
       // Restore the previously selected source for this type (if it still exists)
       const savedId = parseInt(localStorage.getItem('nastune-src-' + type) || '', 10);
       const match = !isNaN(savedId) && this.filteredSources.find(s => s.id === savedId);

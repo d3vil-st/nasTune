@@ -258,6 +258,9 @@ async def rate_source_track(body: RateSourceBody):
             await db.execute("DELETE FROM ipod_track_ratings WHERE track_key=?", (key,))
         await db.commit()
 
+    from app.services import plex as plex_svc
+    asyncio.create_task(plex_svc.push_rating(key, body.rating))
+
     return {"ok": True}
 
 

@@ -148,11 +148,11 @@ class OperationService:
         self._op = op
         asyncio.create_task(self._do_delete(op, track_ids, mount, device_id, devnode))
 
-    async def run_sync(self, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "", copy_track_count: int | None = None, media_type: str = "music", ipod_db_id: int | None = None, devnode: str = "") -> None:
+    async def run_sync(self, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "", copy_track_count: int | None = None, media_type: str = "music", ipod_db_id: int | None = None, devnode: str = "", playlist: dict | None = None) -> None:
         total = (copy_track_count if copy_track_count is not None else len(copy_paths)) + len(delete_ids)
         op = _Op("sync", total)
         self._op = op
-        asyncio.create_task(self._do_sync(op, copy_paths, delete_ids, mount, device_id, media_type, ipod_db_id, devnode))
+        asyncio.create_task(self._do_sync(op, copy_paths, delete_ids, mount, device_id, media_type, ipod_db_id, devnode, playlist))
 
     async def _gpod_rm_batch(self, track_ids: list, mount: str, op: _Op) -> str | None:
         ids_str = list(dict.fromkeys(str(t) for t in track_ids))
@@ -319,7 +319,7 @@ class OperationService:
                 from app.services.devices import device_service
                 await device_service.release_mount(devnode)
 
-    async def _gpod_rating_sync(self, mount: str, op: _Op) -> None:
+    async def _gpod_rating_sync(self, mount: str, op: _Op, lib: dict | None = None) -> None:
         """Run gpod-ls then apply stored DB ratings to iPod tracks that need updating."""
         import aiosqlite
         from app.services.db import DB_PATH
@@ -333,14 +333,15 @@ class OperationService:
                 if (await cur.fetchone())[0] == 0:
                     return
 
-        op.current = "Rating sync: reading library…"
-        op.log.append("$ gpod-ls  # rating sync")
-        try:
-            lib = await fetch_library(mount)
-        except Exception as exc:
-            log.warning("rating sync: gpod-ls failed, skipping: %s", exc)
-            op.log.append(f"  WARN: rating sync skipped ({exc})")
-            return
+        if lib is None:
+            op.current = "Rating sync: reading library…"
+            op.log.append("$ gpod-ls  # rating sync")
+            try:
+                lib = await fetch_library(mount)
+            except Exception as exc:
+                log.warning("rating sync: gpod-ls failed, skipping: %s", exc)
+                op.log.append(f"  WARN: rating sync skipped ({exc})")
+                return
 
         # Build {track_key -> (id, current_stars)} from fresh library
         track_map: dict[str, tuple[int, int]] = {}
@@ -408,7 +409,130 @@ class OperationService:
             else:
                 log.info("gpod-tag --rating %d applied to %d track(s)", stars, len(track_ids))
 
-    async def _do_sync(self, op: _Op, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "", media_type: str = "music", ipod_db_id: int | None = None, devnode: str = "") -> None:
+    async def _run_gpod_playlist(self, mount: str, op: _Op, args: list[str]) -> str | None:
+        """Run gpod-playlist -M <mount> <args>. Returns error string or None."""
+        cmd_str = f"gpod-playlist -M {mount} {' '.join(args)}"
+        log.info("exec: %s", cmd_str)
+        op.log.append(f"$ {cmd_str}")
+        if GPOD_DRY_RUN:
+            log.info("[dry-run] skipping gpod-playlist")
+            op.log.append("[dry-run] skipped")
+            return None
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "gpod-playlist", "-M", mount, *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+        except FileNotFoundError:
+            return "gpod-playlist not found — gpod-utils >= 1.5.0 required"
+        async for raw in proc.stdout:
+            op.log.append(raw.decode().rstrip())
+        await proc.wait()
+        if proc.returncode != 0:
+            return f"gpod-playlist exited {proc.returncode}"
+        return None
+
+    async def _gpod_playlist_sync(self, mount: str, op: _Op, playlist: dict, lib: dict) -> None:
+        """Create/replace an iPod playlist from track keys resolved against a fresh library.
+
+        playlist = {"name": str, "track_keys": [[candidate_key, ...], ...]} — one candidate
+        list per member, in playlist order; the first key that resolves wins. Non-fatal:
+        failures are logged as warnings and the sync op still completes.
+        """
+        from app.services.track_key import track_key as _tk
+
+        name = (playlist.get("name") or "").strip()
+        track_keys = playlist.get("track_keys") or []
+        if not name or not track_keys:
+            return
+
+        for pl in lib.get("playlists", []):
+            if pl["name"] == name and pl["smartpl"]:
+                log.warning("playlist sync: '%s' is a smart playlist on the iPod — skipped", name)
+                op.log.append(f"  WARN: '{name}' is a smart playlist on the iPod — playlist sync skipped")
+                return
+        exists = any(pl["name"] == name for pl in lib.get("playlists", []))
+
+        # key → fs-form ipod path (gpod-playlist expects /iPod_Control/... not :iPod_Control:...)
+        path_map: dict[str, str] = {}
+        for artist in lib.get('artists', []):
+            artist_name = artist['name']
+            for album in artist.get('albums', []):
+                album_name = album['name']
+                for track in album.get('tracks', []):
+                    fs_path = (track.get('ipod_path') or '').replace(':', '/')
+                    if not fs_path:
+                        continue
+                    artist_tag = track.get('artist') or artist_name
+                    nr, dnr, title = track.get('track_nr'), track.get('disc_nr'), track.get('title', '')
+                    path_map.setdefault(_tk(artist_tag, album_name, nr, dnr, title), fs_path)
+                    if artist_tag != artist_name:
+                        path_map.setdefault(_tk(artist_name, album_name, nr, dnr, title), fs_path)
+
+        paths: list[str] = []
+        seen: set[str] = set()
+        missing = 0
+        for candidates in track_keys:
+            fs_path = next((path_map[k] for k in candidates if k in path_map), None)
+            if fs_path is None:
+                missing += 1
+            elif fs_path not in seen:
+                seen.add(fs_path)
+                paths.append(fs_path)
+
+        op.current = f"Playlist: updating '{name}'…"
+        err = await self._run_gpod_playlist(mount, op, ["-p", name, "-C"] if exists else ["-c", name])
+        if err:
+            log.warning("playlist sync '%s' failed: %s", name, err)
+            op.log.append(f"  WARN: playlist sync failed ({err})")
+            return
+        i = 0
+        while i < len(paths):
+            batch = paths[i:i + 200]
+            err = await self._run_gpod_playlist(mount, op, ["-p", name, "-a", *batch])
+            if err:
+                log.warning("playlist sync '%s' failed: %s", name, err)
+                op.log.append(f"  WARN: playlist sync failed ({err})")
+                return
+            i += 200
+        summary = f"playlist '{name}': {len(paths)} track(s)" + (f", {missing} unresolved" if missing else "")
+        log.info("playlist sync: %s", summary)
+        op.log.append(f"  {summary}")
+
+    async def _smart_playlist_refresh(self, mount: str, op: _Op, lib: dict | None) -> None:
+        """Re-evaluate live-updating smart playlists against the post-sync library."""
+        from app.services import smart_playlists as spl
+
+        try:
+            live = await spl.live_smart_playlists()
+        except Exception as exc:
+            log.warning("smart playlist refresh: DB read failed: %s", exc)
+            return
+        if not live:
+            return
+
+        if lib is None:
+            from app.services.gpod import fetch_library
+            op.current = "Smart playlists: reading library…"
+            op.log.append("$ gpod-ls  # smart playlist refresh")
+            try:
+                lib = await fetch_library(mount)
+            except Exception as exc:
+                log.warning("smart playlist refresh: gpod-ls failed, skipping: %s", exc)
+                op.log.append(f"  WARN: smart playlist refresh skipped ({exc})")
+                return
+
+        for spec in live:
+            tracks = spl.evaluate(lib, spec)
+            op.log.append(f"  smart playlist '{spec['name']}': {len(tracks)} match(es)")
+            if not tracks:
+                continue
+            await self._gpod_playlist_sync(
+                mount, op, spl.to_playlist_payload(spec["name"], tracks), lib,
+            )
+
+    async def _do_sync(self, op: _Op, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "", media_type: str = "music", ipod_db_id: int | None = None, devnode: str = "", playlist: dict | None = None) -> None:
         try:
             force_aac, threads = await _load_sync_settings(ipod_db_id=ipod_db_id)
             media_type_args = ['--tracks-media-type', media_type] if media_type in ('audiobook', 'podcast') else []
@@ -446,7 +570,21 @@ class OperationService:
                         return
                     i += BATCH_SIZE
 
-                await self._gpod_rating_sync(mount, op)
+                lib = None
+                if playlist:
+                    from app.services.gpod import fetch_library
+                    op.current = "Playlist sync: reading library…"
+                    op.log.append("$ gpod-ls  # playlist sync")
+                    try:
+                        lib = await fetch_library(mount)
+                    except Exception as exc:
+                        log.warning("playlist sync: gpod-ls failed, skipping: %s", exc)
+                        op.log.append(f"  WARN: playlist sync skipped ({exc})")
+                    if lib is not None:
+                        await self._gpod_playlist_sync(mount, op, playlist, lib)
+
+                await self._gpod_rating_sync(mount, op, lib=lib)
+                await self._smart_playlist_refresh(mount, op, lib)
 
                 op.status = "done"
                 op.current = ""

@@ -44,6 +44,18 @@ def _parse(raw: dict, mount: Path) -> dict[str, Any]:
 
     master = next(p for p in ipod["playlists"]["items"] if p["type"] == "master")
 
+    playlists = []
+    for p in ipod["playlists"]["items"]:
+        if p.get("type") != "playlist":
+            continue
+        playlists.append({
+            "name": p.get("name") or "Untitled",
+            "smartpl": bool(p.get("smartpl")),
+            "timestamp": p.get("timestamp") or 0,
+            "count": len(p.get("tracks") or []),
+            "track_ids": [t["id"] for t in p.get("tracks") or []],
+        })
+
     library: dict[str, dict] = {}
     total_bytes = 0
 
@@ -120,6 +132,7 @@ def _parse(raw: dict, mount: Path) -> dict[str, Any]:
         "fs_type": fs_type(mount),
         "used_pct": used_pct,
         "artists": result_artists,
+        "playlists": playlists,
     }
 
 

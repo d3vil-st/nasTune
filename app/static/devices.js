@@ -89,7 +89,7 @@ function devicesModule() {
           : await this.apiFetch('/library');
         if (!r.ok) { this.libraryError = await r.text(); return; }
         this.library = await r.json();
-        if (this.library?.walkman && (this.mediaType === 'audiobook' || this.mediaType === 'podcast')) this.setMediaType('music');
+        if (this.library?.walkman && this.mediaType !== 'music') this.setMediaType('music');
         if (refresh) this._validateIpodSelection();
         // Backend registers the iPod UUID in DB during library load; refresh the
         // known-devices list so a connected iPod no longer appears as "Disconnected".
