@@ -65,6 +65,8 @@ function playlistsModule() {
     smartError: null,
     _smartPreviewTimer: null,
 
+    // Mirrors the gpod-playlist SPL vocabulary — these rules are written to
+    // the iTunesDB as a real smart playlist, not evaluated by nasTune.
     smartFields: [
       { key: 'title',       label: 'Title',              kind: 'text' },
       { key: 'artist',      label: 'Artist',             kind: 'text' },
@@ -72,29 +74,30 @@ function playlistsModule() {
       { key: 'albumartist', label: 'Album Artist',       kind: 'text' },
       { key: 'genre',       label: 'Genre',              kind: 'text' },
       { key: 'composer',    label: 'Composer',           kind: 'text' },
-      { key: 'mediatype',   label: 'Media Kind',         kind: 'enum', options: ['music', 'podcast', 'audiobook'] },
       { key: 'rating',      label: 'Rating (stars)',     kind: 'number' },
       { key: 'playcount',   label: 'Plays',              kind: 'number' },
       { key: 'year',        label: 'Year',               kind: 'number' },
       { key: 'bitrate',     label: 'Bit Rate (kbps)',    kind: 'number' },
+      { key: 'samplerate',  label: 'Sample Rate (Hz)',   kind: 'number' },
       { key: 'duration',    label: 'Duration (seconds)', kind: 'number' },
       { key: 'size',        label: 'Size (MB)',          kind: 'number' },
       { key: 'track_nr',    label: 'Track #',            kind: 'number' },
-      { key: 'filetype',    label: 'File Type',          kind: 'text' },
+      { key: 'disc_nr',     label: 'Disc #',             kind: 'number' },
       { key: 'time_added',  label: 'Date Added',         kind: 'date' },
       { key: 'time_played', label: 'Last Played',        kind: 'date' },
     ],
     smartOps: {
       text:   [['contains', 'contains'], ['not_contains', 'does not contain'], ['is', 'is'], ['is_not', 'is not'], ['starts_with', 'starts with'], ['ends_with', 'ends with']],
-      enum:   [['is', 'is'], ['is_not', 'is not']],
-      number: [['is', 'is'], ['is_not', 'is not'], ['gt', 'is greater than'], ['lt', 'is less than'], ['in_range', 'is in range']],
-      date:   [['in_last', 'in the last (days)'], ['not_in_last', 'not in the last (days)'], ['before', 'before (date)'], ['after', 'after (date)']],
+      number: [['is', 'is'], ['is_not', 'is not'], ['gt', 'is greater than'], ['gte', 'is at least'], ['lt', 'is less than'], ['lte', 'is at most'], ['in_range', 'is in range']],
+      date:   [['in_last', 'in the last (days)'], ['not_in_last', 'not in the last (days)']],
     },
     smartLimitUnits: ['items', 'minutes', 'hours', 'MB', 'GB'],
     smartLimitBy: [
-      ['random', 'random'], ['most_recently_added', 'most recently added'],
+      ['random', 'random'],
+      ['most_recently_added', 'most recently added'], ['least_recently_added', 'least recently added'],
       ['most_played', 'most often played'], ['least_played', 'least often played'],
-      ['most_recently_played', 'most recently played'], ['highest_rating', 'highest rating'],
+      ['most_recently_played', 'most recently played'], ['least_recently_played', 'least recently played'],
+      ['highest_rating', 'highest rating'], ['lowest_rating', 'lowest rating'],
       ['name', 'name'], ['artist', 'artist'], ['album', 'album'], ['genre', 'genre'],
     ],
 
@@ -128,7 +131,7 @@ function playlistsModule() {
         this.smartSpec = {
           id: null, name: '', match_all: true,
           limit_n: 25, limit_unit: 'items', limit_by: 'random',
-          live: true, rules: [this._newSmartRule()],
+          live: false, rules: [this._newSmartRule()],
         };
         this.smartLimitOn = false;
       }
@@ -138,8 +141,7 @@ function playlistsModule() {
 
     onSmartFieldChange(rule) {
       rule.op = this.smartOpsFor(rule.field)[0][0];
-      const def = this.smartFieldDef(rule.field);
-      rule.value = def.kind === 'enum' ? def.options[0] : '';
+      rule.value = '';
       rule.value2 = '';
       this.scheduleSmartPreview();
     },

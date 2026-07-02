@@ -500,37 +500,58 @@ class OperationService:
         log.info("playlist sync: %s", summary)
         op.log.append(f"  {summary}")
 
-    async def _smart_playlist_refresh(self, mount: str, op: _Op, lib: dict | None) -> None:
-        """Re-evaluate live-updating smart playlists against the post-sync library."""
+    async def _smart_playlist_refresh(self, mount: str, op: _Op) -> None:
+        """Refresh all smart playlists on the device (gpod-playlist -U).
+
+        The iPod displays the member list stored in iTunesDB rather than
+        evaluating rules itself, so members must be recomputed after any
+        library change. Non-fatal.
+        """
+        op.current = "Refreshing smart playlists…"
+        err = await self._run_gpod_playlist(mount, op, ["-U"])
+        if err:
+            log.warning("smart playlist refresh failed: %s", err)
+            op.log.append(f"  WARN: smart playlist refresh failed ({err})")
+
+    async def run_smart_playlist_apply(self, mount: str, spec: dict, device_id: str = "", devnode: str = "") -> None:
+        op = _Op("smart_playlist", 0)
+        self._op = op
+        asyncio.create_task(self._do_smart_playlist_apply(op, mount, spec, device_id, devnode))
+
+    async def _do_smart_playlist_apply(self, op: _Op, mount: str, spec: dict, device_id: str = "", devnode: str = "") -> None:
+        """Write a smart playlist to the iPod: delete any same-name playlist,
+        then create it with real SPL rules (gpod-playlist -c <name> -S)."""
         from app.services import smart_playlists as spl
-
         try:
-            live = await spl.live_smart_playlists()
-        except Exception as exc:
-            log.warning("smart playlist refresh: DB read failed: %s", exc)
-            return
-        if not live:
-            return
+            async with self._lock:
+                name = spec["name"]
+                op.current = f"Smart playlist: '{name}'"
+                args, dropped = spl.to_gpod_args(spec)
+                for rule in dropped:
+                    msg = f"rule not representable on iPod, skipped: {rule.get('field')} {rule.get('op')} {rule.get('value')}"
+                    log.warning("smart playlist '%s': %s", name, msg)
+                    op.log.append(f"  WARN: {msg}")
 
-        if lib is None:
-            from app.services.gpod import fetch_library
-            op.current = "Smart playlists: reading library…"
-            op.log.append("$ gpod-ls  # smart playlist refresh")
-            try:
-                lib = await fetch_library(mount)
-            except Exception as exc:
-                log.warning("smart playlist refresh: gpod-ls failed, skipping: %s", exc)
-                op.log.append(f"  WARN: smart playlist refresh skipped ({exc})")
-                return
+                # Delete an existing playlist with this name (smart or regular);
+                # failure just means it didn't exist.
+                await self._run_gpod_playlist(mount, op, ["-d", name])
 
-        for spec in live:
-            tracks = spl.evaluate(lib, spec)
-            op.log.append(f"  smart playlist '{spec['name']}': {len(tracks)} match(es)")
-            if not tracks:
-                continue
-            await self._gpod_playlist_sync(
-                mount, op, spl.to_playlist_payload(spec["name"], tracks), lib,
-            )
+                err = await self._run_gpod_playlist(mount, op, args)
+                if err:
+                    op.status = "error"
+                    op.error = err
+                    log.error("smart playlist apply '%s' failed: %s", name, err)
+                    return
+
+                op.status = "done"
+                op.current = ""
+                log.info("smart playlist '%s' written to device", name)
+        finally:
+            if device_id:
+                _save_op_history(op, device_id)
+            if devnode:
+                from app.services.devices import device_service
+                await device_service.release_mount(devnode)
 
     async def _do_sync(self, op: _Op, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "", media_type: str = "music", ipod_db_id: int | None = None, devnode: str = "", playlist: dict | None = None) -> None:
         try:
@@ -584,7 +605,7 @@ class OperationService:
                         await self._gpod_playlist_sync(mount, op, playlist, lib)
 
                 await self._gpod_rating_sync(mount, op, lib=lib)
-                await self._smart_playlist_refresh(mount, op, lib)
+                await self._smart_playlist_refresh(mount, op)
 
                 op.status = "done"
                 op.current = ""

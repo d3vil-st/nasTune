@@ -88,27 +88,21 @@ async def apply_playlist(spl_id: int, body: ApplyBody):
     spec = await spl.get_smart_playlist(spl_id)
     if spec is None:
         raise HTTPException(404, "Smart playlist not found")
-    lib = _cached_lib(body.devnode)
+    info = device_service.get_device_info(body.devnode)
+    if not info or not info.is_ipod:
+        raise HTTPException(400, "Smart playlists require a connected iPod")
     if op_service.is_busy():
         raise HTTPException(409, "Another operation is already running")
 
-    tracks = spl.evaluate(lib, spec)
-    if not tracks:
-        raise HTTPException(422, "No tracks on the device match these rules")
-
-    info = device_service.get_device_info(body.devnode)
     try:
         mount = await device_service.ensure_mounted(body.devnode)
     except (KeyError, RuntimeError) as exc:
         raise HTTPException(500, f"Mount failed: {exc}")
 
     from app.routers.device import _resolve_device_id
-    await op_service.run_sync(
-        [], [], mount,
+    await op_service.run_smart_playlist_apply(
+        mount, spec,
         device_id=_resolve_device_id(body.devnode),
-        copy_track_count=0,
-        ipod_db_id=info.ipod_db_id,
         devnode=body.devnode,
-        playlist=spl.to_playlist_payload(spec["name"], tracks),
     )
-    return {"ok": True, "count": len(tracks)}
+    return {"ok": True}

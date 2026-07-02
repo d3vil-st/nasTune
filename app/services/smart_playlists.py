@@ -1,10 +1,14 @@
-"""Smart playlists: rule storage + evaluation against an iPod library.
+"""Smart playlists: rule storage, gpod-playlist rule generation, and preview.
 
-The iPod firmware never evaluates smart playlist rules — iTunes computes the
-member list at sync time and stores a static playlist. nasTune does the same:
-rules live in the smart_playlists table, evaluate() runs them against the
-device library dict (gpod.py _parse output), and the result is written to the
-device as a regular playlist via the normal playlist-sync machinery.
+Rules live in the smart_playlists table and are written to the iPod as REAL
+smart playlists via `gpod-playlist -c <name> -S -e '<field> <op> <value>' …`
+(gpod-utils ≥ 1.5.1) — rules are stored in the iTunesDB and visible in iTunes.
+The iPod firmware never evaluates rules itself, so gpod-playlist populates the
+member list at creation (itdb_spl_update) and `-U` refreshes all smart
+playlists after every sync.
+
+evaluate() is a Python approximation of the same semantics used only for the
+live match preview in the rule editor modal.
 """
 import json
 import logging
@@ -14,12 +18,11 @@ import time
 import aiosqlite
 
 from app.services.db import DB_PATH
-from app.services.track_key import track_key as _track_key
 
 log = logging.getLogger(__name__)
 
-# field -> kind. Values are matched against the flattened track dict built in
-# _flatten(); text matching is case-insensitive substring/equality.
+# field -> kind. The set mirrors what gpod-playlist's SPL vocabulary supports
+# (intersected with what gpod-ls exposes so the preview can evaluate them).
 FIELDS = {
     "title":       "text",
     "artist":      "text",
@@ -27,29 +30,136 @@ FIELDS = {
     "albumartist": "text",
     "genre":       "text",
     "composer":    "text",
-    "filetype":    "text",
-    "mediatype":   "enum",     # music | podcast | audiobook
     "rating":      "number",   # 0-5 stars
     "playcount":   "number",
     "year":        "number",
     "bitrate":     "number",   # kbps
+    "samplerate":  "number",   # Hz
     "duration":    "number",   # seconds
     "size":        "number",   # MB
     "track_nr":    "number",
+    "disc_nr":     "number",
     "time_added":  "date",
     "time_played": "date",
 }
 
 TEXT_OPS   = {"contains", "not_contains", "is", "is_not", "starts_with", "ends_with"}
-NUMBER_OPS = {"is", "is_not", "gt", "lt", "in_range"}
-DATE_OPS   = {"in_last", "not_in_last", "before", "after"}
-ENUM_OPS   = {"is", "is_not"}
+NUMBER_OPS = {"is", "is_not", "gt", "lt", "gte", "lte", "in_range"}
+DATE_OPS   = {"in_last", "not_in_last"}
 
 LIMIT_UNITS = {"items", "minutes", "hours", "MB", "GB"}
 LIMIT_BY = {
-    "random", "name", "artist", "album", "genre", "highest_rating",
-    "most_played", "least_played", "most_recently_played", "most_recently_added",
+    "random", "name", "artist", "album", "genre",
+    "highest_rating", "lowest_rating",
+    "most_played", "least_played",
+    "most_recently_played", "least_recently_played",
+    "most_recently_added", "least_recently_added",
 }
+
+# ── gpod-playlist rule generation ────────────────────────────────────────────
+
+_GPOD_FIELDS = {
+    "title": "title", "artist": "artist", "album": "album",
+    "albumartist": "albumartist", "genre": "genre", "composer": "composer",
+    "rating": "rating", "playcount": "playcount", "year": "year",
+    "bitrate": "bitrate", "samplerate": "samplerate", "duration": "time",
+    "size": "size", "track_nr": "track", "disc_nr": "disc",
+    "time_added": "added", "time_played": "played",
+}
+_GPOD_TEXT_OPS = {
+    "is": "=", "is_not": "!=", "contains": "~", "not_contains": "!~",
+    "starts_with": "^", "ends_with": "$",
+}
+_GPOD_INT_OPS = {"is": "=", "is_not": "!=", "gt": ">", "lt": "<", "gte": ">=", "lte": "<="}
+_GPOD_LIMIT_UNITS = {"items": "songs", "minutes": "minutes", "hours": "hours", "MB": "mb", "GB": "gb"}
+_GPOD_LIMIT_SORTS = {
+    "random": "random", "name": "name", "artist": "artist", "album": "album",
+    "genre": "genre", "highest_rating": "highest-rated", "lowest_rating": "lowest-rated",
+    "most_played": "most-played", "least_played": "least-played",
+    "most_recently_played": "recently-played", "least_recently_played": "least-recently-played",
+    "most_recently_added": "recent", "least_recently_added": "least-recent",
+}
+
+
+def _gpod_num(field: str, val) -> int:
+    """Rule value in gpod's user-facing units (size rules are raw bytes)."""
+    n = float(val if val not in (None, "") else 0)
+    if field == "size":
+        n *= 1048576
+    return int(round(n))
+
+
+def rule_expr(rule: dict) -> str | None:
+    """Render one stored rule as a gpod-playlist -e expression, or None if it
+    cannot be represented (unknown field, degenerate rule)."""
+    field = rule.get("field")
+    gf = _GPOD_FIELDS.get(field)
+    kind = FIELDS.get(field)
+    if gf is None or kind is None:
+        return None
+    op, val = rule.get("op"), rule.get("value")
+
+    if kind == "text":
+        gop = _GPOD_TEXT_OPS.get(op)
+        if gop is None or val in (None, ""):
+            return None
+        return f"{gf} {gop} {val}"
+
+    if kind == "number":
+        try:
+            n = _gpod_num(field, val)
+        except (TypeError, ValueError):
+            return None
+        if op == "in_range":
+            try:
+                n2 = _gpod_num(field, rule.get("value2"))
+            except (TypeError, ValueError):
+                return None
+            return f"{gf} = {min(n, n2)}..{max(n, n2)}"
+        gop = _GPOD_INT_OPS.get(op)
+        if gop is None:
+            return None
+        if gop == ">=" and n <= 0:
+            return None  # gpod rejects '>= 0' (always true)
+        return f"{gf} {gop} {n}"
+
+    if kind == "date":
+        if op not in ("in_last", "not_in_last"):
+            return None
+        try:
+            days = int(round(float(val if val not in (None, "") else 0)))
+        except (TypeError, ValueError):
+            return None
+        if days <= 0:
+            return None
+        return f"{gf} {'<' if op == 'in_last' else '>'} {days}d"
+
+    return None
+
+
+def to_gpod_args(spec: dict) -> tuple[list[str], list[dict]]:
+    """Build the gpod-playlist create args for a spec.
+
+    Returns (args, dropped_rules) — args is everything after `-M <mount>`;
+    dropped_rules are stored rules that cannot be represented on the device.
+    """
+    args = ["-c", spec["name"], "-S"]
+    if not spec.get("match_all", True):
+        args.append("-A")
+    dropped = []
+    for rule in spec.get("rules") or []:
+        if not rule.get("field"):
+            continue
+        expr = rule_expr(rule)
+        if expr is None:
+            dropped.append(rule)
+        else:
+            args += ["-e", expr]
+    if spec.get("limit_n"):
+        unit = _GPOD_LIMIT_UNITS.get(spec.get("limit_unit") or "items", "songs")
+        sort = _GPOD_LIMIT_SORTS.get(spec.get("limit_by") or "random", "random")
+        args += ["-L", f"{int(spec['limit_n'])}:{unit}:{sort}"]
+    return args, dropped
 
 
 def _flatten(lib: dict) -> list[dict]:
@@ -72,6 +182,7 @@ def _flatten(lib: dict) -> list[dict]:
                     "playcount": t.get("playcount") or 0,
                     "year": t.get("year") or 0,
                     "bitrate": t.get("bitrate") or 0,
+                    "samplerate": t.get("samplerate") or 0,
                     "duration": (t.get("duration_ms") or 0) / 1000,
                     "size": (t.get("size") or 0) / 1048576,
                     "track_nr": t.get("track_nr") or 0,
@@ -114,6 +225,8 @@ def _match_rule(track: dict, rule: dict) -> bool:
         if op == "is_not": return n != x
         if op == "gt":     return n > x
         if op == "lt":     return n < x
+        if op == "gte":    return n >= x
+        if op == "lte":    return n <= x
         if op == "in_range":
             try:
                 y = float(rule.get("value2") if rule.get("value2") not in (None, "") else x)
@@ -146,15 +259,18 @@ def _match_rule(track: dict, rule: dict) -> bool:
 
 
 _SORT_KEYS = {
-    "name":                 (lambda t: t["title"].lower(), False),
-    "artist":               (lambda t: t["artist"].lower(), False),
-    "album":                (lambda t: t["album"].lower(), False),
-    "genre":                (lambda t: t["genre"].lower(), False),
-    "highest_rating":       (lambda t: t["rating"], True),
-    "most_played":          (lambda t: t["playcount"], True),
-    "least_played":         (lambda t: t["playcount"], False),
-    "most_recently_played": (lambda t: t["time_played"], True),
-    "most_recently_added":  (lambda t: t["time_added"], True),
+    "name":                  (lambda t: t["title"].lower(), False),
+    "artist":                (lambda t: t["artist"].lower(), False),
+    "album":                 (lambda t: t["album"].lower(), False),
+    "genre":                 (lambda t: t["genre"].lower(), False),
+    "highest_rating":        (lambda t: t["rating"], True),
+    "lowest_rating":         (lambda t: t["rating"], False),
+    "most_played":           (lambda t: t["playcount"], True),
+    "least_played":          (lambda t: t["playcount"], False),
+    "most_recently_played":  (lambda t: t["time_played"], True),
+    "least_recently_played": (lambda t: t["time_played"], False),
+    "most_recently_added":   (lambda t: t["time_added"], True),
+    "least_recently_added":  (lambda t: t["time_added"], False),
 }
 
 
@@ -202,17 +318,6 @@ def evaluate(lib: dict, spec: dict) -> list[dict]:
     return tracks
 
 
-def to_playlist_payload(name: str, tracks: list[dict]) -> dict:
-    """Build the {name, track_keys} payload consumed by _gpod_playlist_sync."""
-    track_keys = []
-    for t in tracks:
-        keys = [_track_key(t["artist"], t["album"], t["track_nr"], t["disc_nr"], t["title"])]
-        if t["albumartist"] != t["artist"]:
-            keys.append(_track_key(t["albumartist"], t["album"], t["track_nr"], t["disc_nr"], t["title"]))
-        track_keys.append(keys)
-    return {"name": name, "track_keys": track_keys}
-
-
 # ── CRUD ─────────────────────────────────────────────────────────────────────
 
 def _row_to_spec(row) -> dict:
@@ -237,12 +342,6 @@ async def get_smart_playlist(spl_id: int) -> dict | None:
         async with db.execute(f"SELECT {_COLS} FROM smart_playlists WHERE id=?", (spl_id,)) as cur:
             row = await cur.fetchone()
     return _row_to_spec(row) if row else None
-
-
-async def live_smart_playlists() -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(f"SELECT {_COLS} FROM smart_playlists WHERE live=1 ORDER BY name") as cur:
-            return [_row_to_spec(r) for r in await cur.fetchall()]
 
 
 async def save_smart_playlist(spec: dict) -> dict:

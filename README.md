@@ -43,7 +43,7 @@ iPod support is built around [gpod-utils](https://github.com/d3vil-st/gpod-utils
 - **Download** selected tracks as a `.tar` archive with restored directory structure (`Artist/[Year] - Album/NN - Title.ext`)
 - **Star ratings** — clickable inline 1–5 star picker on every track row in both the iPod and NAS source tabs; ratings are stored in SQLite and reflected across both views; clicking the active star clears the rating
 - **Playlists** — browse the iPod's playlists (including On-The-Go), sync Plex playlists to the device, and publish device playlists back to Plex; see [Playlists](#playlists)
-- **Smart playlists** — iTunes-style rule editor (field / operator / value rows, match all/any, limit with selection criteria, live updating); rules are evaluated against the iPod library and written to the device as a regular playlist; live-updating playlists are re-applied automatically after every sync
+- **Smart playlists** — iTunes-style rule editor (field / operator / value rows, match all/any, limit with selection criteria); rules are written to the iPod as real smart playlists in the iTunesDB (visible in iTunes); member lists refresh automatically after every sync
 - **Plex integration** (optional) — link your Plex Media Server to sync playlists both ways, import star ratings and play counts from Plex, and push ratings set in nasTune back to Plex; see [Plex integration](#plex-integration)
 - **Sign in with Plex** (optional) — gate the whole app behind Plex PIN OAuth (Overseerr-style); access limited to the server owner and approved users the server is shared with
 - **Play** tracks directly in the browser (iPod/WALKMAN and NAS source), with ALAC→FLAC transcoding on the fly for Firefox compatibility
@@ -142,11 +142,11 @@ Select **♪ Playlists** in the media type dropdown (iPod only — hidden for WA
 
 **＋ Smart** in the device playlists column opens an iTunes-style rule editor:
 
-- Rules combine a field (title, artist, album, genre, rating, plays, year, duration, size, date added, last played, media kind, …) with an operator and value; match **all** or **any**
+- Rules combine a field (title, artist, album, genre, rating, plays, year, duration, size, date added, last played, …) with an operator and value; match **all** or **any**
 - **Limit to** N items / minutes / hours / MB / GB, selected by random, most played, highest rating, most recently added, and more
-- A live preview shows how many tracks on the connected iPod match the current rules
-- **Save & Apply** evaluates the rules and writes the result to the iPod as a regular playlist (the iPod firmware never evaluates rules itself — same as iTunes, evaluation happens on the computer)
-- **Live updating** re-evaluates and rewrites the playlist automatically after every sync, so rules like *rating ≥ 4* or *added in the last 30 days* stay current as the library changes
+- A live preview shows approximately how many tracks on the connected iPod match the current rules
+- **Save & Apply** writes a **real smart playlist** to the iPod — the rules are stored in the iTunesDB itself (via `gpod-playlist -S`, gpod-utils ≥ 1.5.1) and are visible and editable in iTunes
+- Member lists are populated on creation and refreshed automatically after every sync (the iPod firmware displays the stored member list rather than evaluating rules itself), so rules like *rating ≥ 4* or *added in the last 30 days* stay current as the library changes — this covers iTunes-created smart playlists on the device too
 
 Definitions are stored in nasTune's database; device playlists whose name matches a stored definition show a gear icon for editing the rules.
 

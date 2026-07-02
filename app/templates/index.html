@@ -876,7 +876,7 @@
                  @click="pickDevPlaylist(i)">
               <span class="artist-name">
                 <span x-text="p.name"></span>
-                <span class="plex-smart-badge" x-show="p.smartpl" title="Smart playlist (created in iTunes)">smart</span>
+                <span class="plex-smart-badge" x-show="p.smartpl" title="Smart playlist — rules stored on the iPod">smart</span>
                 <template x-if="smartPlaylists.find(s => s.name === p.name)">
                   <span class="spl-gear" title="Edit smart playlist rules"
                         @click.stop="openSmartModal(smartPlaylists.find(s => s.name === p.name))">
@@ -914,9 +914,9 @@
               <div class="abar-stats" x-text="devPlaylistTracks.length + ' tracks · ' + fmtTotalDur(devPlaylistTracks)"></div>
             </div>
             <button class="manage-btn" style="margin-left:auto"
-                    x-show="plexStatus?.linked && !selectedDevPlaylist?.smartpl"
+                    x-show="plexStatus?.linked"
                     :disabled="publishBusy || devPlaylistTracks.length === 0"
-                    title="Create or replace this playlist in Plex (tracks must be in Plex — run the import first)"
+                    title="Create or replace this playlist in Plex (tracks must be in Plex — run the import first); smart playlists publish their current members"
                     @click="publishPlaylistToPlex()"
                     x-text="publishBusy ? 'Publishing…' : 'Publish to Plex'"></button>
           </div>
@@ -1153,13 +1153,6 @@
                   <option :value="op[0]" x-text="op[1]"></option>
                 </template>
               </select>
-              <template x-if="smartFieldDef(rule.field).kind === 'enum'">
-                <select class="spl-select" style="flex:1" x-model="rule.value" @change="scheduleSmartPreview()">
-                  <template x-for="o in smartFieldDef(rule.field).options" :key="o">
-                    <option :value="o" x-text="o"></option>
-                  </template>
-                </select>
-              </template>
               <template x-if="smartFieldDef(rule.field).kind === 'text'">
                 <input class="spl-input" x-model="rule.value" @input="scheduleSmartPreview()">
               </template>
@@ -1169,11 +1162,8 @@
               <template x-if="smartFieldDef(rule.field).kind === 'number' && rule.op === 'in_range'">
                 <input class="spl-input" type="number" x-model="rule.value2" @input="scheduleSmartPreview()" placeholder="to">
               </template>
-              <template x-if="smartFieldDef(rule.field).kind === 'date' && (rule.op === 'in_last' || rule.op === 'not_in_last')">
+              <template x-if="smartFieldDef(rule.field).kind === 'date'">
                 <input class="spl-input" type="number" x-model="rule.value" @input="scheduleSmartPreview()" placeholder="days">
-              </template>
-              <template x-if="smartFieldDef(rule.field).kind === 'date' && (rule.op === 'before' || rule.op === 'after')">
-                <input class="spl-input" type="date" x-model="rule.value" @change="scheduleSmartPreview()">
               </template>
               <span class="spl-rule-btn" @click="removeSmartRule(i)" title="Remove rule">&#x2212;</span>
               <span class="spl-rule-btn" @click="addSmartRule(i)" title="Add rule">+</span>
@@ -1194,14 +1184,13 @@
             </select>
           </div>
 
-          <div class="spl-row">
-            <input type="checkbox" class="row-cb" x-model="smartSpec.live">
-            <span>Live updating</span>
-            <span style="color:var(--dim);font-size:11px">— re-applied to the iPod after every sync</span>
+          <div class="spl-row" style="color:var(--dim);font-size:11px">
+            Written to the iPod as a real smart playlist (rules stored in iTunesDB, visible in iTunes);
+            members are refreshed automatically after every sync.
           </div>
 
           <div class="spl-preview" x-show="smartPreview"
-               x-text="smartPreview ? (smartPreview.count + ' track(s) match · ' + fmtDur(smartPreview.duration_ms) + ' · ' + fmtSize(smartPreview.size_bytes)) : ''"></div>
+               x-text="smartPreview ? ('≈ ' + smartPreview.count + ' track(s) match · ' + fmtDur(smartPreview.duration_ms) + ' · ' + fmtSize(smartPreview.size_bytes)) : ''"></div>
           <div class="spl-preview" x-show="!smartPreview && (!selectedDevnode || !library || library?.walkman)">
             Connect an iPod to preview matches
           </div>
