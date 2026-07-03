@@ -4,10 +4,17 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 IPOD_SENTINEL = "iPod_Control/iTunes/iTunesDB"
+IPOD_CONTROL_DEVICE = "iPod_Control/Device"
 
 
 def is_ipod(mount: Path) -> bool:
     return (mount / IPOD_SENTINEL).exists()
+
+
+def is_uninitialized_ipod(mount: Path) -> bool:
+    """iPod directory skeleton present but no iTunesDB — a freshly formatted or
+    disk-restored iPod. Never true for random USB sticks (no iPod_Control)."""
+    return (Path(mount) / IPOD_CONTROL_DEVICE).is_dir() and not (Path(mount) / IPOD_SENTINEL).exists()
 
 
 def log_mount_contents(mount: Path) -> None:

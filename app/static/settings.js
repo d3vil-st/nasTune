@@ -14,6 +14,9 @@ function settingsModule() {
     _deviceSettingsDbId: null,     // DB id for offline/known device
     _deviceSettingsType: 'ipod',   // 'ipod' | 'walkman'
 
+    // iTunesDB backups shown in the device settings modal (connected iPods only)
+    dbBackups: null,
+
     // Known devices (for picker)
     knownDevices: null,
     _browsingOfflineDeviceId: null,  // id of the offline iPod whose library is shown
@@ -135,6 +138,40 @@ function settingsModule() {
         this.deviceSettings = await r.json();
         this.deviceSettingsDraft = JSON.parse(JSON.stringify(this.deviceSettings));
       } catch (e) { console.error('_loadDeviceSettings:', e); }
+      this._loadDbBackups();  // fire-and-forget; renders when it arrives
+    },
+
+    async _loadDbBackups() {
+      this.dbBackups = null;
+      const devnode = this.devSettingsConnectedDevnode;
+      if (!devnode || this._deviceSettingsType === 'walkman') return;
+      try {
+        const r = await fetch('/devices/itunesdb-backups?devnode=' + encodeURIComponent(devnode));
+        if (!r.ok) return;
+        this.dbBackups = (await r.json()).backups;
+      } catch (e) { console.error('_loadDbBackups:', e); }
+    },
+
+    fmtBackupTime(name) {
+      const m = (name || '').match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/);
+      if (!m) return name;
+      return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).toLocaleString();
+    },
+
+    async restoreDbBackup(name) {
+      const devnode = this.devSettingsConnectedDevnode;
+      if (!devnode) return;
+      if (!confirm(`Replace the iPod's database with the backup from ${this.fmtBackupTime(name)}?\n\nTracks synced since then will disappear from the library (their files stay on the device — Verify → Add missing entries can re-add them). The current database is backed up first.`)) return;
+      try {
+        const r = await fetch('/devices/itunesdb-restore', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ devnode, name }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) { alert(data.detail || 'Restore failed'); return; }
+        this.showDeviceSettings = false;
+      } catch (e) { alert('Restore failed: ' + e.message); }
     },
 
     async dropArtworkCache() {
@@ -214,6 +251,22 @@ function settingsModule() {
         this._deviceMap = null;
         this.showDevicePicker = false;
       } catch (e) { alert('Failed to load offline library: ' + e.message); }
+    },
+
+    async renameIpod(name) {
+      const devnode = this.devSettingsConnectedDevnode;
+      if (!devnode || !name) return;
+      try {
+        const r = await fetch('/devices/rename', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ devnode, name }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) { alert(data.detail || 'Rename failed'); return; }
+        this.showDeviceSettings = false;
+        // Header/library name refreshes via the op-done SSE refresh.
+      } catch (e) { alert('Rename failed: ' + e.message); }
     },
 
     async runAutoSync() {

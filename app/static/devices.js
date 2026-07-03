@@ -188,6 +188,25 @@ function devicesModule() {
       return !!(d.usb_serial && this.knownDevices?.ipods?.some(k => k.uuid === d.usb_serial));
     },
 
+    async initIpod() {
+      if (!this.selectedDevnode) return;
+      if (!confirm('Create an empty iPod database on this device?\n\nThe device becomes manageable by nasTune (and iTunes). Existing files are not touched.')) return;
+      try {
+        const r = await this.apiFetch('/devices/init-ipod', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ devnode: this.selectedDevnode }),
+        });
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          alert(d.detail || 'Initialize failed');
+          return;
+        }
+        this.libraryError = null;
+        // Library loads via the op-done refresh once gpod-cp -I finishes.
+      } catch (e) { alert('Initialize failed: ' + e.message); }
+    },
+
     async ejectDevice() {
       if (!this.selectedDevnode) return;
       if (this.playerVisible) this.stopPlayback();

@@ -3,7 +3,7 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, replace
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +11,9 @@ import aiosqlite
 
 from app.services.db import DB_PATH
 from app.services.fs_utils import FS_LABELS, fs_type, fs_usage
-from app.services.ipod import is_ipod as detect_ipod, log_mount_contents as log_ipod_mount_contents
+from app.services.ipod import (is_ipod as detect_ipod,
+                               is_uninitialized_ipod as detect_uninit_ipod,
+                               log_mount_contents as log_ipod_mount_contents)
 from app.services.walkman import get_serial as _get_usb_serial
 
 log = logging.getLogger(__name__)
@@ -36,6 +38,7 @@ class DeviceInfo:
     walkman_storage_type: str | None = None  # 'INTERNAL' | 'CARD', set on mount
     ipod_db_id: int | None = None
     usb_serial: str | None = None   # USB iSerial read at connect time (= iPod UUID)
+    ipod_uninitialized: bool = False  # iPod_Control/Device present but no iTunesDB
 
 
 class DeviceService:
@@ -118,6 +121,11 @@ class DeviceService:
                     else:
                         log.info("  Not an iPod or WALKMAN at %s", mount)
 
+            ipod_uninitialized = (not is_ipod and not is_walkman
+                                  and detect_uninit_ipod(mount))
+            if ipod_uninitialized:
+                log.info("  Uninitialized iPod: iPod_Control present, no iTunesDB at %s", mount)
+
             updated = DeviceInfo(
                 devnode=devnode,
                 devname=info.devname,
@@ -131,6 +139,7 @@ class DeviceService:
                 walkman_storage_type=walkman_storage_type,
                 usb_serial=usb_serial,
                 ipod_db_id=info.ipod_db_id,
+                ipod_uninitialized=ipod_uninitialized,
             )
             async with self._lock:
                 self.devices[devnode] = updated
@@ -181,6 +190,7 @@ class DeviceService:
                     walkman_db_id=info.walkman_db_id, ipod_db_id=info.ipod_db_id,
                     walkman_storage_type=info.walkman_storage_type,
                     usb_serial=info.usb_serial,
+                    ipod_uninitialized=info.ipod_uninitialized,
                 )
                 async with self._lock:
                     if devnode in self.devices:
@@ -443,6 +453,10 @@ class DeviceService:
             else:
                 log.info("  Not an iPod or WALKMAN: no sentinels found at %s", mount)
 
+        ipod_uninitialized = not is_ipod and not is_walkman and detect_uninit_ipod(mount)
+        if ipod_uninitialized:
+            log.info("  Uninitialized iPod: iPod_Control present, no iTunesDB at %s", mount)
+
         usb_serial: str | None = None
         if is_ipod:
             usb_serial = await _get_usb_serial(devnode) or None
@@ -463,6 +477,7 @@ class DeviceService:
             walkman_storage_type=walkman_storage_type,
             usb_serial=usb_serial,
             mounted=True,
+            ipod_uninitialized=ipod_uninitialized,
         )
 
         async with self._lock:
@@ -556,6 +571,28 @@ class DeviceService:
         log.info("  mount %s → %s OK (opts=%s)", devnode, mountpoint, opts)
         return True
 
+    async def mark_ipod_initialized(self, devnode: str) -> None:
+        """Flip a device to is_ipod after gpod-cp -I created a fresh iTunesDB.
+
+        Must be called while the device is still mounted (the init op holds the
+        mount ref); re-checks the sentinel rather than trusting the caller.
+        """
+        info = self.devices.get(devnode)
+        if not info or not info.mount:
+            return
+        if not detect_ipod(Path(info.mount)):
+            log.warning("mark_ipod_initialized: sentinel still missing at %s", info.mount)
+            return
+        usb_serial = info.usb_serial or await _get_usb_serial(devnode) or None
+        async with self._lock:
+            info = self.devices.get(devnode)
+            if not info:
+                return
+            self.devices[devnode] = replace(
+                info, is_ipod=True, ipod_uninitialized=False, usb_serial=usb_serial)
+        log.info("Device %s initialized as iPod", devnode)
+        self._broadcast()
+
     async def _maybe_auto_sync(self, devnode: str) -> None:
         """Run per-device sync rules when a known iPod with auto-sync enabled connects.
 
@@ -592,6 +629,13 @@ class DeviceService:
             info = self.devices.get(devnode)
             if not info or not info.is_ipod:
                 return
+
+            # Refresh the source index first — auto-sync exists for "added music,
+            # plugged in the iPod"; a stale index would silently miss the new files.
+            from app.services.scanner import rescan_rule_sources
+            rescanned = await rescan_rule_sources(info.ipod_db_id or db_id, "ipod")
+            if rescanned:
+                log.info("auto-sync on connect: rescanned source(s): %s", ", ".join(rescanned))
 
             groups = await compute_auto_sync_paths(lib, info.ipod_db_id or db_id, "ipod")
             total = sum(len(p) for p in groups.values())

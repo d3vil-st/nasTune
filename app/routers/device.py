@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.services.devices import device_service
-from app.services.operations import op_service, _OP_HISTORY_DIR
+from app.services.operations import op_service, _OP_HISTORY_DIR, list_itdb_backups
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["device"])
@@ -189,6 +189,89 @@ async def verify_library(body: VerifyBody):
     mount = await _get_mount(body.devnode)  # iPod-only; mounts on demand; raises for WALKMAN
     device_id = _resolve_device_id(body.devnode)
     await op_service.run_verify(body.mode, mount, device_id, devnode=body.devnode)
+    return {"ok": True}
+
+
+class RestoreDbBody(BaseModel):
+    devnode: str
+    name: str
+
+
+@router.get("/devices/itunesdb-backups")
+async def itunesdb_backups(devnode: str):
+    """List stored iTunesDB backups for a connected iPod, newest first."""
+    info = device_service.get_device_info(devnode)
+    if not info:
+        raise HTTPException(404, "Device not found")
+    device_id = _resolve_device_id(devnode)
+    return {"backups": list_itdb_backups(device_id)}
+
+
+@router.post("/devices/itunesdb-restore")
+async def itunesdb_restore(body: RestoreDbBody):
+    mount = await _get_mount(body.devnode)  # iPod-only; busy check; mounts on demand
+    device_id = _resolve_device_id(body.devnode)
+    await op_service.run_restore_itunesdb(mount, body.name, device_id, devnode=body.devnode)
+    return {"ok": True}
+
+
+class InitIpodBody(BaseModel):
+    devnode: str
+
+
+@router.post("/devices/init-ipod")
+async def init_ipod(body: InitIpodBody):
+    """Create a fresh iTunesDB on a blank device (gpod-cp -I)."""
+    info = device_service.get_device_info(body.devnode)
+    if not info:
+        raise HTTPException(404, "Device not found")
+    if info.is_walkman:
+        raise HTTPException(400, "Not applicable to WALKMAN devices")
+    if info.is_ipod:
+        raise HTTPException(400, "Device already has an iPod database")
+    if op_service.is_busy():
+        raise HTTPException(409, "Another operation is already running")
+    try:
+        mount = await device_service.ensure_mounted(body.devnode)
+    except (KeyError, RuntimeError) as exc:
+        raise HTTPException(500, f"Mount failed: {exc}")
+    info = device_service.get_device_info(body.devnode) or info
+    if info.is_ipod:  # mount-time detection found a DB after all
+        await device_service.release_mount(body.devnode)
+        raise HTTPException(400, "Device already has an iPod database")
+    device_id = _resolve_device_id(body.devnode)
+    await op_service.run_init_ipod(mount, device_id, devnode=body.devnode)
+    return {"ok": True}
+
+
+class RenameBody(BaseModel):
+    devnode: str
+    name: str
+
+
+@router.post("/devices/rename")
+async def rename_device(body: RenameBody):
+    """Rename the iPod — the master playlist's name is the device name."""
+    new_name = body.name.strip()
+    if not new_name:
+        raise HTTPException(422, "Name must not be empty")
+    mount = await _get_mount(body.devnode)  # iPod-only; busy check; mounts on demand
+    lib = device_service._cache.get(body.devnode)
+    if not lib:
+        await device_service._load_library(body.devnode)
+        lib = device_service._cache.get(body.devnode)
+    if not lib:
+        await device_service.release_mount(body.devnode)
+        raise HTTPException(400, "Could not load the device library")
+    old_name = lib.get("ipod_name")
+    if not old_name:
+        await device_service.release_mount(body.devnode)
+        raise HTTPException(400, "Cannot determine the current device name")
+    if old_name == new_name:
+        await device_service.release_mount(body.devnode)
+        return {"ok": True, "unchanged": True}
+    device_id = _resolve_device_id(body.devnode)
+    await op_service.run_rename_device(mount, old_name, new_name, device_id, devnode=body.devnode)
     return {"ok": True}
 
 
@@ -534,6 +617,11 @@ async def run_auto_sync(body: AutoSyncBody):
     if db_id is None:
         raise HTTPException(400, "Device not yet registered in DB")
     from app.services.ipod_db import compute_auto_sync_paths
+    from app.services.scanner import rescan_rule_sources
+    # Incremental rescan (unchanged files are skipped) so new NAS files are seen
+    rescanned = await rescan_rule_sources(db_id, "ipod")
+    if rescanned:
+        log.info("auto-sync: rescanned source(s): %s", ", ".join(rescanned))
     groups = await compute_auto_sync_paths(lib, db_id, "ipod")
     total = sum(len(p) for p in groups.values())
     if not total:

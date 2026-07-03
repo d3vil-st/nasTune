@@ -92,6 +92,23 @@ function utilsModule() {
       return sec ? `${m}m ${sec}s` : `${m}m`;
     },
 
+    opKindLabel(kind, form = 'noun') {
+      const m = {
+        sync: ['Sync', 'Syncing…'],
+        delete: ['Delete', 'Deleting…'],
+        verify: ['Verify', 'Verifying…'],
+        check_fs: ['Check FS', 'Checking FS…'],
+        playlist_delete: ['Playlist delete', 'Deleting playlist…'],
+        playlist_edit: ['Playlist edit', 'Updating playlist…'],
+        smart_playlist: ['Smart playlist', 'Writing smart playlist…'],
+        restore_db: ['DB restore', 'Restoring database…'],
+        init_ipod: ['Initialize', 'Initializing iPod…'],
+        rename_device: ['Rename', 'Renaming iPod…'],
+      };
+      const e = m[kind] || ['Sync', 'Syncing…'];
+      return form === 'progressive' ? e[1] : e[0];
+    },
+
     fmtSize(bytes) {
       if (!bytes) return '0 B';
       if (bytes < 1024) return bytes + ' B';

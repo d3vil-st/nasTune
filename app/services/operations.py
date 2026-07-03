@@ -1,4 +1,5 @@
 import asyncio
+import gzip
 import json
 import logging
 import os
@@ -13,6 +14,62 @@ GPOD_DRY_RUN = os.environ.get("GPOD_DRY_RUN", "").lower() in ("1", "true", "yes"
 
 _DB_PATH = Path(os.environ.get("DB_PATH", "/data/nastune.db"))
 _OP_HISTORY_DIR = _DB_PATH.parent / "op_history"
+_ITDB_BACKUP_DIR = _DB_PATH.parent / "itunesdb_backups"
+ITDB_BACKUP_KEEP = 10
+_ITDB_BACKUP_NAME_RE = re.compile(r"^\d{8}T\d{6}\.iTunesDB\.gz$")
+
+
+def _safe_device_dir(device_id: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9_\-]", "_", device_id or "unknown")
+
+
+def _backup_itunesdb_sync(mount: str, device_id: str) -> str | None:
+    src = Path(mount) / "iPod_Control" / "iTunes" / "iTunesDB"
+    if not src.is_file():
+        return None
+    dir_path = _ITDB_BACKUP_DIR / _safe_device_dir(device_id)
+    dir_path.mkdir(parents=True, exist_ok=True)
+    name = time.strftime("%Y%m%dT%H%M%S") + ".iTunesDB.gz"
+    with src.open("rb") as f_in, gzip.open(dir_path / name, "wb") as f_out:
+        shutil.copyfileobj(f_in, f_out)
+    for old in sorted(dir_path.glob("*.iTunesDB.gz"))[:-ITDB_BACKUP_KEEP]:
+        old.unlink(missing_ok=True)
+    return name
+
+
+async def _backup_itunesdb(mount: str, device_id: str, op: "_Op") -> None:
+    """Snapshot iTunesDB before the first write of an op. Non-fatal."""
+    if GPOD_DRY_RUN:
+        return
+    try:
+        name = await asyncio.to_thread(_backup_itunesdb_sync, mount, device_id)
+        if name:
+            op.log.append(f"  iTunesDB backed up: {name}")
+    except Exception as exc:
+        log.warning("iTunesDB backup failed: %s", exc)
+        op.log.append(f"  WARN: iTunesDB backup failed ({exc})")
+
+
+def list_itdb_backups(device_id: str) -> list[dict]:
+    dir_path = _ITDB_BACKUP_DIR / _safe_device_dir(device_id)
+    out = []
+    for p in sorted(dir_path.glob("*.iTunesDB.gz"), reverse=True):
+        st = p.stat()
+        out.append({"name": p.name, "size": st.st_size, "mtime": st.st_mtime})
+    return out
+
+
+def _restore_itunesdb_sync(mount: str, device_id: str, name: str) -> None:
+    if not _ITDB_BACKUP_NAME_RE.match(name):
+        raise ValueError("invalid backup name")
+    src = _ITDB_BACKUP_DIR / _safe_device_dir(device_id) / name
+    if not src.is_file():
+        raise FileNotFoundError(name)
+    dest = Path(mount) / "iPod_Control" / "iTunes" / "iTunesDB"
+    tmp = dest.with_suffix(".nastune-restore")
+    with gzip.open(src, "rb") as f_in, tmp.open("wb") as f_out:
+        shutil.copyfileobj(f_in, f_out)
+    os.replace(tmp, dest)
 
 
 def _save_op_history(op: "_Op", device_id: str) -> None:
@@ -312,6 +369,7 @@ class OperationService:
     async def _do_delete(self, op: _Op, track_ids: list, mount: str, device_id: str = "", devnode: str = "") -> None:
         try:
             async with self._lock:
+                await _backup_itunesdb(mount, device_id, op)
                 track_ids = sorted(track_ids, key=lambda x: int(x), reverse=True)
                 i = 0
                 while i < len(track_ids):
@@ -618,6 +676,7 @@ class OperationService:
     async def _do_playlist_delete(self, op: _Op, mount: str, name: str, device_id: str = "", devnode: str = "") -> None:
         try:
             async with self._lock:
+                await _backup_itunesdb(mount, device_id, op)
                 op.current = f"Deleting playlist '{name}'"
                 err = await self._run_gpod_playlist(mount, op, ["-d", name])
                 if err:
@@ -645,6 +704,7 @@ class OperationService:
         """Add/remove tracks on a regular device playlist (gpod-playlist -a / -r)."""
         try:
             async with self._lock:
+                await _backup_itunesdb(mount, device_id, op)
                 op.current = f"Updating playlist '{name}'"
                 if create:
                     err = await self._run_gpod_playlist(mount, op, ["-c", name])
@@ -684,6 +744,7 @@ class OperationService:
         from app.services import smart_playlists as spl
         try:
             async with self._lock:
+                await _backup_itunesdb(mount, device_id, op)
                 name = spec["name"]
                 op.current = f"Smart playlist: '{name}'"
                 args, dropped = spl.to_gpod_args(spec)
@@ -717,6 +778,7 @@ class OperationService:
             force_aac, threads = await _load_sync_settings(ipod_db_id=ipod_db_id)
             groups = list(copy_groups.items()) if copy_groups else [(media_type, copy_paths)]
             async with self._lock:
+                await _backup_itunesdb(mount, device_id, op)
                 # Delete highest IDs first so lower IDs don't shift after each batch commit
                 delete_ids = sorted(delete_ids, key=lambda x: int(x), reverse=True)
                 i = 0
@@ -793,6 +855,8 @@ class OperationService:
             log.info("exec: %s", " ".join(cmd))
             op.log.append(f"$ {' '.join(cmd)}")
             async with self._lock:
+                if flag:  # only --add/--delete modify the iTunesDB
+                    await _backup_itunesdb(mount, device_id, op)
                 if GPOD_DRY_RUN:
                     op.log.append("[dry-run] skipped")
                     op.status = "done"
@@ -823,6 +887,116 @@ class OperationService:
                     if device_id:
                         _save_op_history(op, device_id)
         finally:
+            if devnode:
+                await _finish_device_op(devnode)
+
+    # ── Initialize blank iPod (gpod-cp -I) ───────────────────────────
+
+    async def run_init_ipod(self, mount: str, device_id: str = "", devnode: str = "") -> None:
+        op = _Op("init_ipod", 0)
+        self._op = op
+        asyncio.create_task(self._do_init_ipod(op, mount, device_id, devnode))
+
+    async def _do_init_ipod(self, op: _Op, mount: str, device_id: str, devnode: str = "") -> None:
+        try:
+            async with self._lock:
+                cmd = ["gpod-cp", "-M", mount, "-I"]
+                op.current = "Initializing iPod…"
+                log.info("exec: %s", " ".join(cmd))
+                op.log.append(f"$ {' '.join(cmd)}")
+                if GPOD_DRY_RUN:
+                    op.log.append("[dry-run] skipped")
+                    op.status = "done"
+                    return
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        *cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT,
+                    )
+                    out, _ = await proc.communicate()
+                    for line in out.decode(errors="replace").splitlines():
+                        op.log.append(line)
+                    if proc.returncode != 0:
+                        op.status = "error"
+                        op.error = f"gpod-cp -I exited {proc.returncode}"
+                        return
+                except FileNotFoundError:
+                    op.status = "error"
+                    op.error = "gpod-cp not found"
+                    return
+                # Flip DeviceInfo to a real iPod while the mount ref is still held
+                from app.services.devices import device_service
+                await device_service.mark_ipod_initialized(devnode)
+                op.status = "done"
+                op.current = ""
+                log.info("iPod initialized at %s", mount)
+        finally:
+            if device_id:
+                _save_op_history(op, device_id)
+            if devnode:
+                await _finish_device_op(devnode)
+
+    # ── Rename device (master playlist name = iPod name) ────────────
+
+    async def run_rename_device(self, mount: str, old_name: str, new_name: str,
+                                device_id: str = "", devnode: str = "") -> None:
+        op = _Op("rename_device", 0)
+        self._op = op
+        asyncio.create_task(self._do_rename_device(op, mount, old_name, new_name, device_id, devnode))
+
+    async def _do_rename_device(self, op: _Op, mount: str, old_name: str, new_name: str,
+                                device_id: str, devnode: str = "") -> None:
+        try:
+            async with self._lock:
+                await _backup_itunesdb(mount, device_id, op)
+                op.current = f"Renaming iPod to '{new_name}'"
+                err = await self._run_gpod_playlist(mount, op, ["-p", old_name, "-R", new_name])
+                if err:
+                    op.status = "error"
+                    op.error = err
+                    log.error("rename device '%s' -> '%s' failed: %s", old_name, new_name, err)
+                    return
+                op.status = "done"
+                op.current = ""
+                log.info("iPod renamed: '%s' -> '%s'", old_name, new_name)
+        finally:
+            if device_id:
+                _save_op_history(op, device_id)
+            if devnode:
+                await _finish_device_op(devnode)
+
+    # ── iTunesDB restore ─────────────────────────────────────────────
+
+    async def run_restore_itunesdb(self, mount: str, name: str, device_id: str = "", devnode: str = "") -> None:
+        op = _Op("restore_db", 0)
+        self._op = op
+        asyncio.create_task(self._do_restore_itunesdb(op, mount, name, device_id, devnode))
+
+    async def _do_restore_itunesdb(self, op: _Op, mount: str, name: str, device_id: str, devnode: str = "") -> None:
+        try:
+            async with self._lock:
+                op.current = f"Restoring iTunesDB from {name}"
+                op.log.append(f"restore iTunesDB <- {name}")
+                # Snapshot the current DB so the restore itself is undoable
+                await _backup_itunesdb(mount, device_id, op)
+                if GPOD_DRY_RUN:
+                    op.log.append("[dry-run] skipped")
+                    op.status = "done"
+                    return
+                try:
+                    await asyncio.to_thread(_restore_itunesdb_sync, mount, device_id, name)
+                    op.status = "done"
+                    op.current = ""
+                    op.log.append("  iTunesDB restored")
+                    log.info("iTunesDB restored from %s", name)
+                except Exception as exc:
+                    op.status = "error"
+                    op.error = f"restore failed: {exc}"
+                    log.error("iTunesDB restore from %s failed: %s", name, exc)
+        finally:
+            if device_id:
+                _save_op_history(op, device_id)
             if devnode:
                 await _finish_device_op(devnode)
 

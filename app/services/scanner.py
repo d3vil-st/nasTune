@@ -117,8 +117,14 @@ async def _flush_batch(batch: list[dict]) -> None:
         await db.commit()
 
 
-def _find_files(root: Path) -> list[Path]:
-    return [p for p in root.rglob('*') if p.is_file() and p.suffix.lower() in AUDIO_EXT]
+def _find_files(root: Path) -> list[tuple[Path, int, int]]:
+    """Audio files under root as (path, mtime, size) — stat once, in the thread."""
+    out = []
+    for p in root.rglob('*'):
+        if p.is_file() and p.suffix.lower() in AUDIO_EXT:
+            st = p.stat()
+            out.append((p, int(st.st_mtime), st.st_size))
+    return out
 
 
 async def _write_progress(source_id: int, processed: int, total: int, current_file: str) -> None:
@@ -158,6 +164,17 @@ async def scan_source(source_id: int, root: str, source_type: str = 'music') -> 
         await db.commit()
 
     try:
+        # Known files: skip tag-reading when mtime+size are unchanged. A full
+        # rescan clears source_tracks first, so everything re-reads there.
+        existing: dict[str, tuple[int | None, int | None]] = {}
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT path, file_mtime, size FROM source_tracks WHERE source_id=?",
+                (source_id,),
+            ) as cur:
+                async for path, mtime, size in cur:
+                    existing[path] = (mtime, size)
+
         # Run rglob in a thread — it blocks and would stall the event loop for large trees
         files = await asyncio.to_thread(_find_files, root_path)
         total = len(files)
@@ -166,9 +183,15 @@ async def scan_source(source_id: int, root: str, source_type: str = 'music') -> 
         await _write_progress(source_id, 0, total, "")
 
         batch: list[dict] = []
+        unchanged: list[str] = []
         processed = 0
 
-        for fpath in files:
+        for fpath, mtime, size in files:
+            spath = str(fpath)
+            if existing.get(spath) == (mtime, size):
+                unchanged.append(spath)
+                processed += 1
+                continue
             track = await asyncio.to_thread(_read_track, fpath, source_type)
             if track:
                 if source_type == 'podcast':
@@ -188,6 +211,19 @@ async def scan_source(source_id: int, root: str, source_type: str = 'music') -> 
 
         if batch:
             await _flush_batch(batch)
+
+        # Keep unchanged rows alive past the stale-row cleanup below
+        if unchanged:
+            log.info("Source %d: %d file(s) unchanged, tags not re-read", source_id, len(unchanged))
+            async with aiosqlite.connect(DB_PATH) as db:
+                for i in range(0, len(unchanged), 500):
+                    chunk = unchanged[i:i + 500]
+                    await db.execute(
+                        f"UPDATE source_tracks SET scanned_at=? WHERE source_id=? "
+                        f"AND path IN ({','.join('?' * len(chunk))})",
+                        (now, source_id, *chunk),
+                    )
+                await db.commit()
 
         # Remove DB rows for files that no longer exist on disk
         async with aiosqlite.connect(DB_PATH) as db:
@@ -216,3 +252,44 @@ async def scan_source(source_id: int, root: str, source_type: str = 'music') -> 
                 (str(exc), source_id),
             )
             await db.commit()
+
+
+async def rescan_rule_sources(device_id: int, device_type: str = "ipod") -> list[str]:
+    """Incrementally rescan the sources referenced by a device's enabled sync
+    rules, so auto-sync sees files added since the last manual scan. Returns
+    the names of the sources rescanned. Sources already scanning are skipped
+    rather than awaited — whatever that scan has flushed so far is still
+    picked up by compute_auto_sync_paths, and the next run gets the rest.
+    """
+    rules_table = "ipod_sync_rules" if device_type == "ipod" else "walkman_sync_rules"
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            f"SELECT media_type, source_id FROM {rules_table} WHERE device_id=? AND enabled=1",
+            (device_id,),
+        ) as cur:
+            rules = await cur.fetchall()
+        if not rules:
+            return []
+        async with db.execute("SELECT id, name, path, type, scan_status FROM sources") as cur:
+            sources = await cur.fetchall()
+
+    wanted: dict[int, tuple] = {}
+    for media_type, rule_source_id in rules:
+        for sid, name, path, stype, status in sources:
+            if stype != media_type:
+                continue
+            if rule_source_id is not None and sid != rule_source_id:
+                continue
+            wanted[sid] = (sid, name, path, stype, status)
+
+    rescanned: list[str] = []
+    for sid, name, path, stype, status in wanted.values():
+        if status == "scanning":
+            log.info("pre-sync rescan: source %d (%s) already scanning, skipped", sid, name)
+            continue
+        try:
+            await scan_source(sid, path, stype)
+            rescanned.append(name)
+        except Exception as exc:
+            log.warning("pre-sync rescan of source %d (%s) failed: %s", sid, name, exc)
+    return rescanned

@@ -144,6 +144,17 @@
     .dp-row.dp-offline { opacity: .7; }
     .dp-row.dp-offline:not(:has(.dp-gear:hover)):not([data-has-cache="false"]) { cursor: default; }
     .dp-name { font-size: 13px; font-weight: 500; }
+    .dp-badge {
+      font-size: 10px;
+      font-weight: 600;
+      color: #ffb340;
+      border: 1px solid rgba(255, 179, 64, .45);
+      border-radius: 4px;
+      padding: 0 5px;
+      margin-left: 6px;
+      vertical-align: 1px;
+      white-space: nowrap;
+    }
     .dp-meta { font-size: 11px; color: var(--muted); white-space: nowrap; }
     .dp-row.active .dp-meta { color: rgba(255,255,255,.7); }
 

@@ -88,7 +88,10 @@
               <div class="dp-row" :class="{ active: d.devnode === selectedDevnode }"
                    @click.stop="selectDevice(d.devnode)">
                 <div class="dp-info">
-                  <span class="dp-name" x-text="_connectedDeviceName(d) || d.devname"></span>
+                  <span class="dp-name">
+                    <span x-text="_connectedDeviceName(d) || d.devname"></span>
+                    <span class="dp-badge" x-show="d.ipod_uninitialized" style="display:none">Not initialized</span>
+                  </span>
                   <span class="dp-meta" x-show="_connectedDeviceName(d)" style="display:none"
                         x-text="(d.usb_serial || d.devname) + (d.walkman_storage_type ? ' — ' + d.walkman_storage_type.charAt(0) + d.walkman_storage_type.slice(1).toLowerCase() : '')"></span>
                   <span class="dp-meta" x-text="(d.size_bytes / 1073741824).toFixed(0) + ' GB ' + d.fstype"></span>
@@ -348,7 +351,7 @@
   </div>
 
   <!-- ── Error banner ── -->
-  <div x-show="libraryError && !library" style="flex-shrink:0; overflow:auto;">
+  <div x-show="libraryError && !library && !selectedDevice?.ipod_uninitialized" style="flex-shrink:0; overflow:auto;">
     <div class="error-box">
       <strong>Could not read device library</strong>
       <span x-text="libraryError"></span>
@@ -365,6 +368,17 @@
         <span class="empty-icon">&#x1F3B5;</span>
         <span class="empty-label">No devices connected</span>
         <span class="empty-sub">Connect an iPod or WALKMAN, or set <code style="color:#ebebf5;background:#3a3a3c;padding:1px 5px;border-radius:4px">IPOD_MOUNT_POINT</code></span>
+      </div>
+    </div>
+
+    <!-- Blank iPod: skeleton present, no iTunesDB -->
+    <div x-show="viewMode === 'library' && !libraryLoading && !library && selectedDevice?.ipod_uninitialized"
+         style="flex:1; display:flex; align-items:center; justify-content:center;">
+      <div class="empty">
+        <span class="empty-icon">&#x1F3B5;</span>
+        <span class="empty-label">This iPod has no music database</span>
+        <span class="empty-sub">It looks freshly formatted or restored. Create an empty database to start managing it with nasTune — no iTunes needed.</span>
+        <button class="btn-primary" style="margin-top:14px" @click="initIpod()">Initialize iPod</button>
       </div>
     </div>
 
@@ -1361,7 +1375,7 @@
               :style="currentOp.kind === 'delete' ? 'background:#ff453a' : 'background:#30d158'"></span>
         <span style="font-weight:500;flex-shrink:0"
               :style="currentOp.kind === 'delete' ? 'color:#ff453a' : 'color:#30d158'"
-              x-text="currentOp.kind === 'delete' ? 'Deleting…' : currentOp.kind === 'verify' ? 'Verifying…' : currentOp.kind === 'check_fs' ? 'Checking FS…' : 'Syncing…'"></span>
+              x-text="opKindLabel(currentOp.kind, 'progressive')"></span>
         <span class="statusbar-op-count" x-show="currentOp.total > 0" x-text="currentOp.processed + ' / ' + currentOp.total"></span>
         <template x-if="currentOp.current">
           <span class="statusbar-op-current" x-text="currentOp.current"></span>
@@ -1376,7 +1390,7 @@
               :style="lastOp.status === 'done' ? 'color:#30d158' : 'color:#ff453a'"
               x-text="lastOp.status === 'done' ? '✓' : '✗'"></span>
         <span style="color:var(--muted);flex-shrink:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px"
-              x-text="(lastOp.kind === 'sync' ? 'Sync' : lastOp.kind === 'verify' ? 'Verify' : lastOp.kind === 'check_fs' ? 'Check FS' : 'Delete') + (lastOp.total > 0 ? ' · ' + lastOp.total + ' tracks' : '') + (fmtOpDuration(lastOp) ? ' · ' + fmtOpDuration(lastOp) : '')"></span>
+              x-text="opKindLabel(lastOp.kind) + (lastOp.total > 0 ? ' · ' + lastOp.total + ' tracks' : '') + (fmtOpDuration(lastOp) ? ' · ' + fmtOpDuration(lastOp) : '')"></span>
         <span style="color:var(--dim);flex-shrink:0;font-variant-numeric:tabular-nums" x-text="fmtAgo(lastOp.finished_at)"></span>
       </span>
     </template>
@@ -1559,6 +1573,23 @@
         <template x-if="deviceSettingsDraft">
           <div style="display:flex;flex-direction:column;gap:20px">
 
+            <!-- Device name (iPod-only; renames the master playlist on the device) -->
+            <template x-if="devSettingsConnectedDevnode && _deviceSettingsType !== 'walkman'">
+              <div class="setting-row" x-data="{ newName: '' }">
+                <div style="flex:1">
+                  <div style="font-size:13px;font-weight:500;color:var(--text)">Device name</div>
+                  <div style="font-size:11px;color:var(--muted);margin-top:2px">Shown on the iPod itself and in nasTune</div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <input class="spl-input" style="width:150px" :placeholder="_deviceLabel"
+                         x-model="newName" @keydown.enter="newName.trim() && (renameIpod(newName.trim()), newName = '')">
+                  <button class="manage-btn" style="font-size:12px;white-space:nowrap"
+                          :disabled="!newName.trim()"
+                          @click="renameIpod(newName.trim()); newName = ''">Rename</button>
+                </div>
+              </div>
+            </template>
+
             <!-- Force AAC override -->
             <div class="setting-row" style="cursor:pointer" @click="cycleDeviceForceAac()">
               <div style="flex:1">
@@ -1680,6 +1711,30 @@
               </div>
             </template>
 
+            <!-- iTunesDB backups (iPod-only; snapshots taken before every write) -->
+            <template x-if="devSettingsConnectedDevnode && _deviceSettingsType !== 'walkman'">
+              <div>
+                <div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:4px">Database backups</div>
+                <div style="font-size:11px;color:var(--muted);margin-bottom:8px">A snapshot of the iPod's database is saved before every library change. Restore one if the library breaks.</div>
+                <template x-if="dbBackups && dbBackups.length === 0">
+                  <div style="font-size:12px;color:var(--muted)">No backups yet — one is created before the next sync or edit.</div>
+                </template>
+                <div x-show="dbBackups && dbBackups.length"
+                     style="display:flex;flex-direction:column;gap:2px;max-height:170px;overflow-y:auto">
+                  <template x-for="b in (dbBackups || [])" :key="b.name">
+                    <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;background:var(--surface-bg);border-radius:6px;border:1px solid var(--card-border)">
+                      <div style="flex:1;min-width:0">
+                        <span style="font-size:12px;color:var(--text)" x-text="fmtBackupTime(b.name)"></span>
+                        <span style="font-size:11px;color:var(--muted);margin-left:8px" x-text="fmtSize(b.size)"></span>
+                      </div>
+                      <button class="manage-btn" style="font-size:12px;white-space:nowrap"
+                              @click="restoreDbBackup(b.name)">Restore</button>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </template>
+
           </div>
         </template>
 
@@ -1702,7 +1757,7 @@
     <template x-if="showOpLog && (historyViewOp || currentOp)">
       <div class="op-log-modal">
         <div class="op-log-header">
-          <span x-text="{ delete: 'Delete output', verify: 'Verify output', check_fs: 'Check FS output', sync: 'Sync output' }[(historyViewOp || currentOp).kind] || 'Sync output'"></span>
+          <span x-text="opKindLabel((historyViewOp || currentOp).kind) + ' output'"></span>
           <template x-if="historyViewOp">
             <span style="color:var(--dim);font-size:11px;font-weight:400" x-text="fmtAgo(historyViewOp.finished_at)"></span>
           </template>
