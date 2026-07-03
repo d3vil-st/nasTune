@@ -151,13 +151,16 @@
     .empty-devices .manage-btn { display: inline-flex; align-items: center; gap: 7px; }
     .dp-row.dp-offline:not(:has(.dp-gear:hover)):not([data-has-cache="false"]) { cursor: default; }
     .dp-name { font-size: 13px; font-weight: 500; }
+    /* Matches the app's micro-badge family (src-type-badge, plex badges) */
     .dp-badge {
-      font-size: 10px;
+      font-size: 9px;
       font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .4px;
       color: #ffb340;
       border: 1px solid rgba(255, 179, 64, .45);
       border-radius: 4px;
-      padding: 0 5px;
+      padding: 1px 4px;
       margin-left: 6px;
       vertical-align: 1px;
       white-space: nowrap;
@@ -1645,12 +1648,6 @@
     .track-row:nth-child(even)       { background: transparent; }
     .track-row:nth-child(even):hover { background: var(--bg2); }
 
-    .badge {
-      background: none;
-      color: var(--muted);
-      border-radius: 0;
-      padding: 0;
-    }
 
     /* Pill-shaped CTAs */
     .btn-primary,
