@@ -28,7 +28,7 @@ iPod support is built around [gpod-utils](https://github.com/d3vil-st/gpod-utils
 - **Browse** your iPod or WALKMAN library in a 3-pane iTunes-style view (artists → albums → tracks)
 - **Media types** — separate Music, Podcasts, Audiobooks, and Playlists tabs in both the device and source panes; each tab maintains its own artist/album selection and remembers the last selected source across switches
 - **All Artists** — select the top row in the artist column to browse all albums across every artist in a single flat view
-- **Album grid view** — a list/grid toggle in the albums column switches to a cover-art wall (two-column layout: artists | album wall); picking an album opens its track list alongside, and the preference is remembered per browser
+- **Album grid view** — a list/grid toggle in the albums column switches to a cover-art wall (two-column layout: artists | album wall); picking an album replaces the wall with its track list, and the `‹ album` heading (or clicking the tile again) goes back; the preference is remembered per browser
 - **Automatic database backups** — a gzip snapshot of the iPod's iTunesDB is taken before every write operation (sync, delete, playlist edits, verify); the last 10 are kept per device and can be restored from device settings if the library ever breaks — the restore itself backs up first, so it's undoable
 - **Blank iPod support** — a freshly formatted or disk-restored iPod (no iTunesDB) is detected and offered an **Initialize iPod** action that creates an empty database on the device; no iTunes needed, ever
 - **Rename iPod** — set the name shown on the device itself from device settings
