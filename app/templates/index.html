@@ -1537,19 +1537,6 @@
           </div>
         </label>
 
-        <label class="setting-row" style="cursor:pointer">
-          <div style="flex:1">
-            <div style="font-size:13px;font-weight:500;color:var(--text)">Auto-mount devices</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:2px">Mount USB devices automatically when detected. When off, devices appear unmounted in the picker and are mounted only when selected.</div>
-          </div>
-          <div class="setting-toggle" :class="{ active: settingsDraft.auto_mount }"
-               @click.stop="settingsDraft.auto_mount = !settingsDraft.auto_mount" role="switch"
-               :aria-checked="settingsDraft.auto_mount" tabindex="0"
-               @keydown.space.prevent="settingsDraft.auto_mount = !settingsDraft.auto_mount">
-            <div class="setting-toggle-thumb"></div>
-          </div>
-        </label>
-
         <div class="setting-row" style="flex-direction:column;gap:8px;align-items:stretch">
           <div style="display:flex;justify-content:space-between;align-items:baseline">
             <div>

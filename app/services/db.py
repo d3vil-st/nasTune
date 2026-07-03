@@ -265,8 +265,4 @@ async def init_db() -> None:
         # Rename legacy type='folder' to 'music' for all existing sources
         await db.execute("UPDATE sources SET type='music' WHERE type='folder'")
 
-        await db.execute(
-            "INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_mount', 'false')"
-        )
-
         await db.commit()

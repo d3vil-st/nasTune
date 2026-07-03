@@ -87,7 +87,7 @@ cd nasTune
 docker compose up --build
 ```
 
-Open `http://<nas-ip>:8080` in your browser. Connect an iPod via USB — it will be detected automatically if already mounted by the host, or auto-mounted if `IPOD_AUTOMOUNT=1` is set.
+Open `http://<nas-ip>:8080` in your browser. Connect an iPod via USB — it's detected automatically, and mounts on demand as soon as you select it (or immediately, if a per-device "Auto-sync when connected" rule is enabled).
 
 The default `docker-compose.yml` expects:
 - NAS music at `/mnt/music` on the host (read-only)
@@ -103,8 +103,7 @@ All configuration is done via environment variables in `docker-compose.yml`:
 | Variable | Default | Description |
 |---|---|---|
 | `IPOD_MOUNT_POINT` | _(unset)_ | Path to a pre-mounted iPod directory. Use this if your host mounts the iPod itself and you just want nasTune to manage it. |
-| `IPOD_MOUNT_BASE` | `/mnt/ipods` | Base directory for auto-mounted devices (one subdir per device). |
-| `IPOD_AUTOMOUNT` | `0` | Set to `1` to auto-mount USB block devices detected by lsblk. Requires `privileged: true`. |
+| `IPOD_MOUNT_BASE` | `/mnt/ipods` | Base directory for on-demand mounts (one subdir per device). |
 | `DB_PATH` | `/data/nastune.db` | SQLite database for the NAS source library index. |
 | `GPOD_DRY_RUN` | `0` | Set to `1` to log all write commands without executing them. Safe for testing. |
 | `NASTUNE_DISABLE_AUTH` | `0` | Set to `1` to bypass the Plex sign-in gate. Escape hatch if you lock yourself out (e.g. plex.tv unreachable or server unlinked by accident). |

@@ -327,13 +327,6 @@ class DeviceService:
         if changed:
             self._broadcast()
 
-    async def _should_automount(self) -> bool:
-        async with aiosqlite.connect(DB_PATH) as db:
-            row = await (await db.execute(
-                "SELECT value FROM settings WHERE key='auto_mount'"
-            )).fetchone()
-        return row is not None and row[0] == "true"
-
     async def _process_bd(self, bd: dict, visible: set[str]) -> bool:
         changed = False
         for child in bd.get("children") or []:
@@ -364,17 +357,9 @@ class DeviceService:
         if known:
             return changed
 
+        # No auto-mount: devices register unmounted and mount on demand
+        # (selection, library load, or auto-sync on connect all mount themselves).
         existing_mount = bd.get("mountpoint")
-
-        # Auto-mount: if the setting is enabled, mount immediately instead of waiting for user click
-        if not existing_mount and devnode not in self._ejected and await self._should_automount():
-            mount_path = MOUNT_BASE / devname
-            await asyncio.to_thread(mount_path.mkdir, parents=True, exist_ok=True)
-            if await self._do_mount(devnode, str(mount_path)):
-                existing_mount = str(mount_path)
-                log.info("Auto-mounted %s at %s", devnode, mount_path)
-            else:
-                log.warning("Auto-mount failed for %s — registering as unmounted (on-demand)", devnode)
 
         if not existing_mount or devnode in self._ejected:
             # Register as unmounted — will mount on demand when needed
