@@ -485,6 +485,12 @@
     .col-artists { width: 230px; flex-shrink: 0; border-right: 1px solid var(--border); }
     .col-albums  { width: 290px; flex-shrink: 0; border-right: 1px solid var(--border); }
     .col-tracks  { flex: 1; position: relative; }
+
+    /* Grid mode: two columns (artists | album wall). The track list only
+       opens once an album is picked, then splits the space with the wall. */
+    .content.grid-mode .col-albums { width: auto; flex: 1.2; min-width: 0; }
+    .content.grid-mode:not(.has-album) .col-tracks { display: none; }
+    .content.grid-mode.has-album .col-tracks { flex: 1; min-width: 0; }
     .col-tracks > .col-heading { display: none; }
 
     .col-heading {

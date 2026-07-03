@@ -430,7 +430,8 @@
     </div>
 
     <!-- Three-column browser (library mode) -->
-    <div class="content" x-show="viewMode === 'library' && library && mediaType !== 'playlist'" style="flex:1;">
+    <div class="content" x-show="viewMode === 'library' && library && mediaType !== 'playlist'" style="flex:1;"
+         :class="{ 'grid-mode': albumView === 'grid' && mediaType !== 'podcast', 'has-album': !!selectedAlbum }">
 
       <!-- Artists -->
       <div class="col col-artists">
@@ -517,7 +518,9 @@
               <template x-for="al in currentAlbums" :key="'g' + (al._artist || '') + ':::' + al.name">
                 <div class="album-tile"
                      :class="{ selected: selectedAlbum === al.name && (!_selectedAlbumArtist || al._artist === _selectedAlbumArtist), 'not-in-src': !isAlbumInSrc(al, selectedArtist === '__ALL__' ? '' : selectedArtist) }"
-                     @click="_focusedCol = 'album'; _selectedAlbumArtist = al._artist || null; pickAlbum(al.name)">
+                     @click="_focusedCol = 'album';
+                             if (selectedAlbum === al.name && (!_selectedAlbumArtist || al._artist === _selectedAlbumArtist)) { pickAlbum(null); }
+                             else { _selectedAlbumArtist = al._artist || null; pickAlbum(al.name); }">
                   <div class="tile-cover" :style="gradientFor(al.name)">
                     <span class="tile-fallback" x-text="mediaType === 'podcast' ? '🎙' : mediaType === 'audiobook' ? '📖' : '♫'"></span>
                     <img :src="artUrl(al)" @error="$el.style.display='none'" loading="lazy" alt="">
@@ -660,7 +663,8 @@
 
     </div><!-- .content -->
     <!-- Sources mode 3-pane browser -->
-    <div class="content" x-show="viewMode === 'sources' && mediaType !== 'playlist'" style="flex:1;display:none">
+    <div class="content" x-show="viewMode === 'sources' && mediaType !== 'playlist'" style="flex:1;display:none"
+         :class="{ 'grid-mode': albumView === 'grid' && mediaType !== 'podcast', 'has-album': !!srcAlbum }">
 
       <!-- Left: Source artist list -->
       <div class="col col-artists">
@@ -762,7 +766,9 @@
               <template x-for="al in srcCurrentAlbums" :key="'g' + (al._artist || '') + ':::' + al.name">
                 <div class="album-tile"
                      :class="{ selected: srcAlbum === al.name && (!_selectedAlbumArtist || al._artist === _selectedAlbumArtist) }"
-                     @click="_focusedCol = 'album'; _selectedAlbumArtist = al._artist || null; pickSrcAlbum(al.name)">
+                     @click="_focusedCol = 'album';
+                             if (srcAlbum === al.name && (!_selectedAlbumArtist || al._artist === _selectedAlbumArtist)) { pickSrcAlbum(null); }
+                             else { _selectedAlbumArtist = al._artist || null; pickSrcAlbum(al.name); }">
                   <div class="tile-cover" :style="gradientFor(al.name)">
                     <span class="tile-fallback" x-text="mediaType === 'podcast' ? '🎙' : mediaType === 'audiobook' ? '📖' : '♫'"></span>
                     <img x-effect="$el.style.display=''; $el.src=sourceArtUrl(al)" @error="$el.style.display='none'" loading="lazy" alt="">
