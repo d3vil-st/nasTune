@@ -86,16 +86,17 @@
             <div class="dp-section-label" x-show="hasOfflineDevices">Connected</div>
             <template x-for="d in devices" :key="d.devnode">
               <div class="dp-row" :class="{ active: d.devnode === selectedDevnode }"
+                   :title="(d.usb_serial ? 'Serial ' + d.usb_serial + ' · ' : '') + d.devnode"
                    @click.stop="selectDevice(d.devnode)">
+                <span class="dp-devicon" x-html="deviceIcon(_deviceKind(d))"></span>
                 <div class="dp-info">
                   <span class="dp-name">
-                    <span x-text="_connectedDeviceName(d) || d.devname"></span>
+                    <span x-text="(_connectedDeviceName(d) || d.devname) + (d.walkman_storage_type ? ' — ' + _storageLabel(d.walkman_storage_type) : '')"></span>
                     <span class="dp-badge" x-show="d.ipod_uninitialized" style="display:none">Not initialized</span>
                   </span>
-                  <span class="dp-meta" x-show="_connectedDeviceName(d)" style="display:none"
-                        x-text="(d.usb_serial || d.devname) + (d.walkman_storage_type ? ' — ' + d.walkman_storage_type.charAt(0) + d.walkman_storage_type.slice(1).toLowerCase() : '')"></span>
-                  <span class="dp-meta" x-text="(d.size_bytes / 1073741824).toFixed(0) + ' GB ' + d.fstype"></span>
+                  <span class="dp-meta" x-text="(d.size_bytes / 1073741824).toFixed(0) + ' GB ' + d.fstype + (d.mounted ? '' : ' · not mounted')"></span>
                 </div>
+                <span class="dp-dot" :class="{ on: d.mounted }" :title="d.mounted ? 'Mounted' : 'Not mounted'"></span>
                 <button class="dp-gear" title="Device settings"
                         @click.stop="openDeviceSettings(d.devnode)">
                   <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
@@ -112,10 +113,12 @@
           <div>
             <div class="dp-section-label" x-show="devices.length > 0">Disconnected</div>
             <template x-for="d in offlineIpods" :key="'ki'+d.id">
-              <div class="dp-row dp-offline" @click.stop="d.has_cache && browseOfflineLibrary(d.id)">
+              <div class="dp-row dp-offline" :title="'UUID ' + d.uuid"
+                   @click.stop="d.has_cache && browseOfflineLibrary(d.id)">
+                <span class="dp-devicon" x-html="deviceIcon('ipod')"></span>
                 <div class="dp-info">
                   <span class="dp-name" x-text="d.ipod_name"></span>
-                  <span class="dp-meta" x-text="'UUID ' + d.uuid"></span>
+                  <span class="dp-meta" x-text="d.has_cache ? 'Offline · browse cached library' : 'Offline'"></span>
                 </div>
                 <button class="dp-gear" title="Device settings"
                         @click.stop="openDeviceSettingsForKnown(d.id, 'ipod')">
@@ -126,10 +129,12 @@
               </div>
             </template>
             <template x-for="d in offlineWalkmans" :key="'kw'+d.id">
-              <div class="dp-row dp-offline" @click.stop="browseOfflineLibrary(d.id, 'walkman')">
+              <div class="dp-row dp-offline" :title="d.serial ? 'Serial ' + d.serial : ''"
+                   @click.stop="browseOfflineLibrary(d.id, 'walkman')">
+                <span class="dp-devicon" x-html="deviceIcon('walkman')"></span>
                 <div class="dp-info">
-                  <span class="dp-name" x-text="d.marketing_name || d.model"></span>
-                  <span class="dp-meta" x-text="(d.serial || '') + (d.storage_type ? ' — ' + d.storage_type.charAt(0) + d.storage_type.slice(1).toLowerCase() : '')"></span>
+                  <span class="dp-name" x-text="(d.marketing_name || d.model) + (d.storage_type ? ' — ' + _storageLabel(d.storage_type) : '')"></span>
+                  <span class="dp-meta">Offline · browse cached library</span>
                 </div>
                 <button class="dp-gear" title="Device settings"
                         @click.stop="openDeviceSettingsForKnown(d.id, 'walkman')">
@@ -328,20 +333,32 @@
           :title="selectedSourceObj?.scan_error">Scan error</span>
     <span x-show="mediaType !== 'playlist' && selectedSourceObj && selectedSourceObj.scan_status === 'done'"
           style="font-size:11px;color:var(--muted)"
-          x-text="selectedSourceObj ? (library && sourceLibrary ? srcInitialOnIpod.size + ' / ' + selectedSourceObj.track_count + ' synced' : selectedSourceObj.track_count + ' tracks') : ''"></span>
+          x-text="selectedSourceObj ? (library && sourceLibrary ? selectedSourceObj.track_count.toLocaleString() + ' tracks · ' + srcInitialOnIpod.size.toLocaleString() + ' on device' : selectedSourceObj.track_count.toLocaleString() + ' tracks') : ''"></span>
     <span x-show="mediaType === 'playlist' && plexPlaylist"
           style="font-size:11px;color:var(--muted)"
           x-text="plexPlaylist ? plexPlaylist.matched_count + ' / ' + plexPlaylist.total + ' in library' : ''"></span>
     <button class="manage-btn" x-show="mediaType !== 'playlist' && selectedSourceId && library && sourceLibrary"
             :class="{ active: srcShowUnsynced }"
             @click="srcShowUnsynced = !srcShowUnsynced">Unsynced only</button>
-    <button class="manage-btn" x-show="mediaType !== 'playlist' && selectedSourceId"
-            :disabled="selectedSourceObj?.scan_status === 'scanning'"
-            @click="rescanSource(selectedSourceId)">Rescan</button>
-    <button class="manage-btn" x-show="mediaType !== 'playlist' && selectedSourceId"
-            :disabled="selectedSourceObj?.scan_status === 'scanning'"
-            @click="rescanSource(selectedSourceId, true)"
-            title="Re-read all tags from disk">Full rescan</button>
+    <div x-show="mediaType !== 'playlist' && selectedSourceId" x-data="{ open: false }"
+         style="position:relative;display:flex">
+      <button class="manage-btn" style="border-top-right-radius:0;border-bottom-right-radius:0"
+              :disabled="selectedSourceObj?.scan_status === 'scanning'"
+              title="Index new and changed files"
+              @click="rescanSource(selectedSourceId)">Rescan</button>
+      <button class="manage-btn" style="border-top-left-radius:0;border-bottom-left-radius:0;border-left:none;padding:0 7px"
+              :disabled="selectedSourceObj?.scan_status === 'scanning'"
+              aria-label="More rescan options"
+              @click="open = !open" @click.outside="open = false">▾</button>
+      <div x-show="open" x-transition style="display:none;position:absolute;top:calc(100% + 4px);right:0;background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:5px;z-index:200;box-shadow:0 8px 28px rgba(0,0,0,.6);min-width:210px">
+        <div class="dp-row" @click="open = false; rescanSource(selectedSourceId, true)">
+          <div class="dp-info">
+            <span class="dp-name" style="font-size:12px">Full rescan</span>
+            <span class="dp-meta" style="white-space:normal">Clear the index and re-read every file's tags</span>
+          </div>
+        </div>
+      </div>
+    </div>
     <button class="manage-btn" x-show="mediaType === 'playlist' && plexPlaylist && selectedDevnode && !selectedDevice?.is_walkman"
             :disabled="currentOp?.status === 'running' || plexPlaylist?.matched_count === 0"
             :title="plexPlaylist?.matched_count === 0 ? 'No playlist tracks matched in your NAS sources' : (plexSyncablePaths.length ? plexSyncablePaths.length + ' track(s) will be copied' : 'All matched tracks are already on the device — playlist will be updated')"
@@ -367,7 +384,25 @@
       <div class="empty">
         <span class="empty-icon">&#x1F3B5;</span>
         <span class="empty-label">No devices connected</span>
-        <span class="empty-sub">Connect an iPod or WALKMAN, or set <code style="color:#ebebf5;background:#3a3a3c;padding:1px 5px;border-radius:4px">IPOD_MOUNT_POINT</code></span>
+        <span class="empty-sub" x-show="!hasOfflineDevices">Plug in an iPod or WALKMAN over USB — it appears here automatically. Managing a pre-mounted iPod? Set <code style="color:#ebebf5;background:#3a3a3c;padding:1px 5px;border-radius:4px">IPOD_MOUNT_POINT</code></span>
+        <span class="empty-sub" x-show="hasOfflineDevices" style="display:none">Plug in a device — it appears here automatically. Until then, browse a known device's cached library:</span>
+        <div class="empty-devices" x-show="hasOfflineDevices" style="display:none">
+          <template x-for="d in offlineIpods" :key="'ei'+d.id">
+            <button class="manage-btn" :disabled="!d.has_cache"
+                    :title="d.has_cache ? 'Browse the library cached from the last connect' : 'No cached library yet'"
+                    @click="browseOfflineLibrary(d.id)">
+              <span x-html="deviceIcon('ipod')" style="display:flex"></span>
+              <span x-text="d.ipod_name || 'iPod'"></span>
+            </button>
+          </template>
+          <template x-for="d in offlineWalkmans" :key="'ew'+d.id">
+            <button class="manage-btn" title="Browse the library cached from the last connect"
+                    @click="browseOfflineLibrary(d.id, 'walkman')">
+              <span x-html="deviceIcon('walkman')" style="display:flex"></span>
+              <span x-text="(d.marketing_name || d.model) + (d.storage_type ? ' — ' + _storageLabel(d.storage_type) : '')"></span>
+            </button>
+          </template>
+        </div>
       </div>
     </div>
 
@@ -1539,14 +1574,23 @@
               </div>
             </div>
           </template>
+
+          <!-- Maintenance -->
+          <div style="border-top:1px solid var(--card-border);padding-top:14px;display:flex;flex-direction:column;gap:10px">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.4px;color:var(--muted)">&#x276F;&nbsp;&nbsp;MAINTENANCE</div>
+            <div class="setting-row" style="align-items:center">
+              <div style="flex:1">
+                <div style="font-size:13px;font-weight:500;color:var(--text)">Artwork cache</div>
+                <div style="font-size:11px;color:var(--muted);margin-top:2px">Delete all cached cover images. They are re-extracted on the next library load.</div>
+              </div>
+              <button class="btn-ghost" style="color:#e57373" @click="dropArtworkCache()">Clear cache…</button>
+            </div>
+          </div>
         </div>
 
-        <div style="display:flex;justify-content:space-between;align-items:center;padding-top:4px">
-          <button class="btn-ghost" style="color:var(--muted)" @click="dropArtworkCache()">Drop artwork cache</button>
-          <div style="display:flex;gap:8px">
-            <button class="btn-ghost" @click="showSettings = false">Cancel</button>
-            <button class="btn-primary" @click="saveSettings()">Save</button>
-          </div>
+        <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;padding-top:4px">
+          <button class="btn-ghost" @click="showSettings = false">Cancel</button>
+          <button class="btn-primary" @click="saveSettings()">Save</button>
         </div>
       </div>
 
@@ -1666,11 +1710,6 @@
                         style="font-size:12px">
                   ▶ Run auto-sync now
                 </button>
-                <button class="manage-btn" style="font-size:12px;color:#e57373"
-                        x-show="_deviceSettingsDbId != null"
-                        @click="deleteKnownDevice(_deviceSettingsDbId, _deviceSettingsType)">
-                  Remove device
-                </button>
               </div>
             </div>
 
@@ -1738,9 +1777,14 @@
           </div>
         </template>
 
-        <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;padding:0;border-top:none">
-          <button class="btn-ghost" @click="showDeviceSettings = false">Cancel</button>
-          <button class="btn-primary" @click="saveDeviceSettings()" :disabled="!deviceSettingsDraft">Save</button>
+        <div class="modal-footer" style="display:flex;gap:8px;align-items:center;padding:0;border-top:none">
+          <!-- Destructive action alone on the left, away from Save -->
+          <button class="btn-ghost" style="color:#e57373" x-show="_deviceSettingsDbId != null"
+                  @click="deleteKnownDevice(_deviceSettingsDbId, _deviceSettingsType)">Remove device…</button>
+          <div style="display:flex;gap:8px;margin-left:auto">
+            <button class="btn-ghost" @click="showDeviceSettings = false">Cancel</button>
+            <button class="btn-primary" @click="saveDeviceSettings()" :disabled="!deviceSettingsDraft">Save</button>
+          </div>
         </div>
       </div>
 

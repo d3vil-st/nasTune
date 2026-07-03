@@ -180,6 +180,31 @@ function devicesModule() {
       es.onerror = () => { this._probeAuth(); };
     },
 
+    // ── Device picker presentation helpers ──────────────────────────
+
+    _storageLabel(t) {
+      if (!t) return '';
+      const s = String(t).toUpperCase();
+      return s === 'CARD' ? 'SD Card' : s === 'INTERNAL' ? 'Internal'
+           : t.charAt(0) + t.slice(1).toLowerCase();
+    },
+
+    deviceIcon(kind) {
+      const icons = {
+        ipod: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><rect x="8.5" y="5.2" width="7" height="5" rx=".8"/><circle cx="12" cy="15.6" r="3"/></svg>',
+        walkman: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="6" y="2.5" width="12" height="19" rx="2"/><rect x="8.2" y="5" width="7.6" height="7.6" rx=".8"/><line x1="9" y1="16.5" x2="15" y2="16.5" stroke-linecap="round"/><line x1="9" y1="18.8" x2="13" y2="18.8" stroke-linecap="round"/></svg>',
+        usb: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="8" y="8" width="8" height="13.5" rx="1.5"/><rect x="9.6" y="2.5" width="4.8" height="5.5" rx="1"/></svg>',
+      };
+      return icons[kind] || icons.usb;
+    },
+
+    _deviceKind(d) {
+      if (d.is_walkman) return 'walkman';
+      if (d.is_ipod || d.ipod_uninitialized) return 'ipod';
+      if (d.usb_serial && this.knownDevices?.ipods?.some(k => k.uuid === d.usb_serial)) return 'ipod';
+      return 'usb';
+    },
+
     // A device we can identify without mounting it. Random USB sticks also match
     // the fstype filter and register unmounted — never auto-select those.
     _isSelectableDevice(d) {

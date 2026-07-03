@@ -142,6 +142,12 @@
     .dp-row:hover { background: var(--bg3); }
     .dp-row.active { background: var(--blue); }
     .dp-row.dp-offline { opacity: .7; }
+    .dp-devicon { display: flex; align-items: center; color: var(--muted); flex-shrink: 0; }
+    .dp-row.active .dp-devicon { color: rgba(255,255,255,.85); }
+    .dp-dot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--dim); flex-shrink: 0; }
+    .dp-dot.on { background: #30d158; border-color: #30d158; }
+    .empty-devices { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; justify-content: center; max-width: 420px; }
+    .empty-devices .manage-btn { display: inline-flex; align-items: center; gap: 7px; }
     .dp-row.dp-offline:not(:has(.dp-gear:hover)):not([data-has-cache="false"]) { cursor: default; }
     .dp-name { font-size: 13px; font-weight: 500; }
     .dp-badge {
@@ -661,8 +667,10 @@
     }
 
     .t-rating { display: inline-flex; align-items: center; justify-content: flex-end; gap: 0; white-space: nowrap; }
-    .sp-s { cursor: pointer; color: var(--dim); font-size: 10px; line-height: 1; letter-spacing: 0; transition: color 0.08s; user-select: none; }
+    /* padding widens the click target; negative margin keeps the row height */
+    .sp-s { cursor: pointer; color: var(--dim); font-size: 13px; line-height: 1; letter-spacing: 0; padding: 4px 1.5px; margin: -4px 0; transition: color 0.08s; user-select: none; }
     .sp-s.lit { color: #ffd60a; }
+    .track-row:hover .sp-s:not(.lit) { color: var(--muted); }
 
     .t-quality {
       font-size: 11px;
