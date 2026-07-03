@@ -344,18 +344,15 @@
     <button class="manage-btn" x-show="mediaType !== 'playlist' && selectedSourceId && library && sourceLibrary"
             :class="{ active: srcShowUnsynced }"
             @click="srcShowUnsynced = !srcShowUnsynced">Unsynced only</button>
-    <div x-show="mediaType !== 'playlist' && selectedSourceId" x-data="{ open: false }"
-         style="position:relative">
-      <button class="manage-btn"
+    <div class="split-btn" x-show="mediaType !== 'playlist' && selectedSourceId" x-data="{ open: false }">
+      <button class="split-btn-main"
               :disabled="selectedSourceObj?.scan_status === 'scanning'"
-              @click.stop="open = !open" @click.outside="open = false">Rescan &#x25BE;</button>
+              @click="rescanSource(selectedSourceId)">Rescan</button>
+      <button class="split-btn-caret"
+              :disabled="selectedSourceObj?.scan_status === 'scanning'"
+              aria-label="More rescan options"
+              @click.stop="open = !open" @click.outside="open = false">&#x25BE;</button>
       <div x-show="open" x-transition style="display:none;position:absolute;top:calc(100% + 6px);right:0;background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:5px;z-index:200;box-shadow:0 8px 28px rgba(0,0,0,.6);min-width:220px">
-        <div class="dp-row" @click="open = false; rescanSource(selectedSourceId)">
-          <div class="dp-info">
-            <span class="dp-name" style="font-size:12px">Rescan</span>
-            <span class="dp-meta" style="white-space:normal">Index new and changed files</span>
-          </div>
-        </div>
         <div class="dp-row" @click="open = false; rescanSource(selectedSourceId, true)">
           <div class="dp-info">
             <span class="dp-name" style="font-size:12px">Full rescan</span>

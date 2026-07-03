@@ -1321,6 +1321,33 @@
     .manage-btn:hover { color: var(--text); border-color: var(--dim); }
     .manage-btn.active { color: var(--blue); border-color: var(--blue); }
     .manage-btn.active:hover { color: var(--blue); border-color: var(--blue); }
+
+    /* Two buttons styled as one control, with a hairline separator between them */
+    .split-btn { position: relative; display: inline-flex; }
+    .split-btn-main, .split-btn-caret {
+      background: none; border: 1px solid var(--border); color: var(--muted);
+      font-size: 11px; cursor: pointer;
+      transition: color .15s, border-color .15s, background .15s;
+    }
+    .split-btn-main {
+      border-radius: 6px 0 0 6px;
+      border-right: none;
+      padding: 4px 10px;
+    }
+    .split-btn-caret {
+      border-radius: 0 6px 6px 0;
+      padding: 4px 7px;
+      position: relative;
+    }
+    .split-btn-caret::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 4px; bottom: 4px;
+      width: 1px;
+      background: var(--border);
+    }
+    .split-btn-main:hover, .split-btn-caret:hover { color: var(--text); border-color: var(--dim); background: var(--hover-surface); }
+    .split-btn-main:disabled, .split-btn-caret:disabled { opacity: .5; cursor: not-allowed; background: none; }
     .sources-picker {
       position: absolute;
       top: 36px; left: 0;
