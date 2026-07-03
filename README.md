@@ -28,12 +28,16 @@ iPod support is built around [gpod-utils](https://github.com/d3vil-st/gpod-utils
 - **Browse** your iPod or WALKMAN library in a 3-pane iTunes-style view (artists → albums → tracks)
 - **Media types** — separate Music, Podcasts, Audiobooks, and Playlists tabs in both the device and source panes; each tab maintains its own artist/album selection and remembers the last selected source across switches
 - **All Artists** — select the top row in the artist column to browse all albums across every artist in a single flat view
+- **Album grid view** — a list/grid toggle in the albums column switches to a cover-art wall (two-column layout: artists | album wall); picking an album opens its track list alongside, and the preference is remembered per browser
+- **Automatic database backups** — a gzip snapshot of the iPod's iTunesDB is taken before every write operation (sync, delete, playlist edits, verify); the last 10 are kept per device and can be restored from device settings if the library ever breaks — the restore itself backs up first, so it's undoable
+- **Blank iPod support** — a freshly formatted or disk-restored iPod (no iTunesDB) is detected and offered an **Initialize iPod** action that creates an empty database on the device; no iTunes needed, ever
+- **Rename iPod** — set the name shown on the device itself from device settings
 - **Sony WALKMAN support** — detected automatically via `default-capability.xml`; tag-based scan (mutagen) indexes the device into SQLite; delete and sync use direct file operations with immediate DB update — no rescan needed; dual-LUN models (separate INTERNAL and Card storage) are identified on USB connect by a brief read-only probe-mount of each LUN, so both appear with the correct storage type label in the device picker before any user action
 - **Offline WALKMAN library** — disconnected WALKMANs appear in the Disconnected section of the device picker and can be browsed without remounting; library is served directly from SQLite
 - **Force full rescan** — WALKMAN devices and NAS sources each have a full-rescan button that clears all existing library data and re-reads every file from scratch; useful after tag corrections or large file moves (confirmation dialog shown before starting)
 - **Sync** tracks from a NAS music source to the device — add missing tracks, remove ones no longer in the source; sync confirmation dialog appears when deletes are involved or free space is insufficient
 - **Device settings** — per-device gear icon opens a settings panel with a force-AAC override, per-media-type sync rules, and library verification tools; also available for known-but-disconnected iPods
-- **Auto-sync** — one-click button in device settings runs a full sync using configured per-type source rules (music, podcasts, and audiobooks each copy with the correct media type), skipping tracks already on the device; an optional **Auto-sync on connect** toggle runs it headlessly the moment the iPod is plugged in — no browser needed
+- **Auto-sync** — one-click button in device settings runs a full sync using configured per-type source rules (music, podcasts, and audiobooks each copy with the correct media type), skipping tracks already on the device; an optional **Auto-sync on connect** toggle runs it headlessly the moment the iPod is plugged in — no browser needed. The referenced sources are rescanned first (incrementally — unchanged files are skipped), so music added to the NAS since the last scan is picked up automatically
 - **Library verify** (`gpod-verify`) — mode dropdown + Run button in device settings: *Check only* (reports mismatches without changes), *Add missing entries* (creates iTunesDB entries for files on device with no DB record), *Remove orphaned entries* (deletes DB entries whose file no longer exists on device); works on connected iPods even before they are mounted — the backend mounts on demand
 - **Filesystem check** (`fsck`) — device settings button unmounts the device, runs `fsck.hfsplus` or `fsck.vfat` to detect and repair filesystem errors, then remounts automatically; output shown live in the operation log modal
 - **Rating sync** — iPod track ratings (1–5 stars) are persisted to SQLite on every library read; during sync, newly copied tracks automatically receive their stored ratings via `gpod-tag`; highest rating wins when the same track is seen on multiple iPods
@@ -113,7 +117,7 @@ nasTune can index one or more directories of your NAS music collection and compa
 
 1. Click **Sources** in the header
 2. Add a source by browsing to a directory (e.g. `/music`)
-3. nasTune scans the directory with mutagen and indexes all audio files
+3. nasTune scans the directory with mutagen and indexes all audio files; rescans are incremental — files whose size and modification time are unchanged keep their index entry without re-reading tags (use **Full rescan** to force a re-read)
 4. Switch back to **Library** — tracks already on the iPod are pre-checked; unchecked tracks are candidates to sync
 
 Supported formats: MP3, FLAC, AAC/M4A (including ALAC), AIFF, WAV, OGG.
@@ -123,6 +127,7 @@ Supported formats: MP3, FLAC, AAC/M4A (including ALAC), AIFF, WAV, OGG.
 ## Sync behaviour
 
 - **Sync** button appears when there are changes (tracks to add or remove)
+- **iTunesDB backup first**: every write operation snapshots the iPod's database to the data volume before touching it (last 10 kept per device); restore from device settings
 - A confirmation dialog is shown automatically when the sync includes deletes or when the files to copy exceed available free space (accounting for space freed by deletes); the dialog shows a warning and offers "Sync anyway" for the space-insufficient case
 - Tracks are matched by normalized `artist + album + track_nr` (or title if no track number), with disc number awareness for multi-disc albums
 - **iPod**: when syncing a complete album or artist, the directory path is passed to `gpod-cp` rather than individual files — faster and avoids path-length issues; progress is tracked per-track from streaming output
