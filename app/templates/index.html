@@ -1651,10 +1651,14 @@
             </div>
           </template>
 
-          <!-- Maintenance -->
-          <div style="border-top:1px solid var(--card-border);padding-top:14px;display:flex;flex-direction:column;gap:10px">
-            <div style="font-size:12px;font-weight:600;letter-spacing:.4px;color:var(--muted)">&#x276F;&nbsp;&nbsp;MAINTENANCE</div>
-            <div class="setting-row" style="align-items:center">
+          <!-- Maintenance (collapsed by default) -->
+          <div x-data="{ open: false }"
+               style="border-top:1px solid var(--card-border);padding-top:14px;display:flex;flex-direction:column;gap:10px">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.4px;color:var(--muted);cursor:pointer;user-select:none"
+                 @click="open = !open">
+              <span style="display:inline-block;transition:transform .15s" :style="open ? 'transform:rotate(90deg)' : ''">&#x276F;</span>&nbsp;&nbsp;MAINTENANCE
+            </div>
+            <div class="setting-row" style="align-items:center" x-show="open">
               <div style="flex:1">
                 <div style="font-size:13px;font-weight:500;color:var(--text)">Artwork cache</div>
                 <div style="font-size:11px;color:var(--muted);margin-top:2px">Delete all cached cover images. They are re-extracted on the next library load.</div>
@@ -1664,7 +1668,7 @@
           </div>
         </div>
 
-        <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;padding-top:4px">
+        <div class="modal-footer" style="display:flex;justify-content:flex-end;align-items:center;gap:8px">
           <button class="btn-ghost" @click="showSettings = false">Cancel</button>
           <button class="btn-primary" @click="saveSettings()">Save</button>
         </div>
@@ -1852,15 +1856,16 @@
 
           </div>
         </template>
+      </div>
 
-        <div class="modal-footer" style="display:flex;gap:8px;align-items:center;padding:0;border-top:none">
-          <!-- Destructive action alone on the left, away from Save -->
-          <button class="btn-ghost" style="color:#e57373" x-show="_deviceSettingsDbId != null"
-                  @click="deleteKnownDevice(_deviceSettingsDbId, _deviceSettingsType)">Remove device…</button>
-          <div style="display:flex;gap:8px;margin-left:auto">
-            <button class="btn-ghost" @click="showDeviceSettings = false">Cancel</button>
-            <button class="btn-primary" @click="saveDeviceSettings()" :disabled="!deviceSettingsDraft">Save</button>
-          </div>
+      <!-- Pinned footer, outside the scroll area -->
+      <div class="modal-footer" style="display:flex;gap:8px;align-items:center">
+        <!-- Destructive action alone on the left, away from Save -->
+        <button class="btn-ghost" style="color:#e57373" x-show="_deviceSettingsDbId != null"
+                @click="deleteKnownDevice(_deviceSettingsDbId, _deviceSettingsType)">Remove device…</button>
+        <div style="display:flex;gap:8px;margin-left:auto">
+          <button class="btn-ghost" @click="showDeviceSettings = false">Cancel</button>
+          <button class="btn-primary" @click="saveDeviceSettings()" :disabled="!deviceSettingsDraft">Save</button>
         </div>
       </div>
 

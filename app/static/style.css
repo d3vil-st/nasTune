@@ -1382,12 +1382,14 @@
       box-shadow: 0 24px 60px rgba(0,0,0,.7);
       width: 560px; max-width: 95vw;
       max-height: 85vh;
+      min-height: 0;
       display: flex; flex-direction: column;
     }
     .modal-header {
       display: flex; align-items: center; justify-content: space-between;
       padding: 16px 20px 12px;
       border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
     }
     .modal-header h2 { font-size: 15px; font-weight: 600; }
     .modal-close {
@@ -1396,11 +1398,13 @@
       transition: color .15s;
     }
     .modal-close:hover { color: var(--text); }
-    .modal-body { overflow-y: auto; flex: 1; padding: 14px 20px; }
+    .modal-body { overflow-y: auto; flex: 1; min-height: 0; padding: 14px 20px; }
     .modal-body::-webkit-scrollbar { width: 5px; }
     .modal-body::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 3px; }
     .modal-footer {
       padding: 12px 20px;
+      border-top: 1px solid var(--border2);
+      flex-shrink: 0;
     }
     /* ── Settings modal ── */
     .setting-row {
