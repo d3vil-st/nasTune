@@ -345,16 +345,17 @@
             :class="{ active: srcShowUnsynced }"
             @click="srcShowUnsynced = !srcShowUnsynced">Unsynced only</button>
     <div x-show="mediaType !== 'playlist' && selectedSourceId" x-data="{ open: false }"
-         style="position:relative;display:flex">
-      <button class="manage-btn" style="border-top-right-radius:0;border-bottom-right-radius:0"
+         style="position:relative">
+      <button class="manage-btn"
               :disabled="selectedSourceObj?.scan_status === 'scanning'"
-              title="Index new and changed files"
-              @click="rescanSource(selectedSourceId)">Rescan</button>
-      <button class="manage-btn" style="border-top-left-radius:0;border-bottom-left-radius:0;border-left:none;padding:0 7px"
-              :disabled="selectedSourceObj?.scan_status === 'scanning'"
-              aria-label="More rescan options"
-              @click="open = !open" @click.outside="open = false">▾</button>
-      <div x-show="open" x-transition style="display:none;position:absolute;top:calc(100% + 4px);right:0;background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:5px;z-index:200;box-shadow:0 8px 28px rgba(0,0,0,.6);min-width:210px">
+              @click.stop="open = !open" @click.outside="open = false">Rescan &#x25BE;</button>
+      <div x-show="open" x-transition style="display:none;position:absolute;top:calc(100% + 6px);right:0;background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:5px;z-index:200;box-shadow:0 8px 28px rgba(0,0,0,.6);min-width:220px">
+        <div class="dp-row" @click="open = false; rescanSource(selectedSourceId)">
+          <div class="dp-info">
+            <span class="dp-name" style="font-size:12px">Rescan</span>
+            <span class="dp-meta" style="white-space:normal">Index new and changed files</span>
+          </div>
+        </div>
         <div class="dp-row" @click="open = false; rescanSource(selectedSourceId, true)">
           <div class="dp-info">
             <span class="dp-name" style="font-size:12px">Full rescan</span>
