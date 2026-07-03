@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re
 import time
 from pathlib import Path
 
@@ -381,13 +382,18 @@ def _build_library(tracks: list[dict], source_type: str = 'music') -> dict:
     return {"artists": result_artists, "total_tracks": len(tracks)}
 
 
+_HAS_ALNUM = re.compile(r"[^\W_]")  # any unicode letter or digit
+
+
 def _sorted_names(d: dict) -> list[str]:
-    def key(name: str) -> str:
+    def key(name: str) -> tuple:
         lower = name.lower()
         for prefix in ("the ", "a ", "an "):
             if lower.startswith(prefix):
-                return lower[len(prefix):]
-        return lower
+                lower = lower[len(prefix):]
+                break
+        # Symbol-only names ("#####") sort after real names, not above them
+        return (not _HAS_ALNUM.search(lower), lower)
 
     return sorted(d, key=key)
 

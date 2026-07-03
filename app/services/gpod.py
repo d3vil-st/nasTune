@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -142,9 +143,15 @@ def _is_missing(mount: Path, ipod_path: str) -> bool:
     return not (mount / ipod_path.lstrip("/")).exists()
 
 
-def _sort_key(name: str) -> str:
+_HAS_ALNUM = re.compile(r"[^\W_]")  # any unicode letter or digit
+
+
+def _sort_key(name: str) -> tuple:
     lower = name.lower()
     for prefix in ("the ", "a ", "an "):
         if lower.startswith(prefix):
-            return lower[len(prefix):]
-    return lower
+            lower = lower[len(prefix):]
+            break
+    # Symbol-only names ("#####") sort after real names, not above them
+    # (ASCII punctuation < letters would otherwise put garbage tags first).
+    return (not _HAS_ALNUM.search(lower), lower)

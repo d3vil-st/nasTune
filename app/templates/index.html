@@ -179,8 +179,8 @@
       <div class="storage-labels">
         <span x-text="(library?.fs_used_gb || 0).toFixed(2) + ' GB used'"></span>
         <template x-if="storageRemoveBytes > 0 || storageAddBytes > 0">
-          <span :style="'color:' + (storageAddBytes >= storageRemoveBytes ? '#30d158' : '#ff453a')"
-                x-text="(storageAddBytes >= storageRemoveBytes ? '+ ' : '− ') + fmtSize(Math.abs(storageAddBytes - storageRemoveBytes))"></span>
+          <span class="storage-delta-chip" :class="storageAddBytes >= storageRemoveBytes ? 'add' : 'remove'"
+                x-text="(storageAddBytes >= storageRemoveBytes ? '+' : '−') + fmtSize(Math.abs(storageAddBytes - storageRemoveBytes))"></span>
         </template>
         <span x-text="storageFreePct.toFixed(2) + ' GB free'"></span>
       </div>
@@ -259,8 +259,12 @@
       </button>
       <div class="theme-switcher">
         <button class="theme-btn" :class="{ active: themeMode === 'auto' }"  @click="setTheme('auto')"  title="Follow system">Auto</button>
-        <button class="theme-btn" :class="{ active: themeMode === 'light' }" @click="setTheme('light')" title="Light theme">☀</button>
-        <button class="theme-btn" :class="{ active: themeMode === 'dark' }"  @click="setTheme('dark')"  title="Dark theme">☾</button>
+        <button class="theme-btn" :class="{ active: themeMode === 'light' }" @click="setTheme('light')" title="Light theme" aria-label="Light theme">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM11 1h2v3h-2V1zm0 19h2v3h-2v-3zM3.5 4.9 4.9 3.5l2.1 2.1-1.4 1.4L3.5 4.9zm13.5 13.6 1.4-1.4 2.1 2.1-1.4 1.4-2.1-2.1zM1 11h3v2H1v-2zm19 0h3v2h-3v-2zM3.5 19.1l2.1-2.1 1.4 1.4-2.1 2.1-1.4-1.4zM17 5.6l2.1-2.1 1.4 1.4-2.1 2.1L17 5.6z"/></svg>
+        </button>
+        <button class="theme-btn" :class="{ active: themeMode === 'dark' }"  @click="setTheme('dark')"  title="Dark theme" aria-label="Dark theme">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg>
+        </button>
       </div>
       <div class="search-wrap" x-show="library || sourceLibrary" style="display:none">
         <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
@@ -442,7 +446,8 @@
                :class="{ selected: selectedArtist === '__ALL__' }"
                @click="_focusedCol = 'artist'; pickArtist('__ALL__')">
             <span class="artist-name" x-text="devLabels.allArtists"></span>
-            <span class="artist-count" x-text="filteredArtists.reduce((s, a) => s + a.albums.length, 0)"></span>
+            <!-- Track total, matching the per-artist counts below -->
+            <span class="artist-count" x-text="filteredArtists.reduce((s, a) => s + a.track_count, 0)"></span>
           </div>
           <template x-for="a in filteredArtists" :key="a.name">
             <div class="artist-row"
@@ -1480,7 +1485,7 @@
               <div style="font-size:13px;font-weight:500;color:var(--text)">Sync CPU threads</div>
               <div style="font-size:11px;color:var(--muted);margin-top:2px">Limit cores used during encode (<span x-text="settingsCpuCount"></span> available)</div>
             </div>
-            <span class="setting-thread-val" x-text="settingsDraft.max_threads"></span>
+            <span class="setting-thread-val"><span x-text="settingsDraft.max_threads"></span><span style="font-size:12px;font-weight:400;color:var(--muted)" x-text="' of ' + settingsCpuCount"></span></span>
           </div>
           <div>
             <input type="range" class="settings-slider" min="1" :max="settingsCpuCount"

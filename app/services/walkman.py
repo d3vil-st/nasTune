@@ -479,12 +479,17 @@ async def _flush_batch(batch: list[dict]) -> None:
         await db.commit()
 
 
-def _sort_key(name: str) -> str:
+_HAS_ALNUM = re.compile(r"[^\W_]")  # any unicode letter or digit
+
+
+def _sort_key(name: str) -> tuple:
     lower = name.lower()
     for prefix in ('the ', 'a ', 'an '):
         if lower.startswith(prefix):
-            return lower[len(prefix):]
-    return lower
+            lower = lower[len(prefix):]
+            break
+    # Symbol-only names ("#####") sort after real names, not above them
+    return (not _HAS_ALNUM.search(lower), lower)
 
 
 async def get_known_walkmans() -> list[dict]:
