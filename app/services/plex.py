@@ -203,8 +203,51 @@ async def pick_connection(resource: dict) -> str | None:
 
 # ── Plex server API ──────────────────────────────────────────────────────────
 
-async def _server(path: str, params: dict | None = None,
-                  extra_headers: dict | None = None) -> dict:
+_rediscover_lock = asyncio.Lock()
+
+
+async def rediscover_server_url() -> str | None:
+    """Re-resolve the server connection via plex.tv when the stored URL dies.
+
+    plex.direct URLs embed the server's WAN IP — a new IP (or a LAN/WAN route
+    change) invalidates the URL saved at link time. Plex clients re-resolve
+    through the resources API on every failure; do the same.
+    """
+    cfg = await get_config()
+    token = cfg.get("plex_server_token")
+    machine_id = cfg.get("plex_server_id")
+    old_url = cfg.get("plex_server_url")
+    if not token or not machine_id:
+        return None
+    async with _rediscover_lock:
+        # Another task may have already fixed it while we waited
+        current = await _get_setting("plex_server_url")
+        if current and current != old_url:
+            return current
+        try:
+            resources = await get_resources(token)
+        except httpx.HTTPError as exc:
+            log.warning("Plex rediscovery failed: plex.tv unreachable: %s", exc)
+            return None
+        resource = next((d for d in resources if d.get("clientIdentifier") == machine_id), None)
+        if resource is None:
+            log.warning("Plex rediscovery failed: server %s not visible to the stored token", machine_id)
+            return None
+        uri = await pick_connection(resource)
+        if not uri:
+            log.warning("Plex rediscovery failed: no reachable connection for %s", machine_id)
+            return None
+        new_token = resource.get("accessToken") or token
+        await _set_settings({"plex_server_url": uri, "plex_server_token": new_token})
+        log.info("Plex server connection re-discovered: %s → %s", old_url, uri)
+        return uri
+
+
+_CONNECT_ERRORS = (httpx.ConnectError, httpx.ConnectTimeout)
+
+
+async def _server_once(method: str, path: str, params: dict | None = None,
+                       extra_headers: dict | None = None) -> httpx.Response:
     cfg = await get_config()
     url, token = cfg.get("plex_server_url"), cfg.get("plex_server_token")
     if not url or not token:
@@ -212,20 +255,31 @@ async def _server(path: str, params: dict | None = None,
     headers = await _headers(token)
     if extra_headers:
         headers.update(extra_headers)
-    r = await _http().get(f"{url}{path}", params=params or {}, headers=headers)
+    r = await _http().request(method, f"{url}{path}", params=params or {}, headers=headers)
     r.raise_for_status()
-    return r.json()
+    return r
+
+
+async def _server_call(method: str, path: str, params: dict | None = None,
+                       extra_headers: dict | None = None) -> httpx.Response:
+    """Server request with one retry after re-discovering the connection."""
+    try:
+        return await _server_once(method, path, params, extra_headers)
+    except _CONNECT_ERRORS as exc:
+        log.warning("Plex server unreachable at stored URL (%s) — re-discovering via plex.tv", exc)
+        if await rediscover_server_url() is None:
+            raise
+        return await _server_once(method, path, params, extra_headers)
+
+
+async def _server(path: str, params: dict | None = None,
+                  extra_headers: dict | None = None) -> dict:
+    return (await _server_call("GET", path, params, extra_headers)).json()
 
 
 async def _server_req(method: str, path: str, params: dict | None = None) -> dict | None:
     """Write request (POST/PUT/DELETE) to the linked Plex server."""
-    cfg = await get_config()
-    url, token = cfg.get("plex_server_url"), cfg.get("plex_server_token")
-    if not url or not token:
-        raise RuntimeError("No Plex server linked")
-    r = await _http().request(method, f"{url}{path}", params=params or {},
-                              headers=await _headers(token))
-    r.raise_for_status()
+    r = await _server_call(method, path, params)
     try:
         return r.json()
     except ValueError:
@@ -562,9 +616,7 @@ async def push_rating(track_key: str, stars: int) -> None:
     Fire-and-forget: never raises, no-op when unlinked or unmapped.
     """
     try:
-        cfg = await get_config()
-        url, token = cfg.get("plex_server_url"), cfg.get("plex_server_token")
-        if not url or not token:
+        if not await is_linked():
             return
         async with aiosqlite.connect(DB_PATH) as db:
             async with db.execute(
@@ -575,13 +627,10 @@ async def push_rating(track_key: str, stars: int) -> None:
             return
         rating = stars * 2 if stars > 0 else -1
         for rk in rating_keys:
-            r = await _http().put(
-                f"{url}/:/rate",
-                params={"key": rk, "identifier": "com.plexapp.plugins.library",
-                        "rating": str(rating)},
-                headers=await _headers(token),
-            )
-            r.raise_for_status()
+            await _server_req("PUT", "/:/rate", {
+                "key": rk, "identifier": "com.plexapp.plugins.library",
+                "rating": str(rating),
+            })
         log.info("Pushed rating %d stars to Plex for %d item(s)", stars, len(rating_keys))
     except Exception:
         log.exception("Plex rating push-back failed (non-fatal)")

@@ -126,7 +126,8 @@ CREATE TABLE IF NOT EXISTS ipod_devices (
 
 CREATE TABLE IF NOT EXISTS ipod_device_settings (
     device_id  INTEGER PRIMARY KEY REFERENCES ipod_devices(id) ON DELETE CASCADE,
-    force_aac  INTEGER
+    force_aac  INTEGER,
+    auto_sync  INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS ipod_sync_rules (
@@ -255,6 +256,11 @@ async def init_db() -> None:
             ipod_cols = {row[1] for row in await cur.fetchall()}
         if "ipod_name" not in ipod_cols:
             await db.execute("ALTER TABLE ipod_devices ADD COLUMN ipod_name TEXT")
+
+        async with db.execute("PRAGMA table_info(ipod_device_settings)") as cur:
+            ids_cols = {row[1] for row in await cur.fetchall()}
+        if "auto_sync" not in ids_cols:
+            await db.execute("ALTER TABLE ipod_device_settings ADD COLUMN auto_sync INTEGER NOT NULL DEFAULT 0")
 
         # Rename legacy type='folder' to 'music' for all existing sources
         await db.execute("UPDATE sources SET type='music' WHERE type='folder'")

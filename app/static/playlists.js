@@ -83,14 +83,24 @@ function playlistsModule() {
       { key: 'size',        label: 'Size (MB)',          kind: 'number' },
       { key: 'track_nr',    label: 'Track #',            kind: 'number' },
       { key: 'disc_nr',     label: 'Disc #',             kind: 'number' },
+      { key: 'comment',     label: 'Comment',            kind: 'text' },
+      { key: 'grouping',    label: 'Grouping',           kind: 'text' },
+      { key: 'skipcount',   label: 'Skips',              kind: 'number' },
+      { key: 'bpm',         label: 'BPM',                kind: 'number' },
+      { key: 'compilation', label: 'Compilation',        kind: 'bool' },
+      { key: 'purchased',   label: 'Purchased',          kind: 'bool' },
       { key: 'time_added',  label: 'Date Added',         kind: 'date' },
       { key: 'time_played', label: 'Last Played',        kind: 'date' },
+      { key: 'time_modified', label: 'Date Modified',    kind: 'date' },
+      { key: 'time_skipped',  label: 'Last Skipped',     kind: 'date' },
     ],
     smartOps: {
       text:   [['contains', 'contains'], ['not_contains', 'does not contain'], ['is', 'is'], ['is_not', 'is not'], ['starts_with', 'starts with'], ['ends_with', 'ends with']],
       number: [['is', 'is'], ['is_not', 'is not'], ['gt', 'is greater than'], ['gte', 'is at least'], ['lt', 'is less than'], ['lte', 'is at most'], ['in_range', 'is in range']],
-      date:   [['in_last', 'in the last (days)'], ['not_in_last', 'not in the last (days)']],
+      date:   [['in_last', 'in the last'], ['not_in_last', 'not in the last']],
+      bool:   [['is', 'is']],
     },
+    smartDateUnits: [['h', 'hours'], ['d', 'days'], ['w', 'weeks'], ['m', 'months'], ['y', 'years']],
     smartLimitUnits: ['items', 'minutes', 'hours', 'MB', 'GB'],
     smartLimitBy: [
       ['random', 'random'],
@@ -125,6 +135,9 @@ function playlistsModule() {
       if (spec) {
         this.smartSpec = JSON.parse(JSON.stringify(spec));
         if (!this.smartSpec.rules.length) this.smartSpec.rules = [this._newSmartRule()];
+        for (const r of this.smartSpec.rules) {
+          if (this.smartFieldDef(r.field).kind === 'date' && !r.unit) r.unit = 'd';
+        }
         this.smartLimitOn = this.smartSpec.limit_n != null;
         if (this.smartSpec.limit_n == null) this.smartSpec.limit_n = 25;
       } else {
@@ -141,8 +154,10 @@ function playlistsModule() {
 
     onSmartFieldChange(rule) {
       rule.op = this.smartOpsFor(rule.field)[0][0];
-      rule.value = '';
+      const kind = this.smartFieldDef(rule.field).kind;
+      rule.value = kind === 'bool' ? 'set' : '';
       rule.value2 = '';
+      rule.unit = kind === 'date' ? 'd' : undefined;
       this.scheduleSmartPreview();
     },
 
@@ -214,17 +229,109 @@ function playlistsModule() {
 
     async deleteSmartPlaylist() {
       if (!this.smartSpec?.id) { this.showSmartModal = false; return; }
-      if (!confirm('Delete this smart playlist definition? The playlist already on the device is kept.')) return;
+      const name = this.smartSpec.name;
+      // Remove from the iPod too when it's connected and carries this playlist
+      const onDevice = this.selectedDevnode && this.library && !this.library.walkman &&
+                       this.devPlaylists.some(p => p.name === name);
+      const msg = onDevice
+        ? 'Delete smart playlist "' + name + '"?\n\nIt will also be removed from the iPod.'
+        : 'Delete smart playlist "' + name + '"?';
+      if (!confirm(msg)) return;
       try {
-        const r = await this.apiFetch('/smart-playlists/' + this.smartSpec.id, { method: 'DELETE' });
-        if (!r.ok) { this.smartError = 'Delete failed'; return; }
+        const url = '/smart-playlists/' + this.smartSpec.id +
+                    (onDevice ? '?devnode=' + encodeURIComponent(this.selectedDevnode) : '');
+        const r = await this.apiFetch(url, { method: 'DELETE' });
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          this.smartError = data.detail || 'Delete failed';
+          return;
+        }
         this.showSmartModal = false;
+        this.selectedDevPlaylistIdx = null;
         await this.loadSmartPlaylists();
       } catch (e) { this.smartError = 'Delete failed: ' + e.message; }
     },
 
     smartDeviceIdx(spec) {
       return this.devPlaylists.findIndex(p => p.name === spec.name);
+    },
+
+    async _editPlaylistTracks(name, body) {
+      try {
+        const r = await this.apiFetch('/library/playlist-tracks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ devnode: this.selectedDevnode, name, ...body }),
+        });
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          alert(data.detail || 'Playlist update failed');
+          return false;
+        }
+        return true;
+      } catch (e) { alert('Playlist update failed: ' + e.message); return false; }
+    },
+
+    async removeFromDevPlaylist(t) {
+      const pl = this.selectedDevPlaylist;
+      if (!pl || pl.smartpl || !t.ipod_path || !this.selectedDevnode) return;
+      await this._editPlaylistTracks(pl.name, { remove_ipod_paths: [t.ipod_path] });
+    },
+
+    // Add the music browser's checked tracks to a device playlist (or a new one)
+    async addSelectedToPlaylist(name, create = false) {
+      if (!this.selectedDevnode) return;
+      const paths = [...new Set(this.deviceSelectedTracks.map(t => t.ipod_path).filter(Boolean))];
+      if (!paths.length || !name) return;
+      if (await this._editPlaylistTracks(name, { add_ipod_paths: paths, create })) {
+        this.deviceSelection = new Set();
+      }
+    },
+
+    addSelectedToNewPlaylist() {
+      const name = (prompt('New playlist name:') || '').trim();
+      if (!name) return;
+      if (this.devPlaylists.some(p => p.name === name)) {
+        alert('A playlist with this name already exists — pick it from the list instead.');
+        return;
+      }
+      this.addSelectedToPlaylist(name, true);
+    },
+
+    // Read an iTunes-created smart playlist's rules off the iPod into the editor
+    async adoptSmartPlaylist(p) {
+      if (!this.selectedDevnode) return;
+      try {
+        const r = await this.apiFetch('/smart-playlists/device-rules?devnode=' +
+          encodeURIComponent(this.selectedDevnode) + '&name=' + encodeURIComponent(p.name));
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) { alert(data.detail || 'Could not read the playlist rules'); return; }
+        const unparsed = data.unparsed || [];
+        delete data.unparsed;
+        this.openSmartModal(data);
+        if (unparsed.length) {
+          this.smartError = 'Unreadable rules will be lost on Save & Apply: ' + unparsed.join(' · ');
+        }
+      } catch (e) { alert('Could not read the playlist rules: ' + e.message); }
+    },
+
+    async deleteDevPlaylist() {
+      const pl = this.selectedDevPlaylist;
+      if (!pl || !this.selectedDevnode) return;
+      if (!confirm('Delete playlist "' + pl.name + '" from the iPod?\n\nTracks stay on the device.')) return;
+      try {
+        const r = await this.apiFetch('/library/playlist-delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ devnode: this.selectedDevnode, name: pl.name }),
+        });
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          alert(data.detail || 'Delete failed');
+          return;
+        }
+        this.selectedDevPlaylistIdx = null;
+      } catch (e) { alert('Delete failed: ' + e.message); }
     },
 
     async publishPlaylistToPlex() {

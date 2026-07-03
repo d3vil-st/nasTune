@@ -67,9 +67,53 @@ async def save_playlist(body: SmartPlaylistBody):
 
 
 @router.delete("/{spl_id}")
-async def delete_playlist(spl_id: int):
+async def delete_playlist(spl_id: int, devnode: str | None = None):
+    """Delete a definition; with ?devnode= also remove the playlist from the iPod."""
+    spec = await spl.get_smart_playlist(spl_id)
+    if spec is None:
+        raise HTTPException(404, "Smart playlist not found")
+
+    mount = None
+    if devnode:
+        info = device_service.get_device_info(devnode)
+        if not info or not info.is_ipod:
+            raise HTTPException(400, "Device removal requires a connected iPod")
+        if op_service.is_busy():
+            raise HTTPException(409, "Another operation is already running")
+        try:
+            mount = await device_service.ensure_mounted(devnode)
+        except (KeyError, RuntimeError) as exc:
+            raise HTTPException(500, f"Mount failed: {exc}")
+
     await spl.delete_smart_playlist(spl_id)
-    return {"ok": True}
+
+    if mount is not None:
+        from app.routers.device import _resolve_device_id
+        await op_service.run_playlist_delete(
+            mount, spec["name"],
+            device_id=_resolve_device_id(devnode),
+            devnode=devnode,
+        )
+    return {"ok": True, "device_delete": mount is not None}
+
+
+@router.get("/device-rules")
+async def device_rules(devnode: str, name: str):
+    """Read an iTunes-created smart playlist's rules off the iPod for editing."""
+    info = device_service.get_device_info(devnode)
+    if not info or not info.is_ipod:
+        raise HTTPException(400, "Requires a connected iPod")
+    try:
+        mount = await device_service.ensure_mounted(devnode)
+    except (KeyError, RuntimeError) as exc:
+        raise HTTPException(500, f"Mount failed: {exc}")
+    try:
+        spec = await spl.read_device_spec(mount, name)
+    finally:
+        await device_service.release_mount(devnode)
+    if spec is None:
+        raise HTTPException(422, "Not a smart playlist, or its rules could not be read")
+    return spec
 
 
 @router.post("/preview")

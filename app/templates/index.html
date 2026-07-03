@@ -201,6 +201,24 @@
         <span class="badge" x-text="(library?.total_albums || 0) + ' albums'"></span>
         <span class="badge" x-text="(library?.artists?.length || 0) + ' artists'"></span>
       </div>
+      <div style="position:relative" x-data="{ open: false }"
+           x-show="selectedDevnode && viewMode === 'library' && deviceSelection.size > 0 && !selectedDevice?.is_walkman">
+        <button class="btn-primary" @click.stop="open = !open"
+                :disabled="currentOp?.status === 'running'">Add to playlist &#x25BE;</button>
+        <div x-show="open" @click.outside="open = false"
+             style="display:none;position:absolute;top:calc(100% + 6px);right:0;background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:5px;z-index:500;min-width:180px;max-height:280px;overflow-y:auto;box-shadow:0 8px 28px rgba(0,0,0,.6)">
+          <template x-for="(p, i) in devPlaylists" :key="i + ':' + p.name">
+            <div class="dp-row" x-show="!p.smartpl"
+                 @click="open = false; addSelectedToPlaylist(p.name)">
+              <div class="dp-info"><span class="dp-name" x-text="p.name"></span></div>
+              <span style="color:var(--dim);font-size:11px" x-text="p.count"></span>
+            </div>
+          </template>
+          <div class="dp-row" @click="open = false; addSelectedToNewPlaylist()">
+            <div class="dp-info"><span class="dp-name">＋ New playlist…</span></div>
+          </div>
+        </div>
+      </div>
       <button class="btn-primary" x-show="selectedDevnode && viewMode === 'library' && deviceSelection.size > 0"
               @click="downloadSelectedTracks()">Download</button>
       <button class="btn-danger" x-show="selectedDevnode && viewMode === 'library' && deviceSelection.size > 0"
@@ -492,7 +510,7 @@
                   <input type="checkbox" class="row-cb" @click.stop
                          :checked="isTrackSelected(t)"
                          @change="toggleTrack(t, $event.target.checked)">
-                  <span class="t-dot-cell"><span class="t-unplayed-dot" :class="{ show: mediaType === 'podcast' && !t.playcount }"></span></span>
+                  <span class="t-dot-cell"><span class="t-unplayed-dot" :class="{ show: mediaType === 'podcast' && !t.playcount && !t.db_played }"></span></span>
                   <span class="t-play-cell" @click.stop="!t.missing && (isCurrentTrack(t) ? togglePlay() : playTrack(t))">
                     <span class="t-nr-text" x-show="!isCurrentTrack(t)" x-text="t.track_nr || '·'"></span>
                     <span class="t-nr-play"><svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
@@ -883,6 +901,12 @@
                     <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 0 1-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 0 1 .947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 0 1 2.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 0 1 2.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 0 1 .947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 0 1-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 0 1-2.287-.947zM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" clip-rule="evenodd"/></svg>
                   </span>
                 </template>
+                <template x-if="p.smartpl && !smartPlaylists.find(s => s.name === p.name)">
+                  <span class="spl-gear" title="Edit rules (read from the iPod)"
+                        @click.stop="adoptSmartPlaylist(p)">
+                    <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 0 1-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 0 1 .947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 0 1 2.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 0 1 2.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 0 1 .947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 0 1-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 0 1-2.287-.947zM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" clip-rule="evenodd"/></svg>
+                  </span>
+                </template>
               </span>
               <span class="artist-count" x-text="p.count"></span>
             </div>
@@ -919,14 +943,20 @@
                     title="Create or replace this playlist in Plex (tracks must be in Plex — run the import first); smart playlists publish their current members"
                     @click="publishPlaylistToPlex()"
                     x-text="publishBusy ? 'Publishing…' : 'Publish to Plex'"></button>
+            <button class="manage-btn" :style="plexStatus?.linked ? '' : 'margin-left:auto'"
+                    x-show="selectedDevnode"
+                    :disabled="currentOp?.status === 'running'"
+                    title="Remove this playlist from the iPod (tracks stay on the device)"
+                    @click="deleteDevPlaylist()">Delete playlist</button>
           </div>
         </template>
-        <div class="tracks-head" style="grid-template-columns: 36px 1fr 1fr 54px 50px;">
+        <div class="tracks-head" style="grid-template-columns: 36px 1fr 1fr 54px 50px 28px;">
           <span style="text-align:right">#</span>
           <span>Title</span>
           <span>Artist / Album</span>
           <span></span>
           <span style="text-align:right">Time</span>
+          <span></span>
         </div>
         <div class="col-scroll">
           <template x-if="!selectedDevPlaylist">
@@ -942,7 +972,7 @@
                    x-text="publishResult?.msg"></div>
               <template x-for="(t, i) in devPlaylistTracks" :key="i + ':' + t.id">
                 <div class="track-row plex-track-row"
-                     style="grid-template-columns: 36px 1fr 1fr 54px 50px;"
+                     style="grid-template-columns: 36px 1fr 1fr 54px 50px 28px;"
                      :class="{ 'plex-unmatched': t._unresolved, 'now-playing': !t._unresolved && isCurrentTrack(t) }"
                      @click="!t._unresolved && !t.missing && playTrack(t)">
                   <span style="text-align:right;color:var(--dim)" x-text="i + 1"></span>
@@ -956,6 +986,10 @@
                   </span>
                   <span class="t-rating"><template x-for="s in [1,2,3,4,5]" :key="s"><span class="sp-s" :class="{ lit: s <= Math.round((t.rating || 0) / 20) }">★</span></template></span>
                   <span class="t-dur" x-text="fmtDur(t.duration_ms)"></span>
+                  <span class="spl-track-remove" x-show="!selectedDevPlaylist?.smartpl"
+                        :class="{ disabled: currentOp?.status === 'running' }"
+                        title="Remove from playlist (track stays on iPod)"
+                        @click.stop="currentOp?.status !== 'running' && removeFromDevPlaylist(t)">&#x2715;</span>
                 </div>
               </template>
             </div>
@@ -1163,7 +1197,20 @@
                 <input class="spl-input" type="number" x-model="rule.value2" @input="scheduleSmartPreview()" placeholder="to">
               </template>
               <template x-if="smartFieldDef(rule.field).kind === 'date'">
-                <input class="spl-input" type="number" x-model="rule.value" @input="scheduleSmartPreview()" placeholder="days">
+                <input class="spl-input" type="number" min="1" x-model="rule.value" @input="scheduleSmartPreview()">
+              </template>
+              <template x-if="smartFieldDef(rule.field).kind === 'date'">
+                <select class="spl-select" x-model="rule.unit" @change="scheduleSmartPreview()">
+                  <template x-for="u in smartDateUnits" :key="u[0]">
+                    <option :value="u[0]" x-text="u[1]"></option>
+                  </template>
+                </select>
+              </template>
+              <template x-if="smartFieldDef(rule.field).kind === 'bool'">
+                <select class="spl-select" style="flex:1" x-model="rule.value" @change="scheduleSmartPreview()">
+                  <option value="set">set</option>
+                  <option value="unset">unset</option>
+                </select>
               </template>
               <span class="spl-rule-btn" @click="removeSmartRule(i)" title="Remove rule">&#x2212;</span>
               <span class="spl-rule-btn" @click="addSmartRule(i)" title="Add rule">+</span>
@@ -1569,10 +1616,22 @@
                   </div>
                 </template>
               </div>
+              <div class="setting-row" style="cursor:pointer;margin-top:8px" x-show="_deviceSettingsType !== 'walkman'"
+                   @click="deviceSettingsDraft.auto_sync = !deviceSettingsDraft.auto_sync">
+                <div style="flex:1">
+                  <div style="font-size:13px;font-weight:500;color:var(--text)">Auto-sync when connected</div>
+                  <div style="font-size:11px;color:var(--muted);margin-top:2px">Run the enabled sync rules automatically whenever this iPod is plugged in</div>
+                </div>
+                <div class="setting-toggle" :class="{ active: deviceSettingsDraft.auto_sync }"
+                     role="switch" :aria-checked="deviceSettingsDraft.auto_sync" tabindex="0"
+                     @keydown.space.prevent="deviceSettingsDraft.auto_sync = !deviceSettingsDraft.auto_sync">
+                  <div class="setting-toggle-thumb"></div>
+                </div>
+              </div>
               <div style="margin-top:10px;display:flex;gap:8px">
                 <button class="manage-btn" @click="runAutoSync()"
-                        :disabled="!deviceSettingsDraft.sync_rules.some(r => r.enabled) || _deviceSettingsDbId != null || !devices.find(d => d.devnode === _deviceSettingsDevnode)?.mounted"
-                        :title="_deviceSettingsDbId != null || !devices.find(d => d.devnode === _deviceSettingsDevnode)?.mounted ? 'Device must be mounted to run auto-sync' : ''"
+                        :disabled="!deviceSettingsDraft.sync_rules.some(r => r.enabled) || !devSettingsConnectedDevnode"
+                        :title="!devSettingsConnectedDevnode ? 'Device must be connected to run auto-sync' : ''"
                         style="font-size:12px">
                   ▶ Run auto-sync now
                 </button>
@@ -1585,7 +1644,7 @@
             </div>
 
             <!-- Check filesystem -->
-            <template x-if="_deviceSettingsDevnode && devices.find(d => d.devnode === _deviceSettingsDevnode)">
+            <template x-if="devSettingsConnectedDevnode">
               <div>
                 <div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:10px">Filesystem</div>
                 <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface-bg);border-radius:6px;border:1px solid var(--card-border)">
@@ -1598,32 +1657,25 @@
               </div>
             </template>
 
-            <!-- Verify library -->
-            <template x-if="_deviceSettingsDevnode && devices.find(d => d.devnode === _deviceSettingsDevnode)?.mounted">
-              <div>
+            <!-- Verify library (iPod-only; backend mounts on demand) -->
+            <template x-if="devSettingsConnectedDevnode && _deviceSettingsType !== 'walkman'">
+              <div x-data="{ verifyMode: 'check' }">
                 <div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:10px">Verify Library</div>
-                <div style="display:flex;flex-direction:column;gap:6px">
-                  <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface-bg);border-radius:6px;border:1px solid var(--card-border)">
-                    <div style="flex:1">
-                      <div style="font-size:12px;font-weight:500;color:var(--text)">Check only</div>
-                      <div style="font-size:11px;color:var(--muted);margin-top:1px">Report mismatches between iTunesDB and files — no changes made</div>
-                    </div>
-                    <button class="manage-btn" style="font-size:12px;white-space:nowrap" @click="runVerify('check')">▶ Run</button>
+                <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface-bg);border-radius:6px;border:1px solid var(--card-border)">
+                  <div style="flex:1;min-width:0">
+                    <select class="spl-select" style="width:100%" x-model="verifyMode">
+                      <option value="check">Check only</option>
+                      <option value="add">Add missing entries</option>
+                      <option value="delete">Remove orphaned entries</option>
+                    </select>
+                    <div style="font-size:11px;color:var(--muted);margin-top:4px"
+                         x-text="verifyMode === 'check' ? 'Report mismatches between iTunesDB and files — no changes made'
+                               : verifyMode === 'add' ? 'Files on device without a DB entry get added to iTunesDB'
+                               : 'DB entries with no corresponding file on device are deleted'"></div>
                   </div>
-                  <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface-bg);border-radius:6px;border:1px solid var(--card-border)">
-                    <div style="flex:1">
-                      <div style="font-size:12px;font-weight:500;color:var(--text)">Add missing entries</div>
-                      <div style="font-size:11px;color:var(--muted);margin-top:1px">Files on device without a DB entry get added to iTunesDB</div>
-                    </div>
-                    <button class="manage-btn" style="font-size:12px;white-space:nowrap" @click="runVerify('add')">▶ Run</button>
-                  </div>
-                  <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface-bg);border-radius:6px;border:1px solid var(--card-border)">
-                    <div style="flex:1">
-                      <div style="font-size:12px;font-weight:500;color:var(--text)">Remove orphaned entries</div>
-                      <div style="font-size:11px;color:var(--muted);margin-top:1px">DB entries with no corresponding file on device are deleted</div>
-                    </div>
-                    <button class="manage-btn" style="font-size:12px;white-space:nowrap;color:#e57373" @click="runVerify('delete')">▶ Run</button>
-                  </div>
+                  <button class="manage-btn" style="font-size:12px;white-space:nowrap"
+                          :style="verifyMode === 'delete' ? 'color:#e57373' : ''"
+                          @click="runVerify(verifyMode)">&#x25B6;&#xFE0E; Run</button>
                 </div>
               </div>
             </template>

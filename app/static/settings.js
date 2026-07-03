@@ -217,10 +217,14 @@ function settingsModule() {
     },
 
     async runAutoSync() {
-      const devnode = this._deviceSettingsDevnode;
+      const devnode = this.devSettingsConnectedDevnode;
       if (!devnode) return;
       try {
-        const r = await fetch('/devices/' + encodeURIComponent(devnode) + '/auto-sync', { method: 'POST' });
+        const r = await fetch('/auto-sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ devnode }),
+        });
         const data = await r.json();
         if (!r.ok) { alert(data.detail || 'Auto-sync failed'); return; }
         if (data.queued === 0) { alert(data.message || 'Nothing to sync — all content is already on the device.'); return; }
@@ -228,8 +232,25 @@ function settingsModule() {
       } catch (e) { alert('Auto-sync failed: ' + e.message); }
     },
 
+    // Devnode usable for device operations from the settings modal. The modal
+    // may have been opened via the known-devices path (unmounted iPods redirect
+    // there because settings need the DB id) — resolve back to the connected
+    // device so verify / check-fs work; the backend mounts on demand.
+    get devSettingsConnectedDevnode() {
+      if (this._deviceSettingsDevnode) return this._deviceSettingsDevnode;
+      if (this._deviceSettingsDbId == null) return null;
+      if (this._deviceSettingsType === 'walkman') {
+        return this.devices.find(d => d.walkman_db_id === this._deviceSettingsDbId)?.devnode || null;
+      }
+      const byId = this.devices.find(d => d.ipod_db_id === this._deviceSettingsDbId);
+      if (byId) return byId.devnode;
+      const uuid = this.knownDevices?.ipods?.find(k => k.id === this._deviceSettingsDbId)?.uuid;
+      if (!uuid) return null;
+      return this.devices.find(d => d.usb_serial === uuid)?.devnode || null;
+    },
+
     async runVerify(mode) {
-      const devnode = this._deviceSettingsDevnode;
+      const devnode = this.devSettingsConnectedDevnode;
       if (!devnode) return;
       if (mode === 'delete' && !confirm('Remove all iTunesDB entries that have no corresponding file on device?\n\nThis cannot be undone.')) return;
       try {
@@ -245,7 +266,7 @@ function settingsModule() {
     },
 
     async runCheckFs() {
-      const devnode = this._deviceSettingsDevnode;
+      const devnode = this.devSettingsConnectedDevnode;
       if (!devnode) return;
       if (!confirm('Unmount device, run filesystem check (fsck), then remount.\n\nThis may take several minutes. Continue?')) return;
       try {

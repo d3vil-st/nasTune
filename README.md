@@ -33,8 +33,8 @@ iPod support is built around [gpod-utils](https://github.com/d3vil-st/gpod-utils
 - **Force full rescan** — WALKMAN devices and NAS sources each have a full-rescan button that clears all existing library data and re-reads every file from scratch; useful after tag corrections or large file moves (confirmation dialog shown before starting)
 - **Sync** tracks from a NAS music source to the device — add missing tracks, remove ones no longer in the source; sync confirmation dialog appears when deletes are involved or free space is insufficient
 - **Device settings** — per-device gear icon opens a settings panel with a force-AAC override, per-media-type sync rules, and library verification tools; also available for known-but-disconnected iPods
-- **Auto-sync** — one-click button in device settings runs a full sync using configured per-type source rules, skipping tracks already on the device
-- **Library verify** (`gpod-verify`) — three modes in device settings: *Check only* (reports mismatches without changes), *Add missing entries* (creates iTunesDB entries for files on device with no DB record), *Remove orphaned entries* (deletes DB entries whose file no longer exists on device)
+- **Auto-sync** — one-click button in device settings runs a full sync using configured per-type source rules (music, podcasts, and audiobooks each copy with the correct media type), skipping tracks already on the device; an optional **Auto-sync on connect** toggle runs it headlessly the moment the iPod is plugged in — no browser needed
+- **Library verify** (`gpod-verify`) — mode dropdown + Run button in device settings: *Check only* (reports mismatches without changes), *Add missing entries* (creates iTunesDB entries for files on device with no DB record), *Remove orphaned entries* (deletes DB entries whose file no longer exists on device); works on connected iPods even before they are mounted — the backend mounts on demand
 - **Filesystem check** (`fsck`) — device settings button unmounts the device, runs `fsck.hfsplus` or `fsck.vfat` to detect and repair filesystem errors, then remounts automatically; output shown live in the operation log modal
 - **Rating sync** — iPod track ratings (1–5 stars) are persisted to SQLite on every library read; during sync, newly copied tracks automatically receive their stored ratings via `gpod-tag`; highest rating wins when the same track is seen on multiple iPods
 - **Source comparison** — tracks in the iPod/WALKMAN pane appear in blue when they are absent from the selected NAS source; parent album and artist rows turn blue as soon as even a single track is missing
@@ -42,8 +42,8 @@ iPod support is built around [gpod-utils](https://github.com/d3vil-st/gpod-utils
 - **Delete** selected tracks from the device
 - **Download** selected tracks as a `.tar` archive with restored directory structure (`Artist/[Year] - Album/NN - Title.ext`)
 - **Star ratings** — clickable inline 1–5 star picker on every track row in both the iPod and NAS source tabs; ratings are stored in SQLite and reflected across both views; clicking the active star clears the rating
-- **Playlists** — browse the iPod's playlists (including On-The-Go), sync Plex playlists to the device, and publish device playlists back to Plex; see [Playlists](#playlists)
-- **Smart playlists** — iTunes-style rule editor (field / operator / value rows, match all/any, limit with selection criteria); rules are written to the iPod as real smart playlists in the iTunesDB (visible in iTunes); member lists refresh automatically after every sync
+- **Playlists** — browse and edit the iPod's playlists (including On-The-Go and iTunes-created ones): add selected tracks to an existing or new playlist, remove individual tracks, delete whole playlists, sync Plex playlists to the device, and publish device playlists back to Plex; see [Playlists](#playlists)
+- **Smart playlists** — iTunes-style rule editor (field / operator / value rows, match all/any, limit with selection criteria); rules are written to the iPod as real smart playlists in the iTunesDB (visible in iTunes); member lists refresh automatically after every sync; smart playlists created in iTunes can be adopted — their rules are read off the device into the editor
 - **Plex integration** (optional) — link your Plex Media Server to sync playlists both ways, import star ratings and play counts from Plex, and push ratings set in nasTune back to Plex; see [Plex integration](#plex-integration)
 - **Sign in with Plex** (optional) — gate the whole app behind Plex PIN OAuth (Overseerr-style); access limited to the server owner and approved users the server is shared with
 - **Play** tracks directly in the browser (iPod/WALKMAN and NAS source), with ALAC→FLAC transcoding on the fly for Firefox compatibility
@@ -54,10 +54,11 @@ iPod support is built around [gpod-utils](https://github.com/d3vil-st/gpod-utils
 - **Podcast metadata** — podcast sources remap show name using `albumartist → artist → album` priority (matching the iPod's grouping logic) for correct 3-column navigation (Shows → Seasons → Episodes); audiobooks navigate naturally as Authors → Books → Chapters; episodes are sorted newest-first in both the season column and episode list
 - **Episode publication date** — the raw `date` tag (e.g. `2026-05-19T12:12:40`) is stored as `pub_date` and displayed as a formatted date under each episode title (e.g. "May 19, 2026"); device-side tracks show year only (gpod-ls limitation); requires a source rescan to populate
 - **Unplayed indicator** — a blue dot before the episode number marks podcast episodes with zero plays; play counts are read from the iPod on every library load, persisted to `ipod_track_playcounts`, and cross-referenced in the source tab so the indicator also appears for episodes in your NAS library that are on the device but unplayed
+- **Played-state sync across devices** — an episode listened to on one iPod (or marked played in Plex) is shown as played everywhere in nasTune, and the next sync marks it played on other iPods too (`gpod-tag --playcount`), clearing the on-screen unplayed bullet
 - **Persistent album artwork cache** — artwork is extracted from source files and device tracks on library load, stored to disk, and served via a normalized `(artist, album)` key; works for offline iPod browsing and WALKMAN libraries where the device is not mounted
 - **Device picker** — gear icon always visible on device rows; connected devices show the iPod/WALKMAN name alongside the block device name and storage type (e.g. `Serial — Internal`); unmounted iPods and WALKMANs are matched by serial/DB id so settings and library browsing are accessible even when disconnected
 - **Search** with smart navigation — click an artist from results to see all their albums (when the artist name matched) or only relevant albums (when an album or track matched); clear button in the search field
-- **Auto-discover** connected devices via USB polling; optional auto-mount
+- **Auto-discover** connected devices via USB polling; optional auto-mount; a freshly connected iPod or WALKMAN becomes the active device in the UI automatically (random USB sticks are never auto-selected)
 - **Light / Dark / Auto** theme with system preference detection
 - **Mobile-friendly** responsive 3-pane layout that collapses to a single-pane slide view on small screens
 - **URL state** — navigation (tab, artist, album, device) is encoded in the hash so reloads and bookmarks work
@@ -127,6 +128,8 @@ Supported formats: MP3, FLAC, AAC/M4A (including ALAC), AIFF, WAV, OGG.
 - **iPod**: when syncing a complete album or artist, the directory path is passed to `gpod-cp` rather than individual files — faster and avoids path-length issues; progress is tracked per-track from streaming output
 - **Smart encoder selection**: lossless files (FLAC, WAV, AIFF, APE, WV, ALAC) are transcoded to ALAC; MP3 and AAC M4A files are copied as-is without re-encoding; other lossy formats (OGG, WMA, etc.) are transcoded to AAC via fdk-aac; the `force_aac` setting overrides this and routes everything through fdk-aac
 - **iPod rating sync**: after copying tracks, nasTune runs `gpod-ls` to get fresh IDs, then applies any stored ratings to newly copied tracks via `gpod-tag`; only tracks where the stored rating is higher than the current iPod rating are updated
+- **iPod played sync**: in the same step, podcast episodes that are unplayed on this iPod but have a stored play count from another device (or the Plex import) are marked played via `gpod-tag --playcount`, which also clears the iPod's on-screen unplayed bullet
+- **Smart playlist refresh**: every sync ends with `gpod-playlist -U`, re-evaluating the member lists of all smart playlists on the device (nasTune- and iTunes-created)
 - **WALKMAN**: sync uses `shutil.copy2` / `os.remove`; the SQLite library is updated immediately on completion without a rescan
 
 ---
@@ -138,17 +141,25 @@ Select **♪ Playlists** in the media type dropdown (iPod only — hidden for WA
 - **Device tab** lists the playlists on the iPod, including On-The-Go playlists created on the click wheel. Selecting one shows its tracks with inline playback. **Publish to Plex** creates (or replaces) a playlist with the same name on the linked Plex server — useful for getting On-The-Go playlists back into your library (run the Plex import first so tracks can be matched by rating key).
 - **Sources tab** shows the linked Plex server's audio playlists for syncing to the device (see [Plex integration](#plex-integration)).
 
+Any regular playlist can be edited, regardless of where it was created:
+
+- **Remove a track** — hover a row in the playlist view and click the `×`; the track stays on the device, only the playlist entry is removed
+- **Add tracks** — select tracks in the music browser and use **Add to playlist ▾** in the header to append them to an existing playlist or create a new one
+- **Delete playlist** — removes the playlist itself (tracks stay on the device); built-in playlists (the master list, Podcasts) are protected by gpod-utils and cannot be deleted
+
+Smart playlists hide the track-level editing — their membership is rule-driven — and offer the rule editor instead.
+
 ### Smart playlists
 
 **＋ Smart** in the device playlists column opens an iTunes-style rule editor:
 
-- Rules combine a field (title, artist, album, genre, rating, plays, year, duration, size, date added, last played, …) with an operator and value; match **all** or **any**
+- Rules combine a field (title, artist, album, genre, rating, plays, skips, year, BPM, duration, size, compilation, date added, last played, …) with an operator and value; match **all** or **any** — the full gpod rule vocabulary is supported, so playlists created elsewhere round-trip without losing rules
 - **Limit to** N items / minutes / hours / MB / GB, selected by random, most played, highest rating, most recently added, and more
 - A live preview shows approximately how many tracks on the connected iPod match the current rules
 - **Save & Apply** writes a **real smart playlist** to the iPod — the rules are stored in the iTunesDB itself (via `gpod-playlist -S`, gpod-utils ≥ 1.5.1) and are visible and editable in iTunes
 - Member lists are populated on creation and refreshed automatically after every sync (the iPod firmware displays the stored member list rather than evaluating rules itself), so rules like *rating ≥ 4* or *added in the last 30 days* stay current as the library changes — this covers iTunes-created smart playlists on the device too
 
-Definitions are stored in nasTune's database; device playlists whose name matches a stored definition show a gear icon for editing the rules.
+Definitions are stored in nasTune's database; device playlists whose name matches a stored definition show a gear icon for editing the rules. Smart playlists created in **iTunes** show the gear too — clicking it reads the rules directly off the device into the editor (adopt), so foreign smart playlists can be tweaked without iTunes. Deleting a smart playlist removes both the stored definition and the playlist from the device.
 
 ---
 
@@ -163,6 +174,8 @@ All Plex features are optional — nasTune runs exactly as before if you never l
 3. Pick the server to link; nasTune probes its connections and prefers local direct access over relay
 
 The account that links the server becomes the **admin**. Unlinking removes all Plex sessions, users, and track mappings.
+
+The stored server address (often a `plex.direct` URL embedding your WAN IP) can go stale when your IP changes. nasTune self-heals: on a connection failure it re-resolves the server via plex.tv, picks the best reachable connection again, and retries — no re-linking needed.
 
 ### Playlists
 

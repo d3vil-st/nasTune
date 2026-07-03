@@ -4,7 +4,7 @@ import time
 import aiosqlite
 
 from app.services.db import DB_PATH
-from app.services.track_key import track_key as _track_key
+from app.services.track_key import lib_track_key as _lib_track_key
 
 log = logging.getLogger(__name__)
 
@@ -29,12 +29,7 @@ async def persist_ratings(lib: dict) -> None:
                 stars = ipod_rating_to_stars(track.get('rating') or 0)
                 if stars <= 0:
                     continue
-                artist_tag = track.get('artist') or artist_name
-                key = _track_key(
-                    artist_tag, album_name,
-                    track.get('track_nr'), track.get('disc_nr'),
-                    track.get('title', ''),
-                )
+                key = _lib_track_key(track, artist_name, album_name)
                 updates.append((key, stars, now))
 
     if not updates:
@@ -64,12 +59,7 @@ async def persist_playcounts(lib: dict) -> None:
             album_name = album['name']
             for track in album.get('tracks', []):
                 pc = track.get('playcount') or 0
-                artist_tag = track.get('artist') or artist_name
-                key = _track_key(
-                    artist_tag, album_name,
-                    track.get('track_nr'), track.get('disc_nr'),
-                    track.get('title', ''),
-                )
+                key = _lib_track_key(track, artist_name, album_name)
                 updates.append((key, pc, now))
 
     if not updates:

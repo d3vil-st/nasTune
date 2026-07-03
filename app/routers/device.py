@@ -229,6 +229,46 @@ async def check_fs(body: CheckFsBody):
     return {"ok": True}
 
 
+class PlaylistDeleteBody(BaseModel):
+    devnode: str
+    name: str
+
+
+@router.post("/library/playlist-delete")
+async def delete_playlist(body: PlaylistDeleteBody):
+    if not body.name.strip():
+        raise HTTPException(422, "Playlist name required")
+    mount = await _get_mount(body.devnode)  # iPod-only; busy check; mounts on demand
+    device_id = _resolve_device_id(body.devnode)
+    await op_service.run_playlist_delete(mount, body.name, device_id=device_id, devnode=body.devnode)
+    return {"ok": True}
+
+
+class PlaylistTracksBody(BaseModel):
+    devnode: str
+    name: str
+    add_ipod_paths: list[str] = []
+    remove_ipod_paths: list[str] = []
+    create: bool = False
+
+
+@router.post("/library/playlist-tracks")
+async def edit_playlist_tracks(body: PlaylistTracksBody):
+    """Add/remove tracks on a regular iPod playlist (optionally creating it)."""
+    if not body.name.strip():
+        raise HTTPException(422, "Playlist name required")
+    if not body.add_ipod_paths and not body.remove_ipod_paths and not body.create:
+        raise HTTPException(422, "Nothing to do")
+    mount = await _get_mount(body.devnode)  # iPod-only; busy check; mounts on demand
+    device_id = _resolve_device_id(body.devnode)
+    await op_service.run_playlist_edit(
+        mount, body.name,
+        add_paths=body.add_ipod_paths, remove_paths=body.remove_ipod_paths,
+        create=body.create, device_id=device_id, devnode=body.devnode,
+    )
+    return {"ok": True}
+
+
 @router.post("/library/delete")
 async def delete_tracks(body: DeleteBody):
     info, mount = await _get_device_mount(body.devnode)
@@ -282,15 +322,14 @@ async def rate_track(body: RateBody):
     # Persist to ipod_track_ratings — gpod-tag is applied on the next sync via _gpod_rating_sync
     import aiosqlite, time as _time
     from app.services.db import DB_PATH
-    from app.services.track_key import track_key as _tk
+    from app.services.track_key import lib_track_key as _ltk
     lib = device_service._cache.get(body.devnode)
     if lib:
         for artist in lib.get('artists', []):
             for album in artist.get('albums', []):
                 for track in album.get('tracks', []):
                     if track.get('id') == body.track_id:
-                        artist_tag = track.get('artist') or artist['name']
-                        key = _tk(artist_tag, album['name'], track.get('track_nr'), track.get('disc_nr'), track.get('title', ''))
+                        key = _ltk(track, artist['name'], album['name'])
                         async with aiosqlite.connect(DB_PATH) as db:
                             if body.rating > 0:
                                 await db.execute(
@@ -353,6 +392,7 @@ async def get_op_history(devnode: str):
 
 class DeviceSettingsBody(BaseModel):
     force_aac: int | None = None  # None=global, 0=off, 1=on
+    auto_sync: bool = False       # run sync rules automatically on connect (iPod only)
     sync_rules: list[dict] = []
 
 
@@ -434,7 +474,7 @@ async def save_device_settings_endpoint(devnode: str = Query(...), body: DeviceS
     if db_id is None:
         raise HTTPException(404, "Device not yet registered — load its library first")
     from app.services.ipod_db import save_device_settings
-    await save_device_settings(db_id, body.force_aac, body.sync_rules, device_type)
+    await save_device_settings(db_id, body.force_aac, body.sync_rules, device_type, auto_sync=body.auto_sync)
     return {"ok": True}
 
 
@@ -447,7 +487,7 @@ async def get_known_device_settings(device_id: int, device_type: str = "ipod"):
 @router.put("/devices/known/{device_id}/settings")
 async def save_known_device_settings(device_id: int, body: DeviceSettingsBody, device_type: str = "ipod"):
     from app.services.ipod_db import save_device_settings
-    await save_device_settings(device_id, body.force_aac, body.sync_rules, device_type)
+    await save_device_settings(device_id, body.force_aac, body.sync_rules, device_type, auto_sync=body.auto_sync)
     return {"ok": True}
 
 
@@ -466,22 +506,37 @@ async def offline_library(device_id: int, device_type: str = "ipod"):
     return lib
 
 
-@router.post("/devices/{devnode}/auto-sync")
-async def run_auto_sync(devnode: str):
+class AutoSyncBody(BaseModel):
+    devnode: str
+
+
+@router.post("/auto-sync")
+async def run_auto_sync(body: AutoSyncBody):
+    # devnode must not be a path segment: Starlette decodes %2F before routing,
+    # so /devices/{devnode}/auto-sync never matches /dev/sdX values.
+    devnode = body.devnode
     info = device_service.get_device_info(devnode)
-    if not info or not info.is_ipod:
-        raise HTTPException(404, "iPod not found or not connected")
+    if not info:
+        raise HTTPException(404, "Device not found")
     if op_service.is_busy():
         raise HTTPException(409, "Another operation is already running")
     lib = device_service._cache.get(devnode)
     if not lib:
-        raise HTTPException(400, "Library not loaded — select the device first")
+        # Connected but never selected (e.g. unmounted iPod) — load on demand
+        await device_service._load_library(devnode)
+        lib = device_service._cache.get(devnode)
+        info = device_service.get_device_info(devnode) or info
+    if not lib:
+        raise HTTPException(400, "Could not load the device library")
+    if not info.is_ipod:
+        raise HTTPException(400, "Auto-sync requires an iPod")
     db_id = info.ipod_db_id
     if db_id is None:
         raise HTTPException(400, "Device not yet registered in DB")
     from app.services.ipod_db import compute_auto_sync_paths
-    paths = await compute_auto_sync_paths(lib, db_id, "ipod")
-    if not paths:
+    groups = await compute_auto_sync_paths(lib, db_id, "ipod")
+    total = sum(len(p) for p in groups.values())
+    if not total:
         return {"ok": True, "queued": 0, "message": "Nothing to sync"}
     device_id = _resolve_device_id(devnode)
     try:
@@ -489,11 +544,11 @@ async def run_auto_sync(devnode: str):
     except (KeyError, RuntimeError) as exc:
         raise HTTPException(500, f"Mount failed: {exc}")
     await op_service.run_sync(
-        paths, [], mount,
-        device_id=device_id, copy_track_count=len(paths),
-        ipod_db_id=db_id, devnode=devnode,
+        [], [], mount,
+        device_id=device_id, copy_track_count=total,
+        ipod_db_id=db_id, devnode=devnode, copy_groups=groups,
     )
-    return {"ok": True, "queued": len(paths)}
+    return {"ok": True, "queued": total}
 
 
 @router.get("/operations/log")

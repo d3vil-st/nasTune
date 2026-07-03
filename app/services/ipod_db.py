@@ -110,11 +110,20 @@ async def get_device_settings(device_id: int, device_type: str = "ipod") -> dict
         rules_table = "walkman_sync_rules"
 
     async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            f"SELECT force_aac FROM {settings_table} WHERE device_id=?", (device_id,)
-        ) as cur:
-            srow = await cur.fetchone()
-        force_aac = srow[0] if srow else None
+        if device_type == "ipod":
+            async with db.execute(
+                f"SELECT force_aac, auto_sync FROM {settings_table} WHERE device_id=?", (device_id,)
+            ) as cur:
+                srow = await cur.fetchone()
+            force_aac = srow[0] if srow else None
+            auto_sync = bool(srow[1]) if srow else False
+        else:
+            async with db.execute(
+                f"SELECT force_aac FROM {settings_table} WHERE device_id=?", (device_id,)
+            ) as cur:
+                srow = await cur.fetchone()
+            force_aac = srow[0] if srow else None
+            auto_sync = False
 
         async with db.execute(
             f"""SELECT r.media_type, r.enabled, r.source_id, s.name
@@ -132,11 +141,12 @@ async def get_device_settings(device_id: int, device_type: str = "ipod") -> dict
     sync_rules = [existing.get(mt, {"media_type": mt, "enabled": False,
                                      "source_id": None, "source_name": None})
                   for mt in _MEDIA_TYPES]
-    return {"force_aac": force_aac, "sync_rules": sync_rules}
+    return {"force_aac": force_aac, "auto_sync": auto_sync, "sync_rules": sync_rules}
 
 
 async def save_device_settings(device_id: int, force_aac: int | None,
-                                sync_rules: list[dict], device_type: str = "ipod") -> None:
+                                sync_rules: list[dict], device_type: str = "ipod",
+                                auto_sync: bool = False) -> None:
     if device_type == "ipod":
         settings_table = "ipod_device_settings"
         rules_table = "ipod_sync_rules"
@@ -145,7 +155,13 @@ async def save_device_settings(device_id: int, force_aac: int | None,
         rules_table = "walkman_sync_rules"
 
     async with aiosqlite.connect(DB_PATH) as db:
-        if force_aac is None:
+        if device_type == "ipod":
+            await db.execute(
+                "INSERT INTO ipod_device_settings(device_id, force_aac, auto_sync) VALUES(?,?,?) "
+                "ON CONFLICT(device_id) DO UPDATE SET force_aac=excluded.force_aac, auto_sync=excluded.auto_sync",
+                (device_id, None if force_aac is None else int(force_aac), int(bool(auto_sync))),
+            )
+        elif force_aac is None:
             await db.execute(f"DELETE FROM {settings_table} WHERE device_id=?", (device_id,))
         else:
             await db.execute(
@@ -170,6 +186,19 @@ async def save_device_settings(device_id: int, force_aac: int | None,
         await db.commit()
 
 
+async def get_autosync_ipod_by_uuid(uuid: str) -> int | None:
+    """Return the iPod's db id when auto-sync-on-connect is enabled for it, else None."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            """SELECT d.id FROM ipod_devices d
+               JOIN ipod_device_settings s ON s.device_id = d.id
+               WHERE d.uuid = ? AND s.auto_sync = 1""",
+            (uuid,),
+        ) as cur:
+            row = await cur.fetchone()
+    return row[0] if row else None
+
+
 async def get_effective_force_aac(device_id: int, device_type: str = "ipod") -> bool | None:
     """Return per-device override as bool, or None if 'use global'."""
     table = "ipod_device_settings" if device_type == "ipod" else "walkman_device_settings"
@@ -184,8 +213,12 @@ async def get_effective_force_aac(device_id: int, device_type: str = "ipod") -> 
 
 
 async def compute_auto_sync_paths(device_lib: dict, device_id: int,
-                                   device_type: str = "ipod") -> list[str]:
-    """Return source file paths for tracks not yet on the device, per enabled sync rules."""
+                                   device_type: str = "ipod") -> dict[str, list[str]]:
+    """Source file paths for tracks not yet on the device, per enabled sync rule.
+
+    Returns {media_type: [paths]} — grouping matters because gpod-cp needs
+    --tracks-media-type for podcasts/audiobooks or they land as music.
+    """
     from app.services.track_key import track_key as _tk
 
     rules_table = "ipod_sync_rules" if device_type == "ipod" else "walkman_sync_rules"
@@ -199,7 +232,7 @@ async def compute_auto_sync_paths(device_lib: dict, device_id: int,
 
     enabled_rules = [(mt, sid) for mt, en, sid in rules if en]
     if not enabled_rules:
-        return []
+        return {}
 
     device_keys: set[str] = set()
     for artist in device_lib.get("artists", []):
@@ -213,9 +246,10 @@ async def compute_auto_sync_paths(device_lib: dict, device_id: int,
                 key = _tk(artist_key, album["name"], t.get("track_nr"), t.get("disc_nr"), t.get("title", ""))
                 device_keys.add(key)
 
-    paths: list[str] = []
+    groups: dict[str, list[str]] = {}
     async with aiosqlite.connect(DB_PATH) as db:
         for media_type, source_id in enabled_rules:
+            paths = groups.setdefault(media_type, [])
             if source_id:
                 q = ("SELECT st.path, st.artist, st.albumartist, st.album, st.track_nr, st.disc_nr, st.title "
                      "FROM source_tracks st JOIN sources s ON s.id=st.source_id "
@@ -234,4 +268,4 @@ async def compute_auto_sync_paths(device_lib: dict, device_id: int,
                         key = _tk(artist or albumartist or "", album or "", track_nr, disc_nr, title or "")
                     if key not in device_keys:
                         paths.append(path)
-    return paths
+    return {mt: p for mt, p in groups.items() if p}

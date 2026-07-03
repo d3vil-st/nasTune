@@ -51,6 +51,7 @@ class DeviceService:
         self._walkman_meta: dict[str, dict] = {}   # devnode -> {serial, cap} for walkman devices
         self._mount_refs: dict[str, int] = {}      # devnode -> active mount ref count
         self._mount_locks: dict[str, asyncio.Lock] = {}  # per-device lock for mount/unmount ops
+        self._autosynced: set[str] = set()         # devnodes already auto-synced this connect
 
     def _device_mount_lock(self, devnode: str) -> asyncio.Lock:
         if devnode not in self._mount_locks:
@@ -408,6 +409,7 @@ class DeviceService:
             async with self._lock:
                 self.devices[devnode] = info
             self._broadcast()
+            asyncio.create_task(self._maybe_auto_sync(devnode))
             return True
 
         # Device is already mounted (pre-mounted by host/previous session) — detect type and register
@@ -471,6 +473,7 @@ class DeviceService:
 
         log.info("Device registered: %s (is_ipod=%s, %.1f GB %s, pre-mounted at %s)",
                  devnode, is_ipod, total / 1024 ** 3, info.fstype, mount_str)
+        asyncio.create_task(self._maybe_auto_sync(devnode))
         return True
 
     async def _probe_walkman_cap(self, devnode: str, fstype_raw: str) -> "dict | None":
@@ -553,12 +556,68 @@ class DeviceService:
         log.info("  mount %s → %s OK (opts=%s)", devnode, mountpoint, opts)
         return True
 
+    async def _maybe_auto_sync(self, devnode: str) -> None:
+        """Run per-device sync rules when a known iPod with auto-sync enabled connects.
+
+        Fires once per connect (poll-loop registration). Identity comes from the
+        USB serial (== iPod UUID) so the check works before anything is mounted.
+        """
+        try:
+            if devnode in self._autosynced or devnode in self._ejected:
+                return
+            info = self.devices.get(devnode)
+            if not info or info.is_walkman:
+                return
+            serial = info.usb_serial
+            if not serial:
+                return
+            from app.services.ipod_db import get_autosync_ipod_by_uuid, compute_auto_sync_paths
+            db_id = await get_autosync_ipod_by_uuid(serial)
+            if db_id is None:
+                return
+            self._autosynced.add(devnode)
+
+            from app.services.operations import op_service
+            if op_service.is_busy():
+                log.info("auto-sync on connect: %s skipped — another operation is running", devnode)
+                return
+
+            log.info("Auto-sync on connect: %s (iPod db_id=%d)", devnode, db_id)
+            if devnode not in self._cache:
+                await self._load_library(devnode)
+            lib = self._cache.get(devnode)
+            if not lib:
+                log.warning("auto-sync on connect: library load failed for %s", devnode)
+                return
+            info = self.devices.get(devnode)
+            if not info or not info.is_ipod:
+                return
+
+            groups = await compute_auto_sync_paths(lib, info.ipod_db_id or db_id, "ipod")
+            total = sum(len(p) for p in groups.values())
+            if not total:
+                log.info("auto-sync on connect: %s — nothing to sync", devnode)
+                return
+
+            mount = await self.ensure_mounted(devnode)  # ref released by the sync op
+            device_id = self.get_device_uuid(devnode) or devnode.lstrip("/").replace("/", "_")
+            log.info("auto-sync on connect: %s — syncing %d path(s) (%s)",
+                     devnode, total, ", ".join(f"{mt}:{len(p)}" for mt, p in groups.items()))
+            await op_service.run_sync(
+                [], [], mount,
+                device_id=device_id, copy_track_count=total,
+                ipod_db_id=info.ipod_db_id or db_id, devnode=devnode, copy_groups=groups,
+            )
+        except Exception:
+            log.exception("auto-sync on connect failed for %s", devnode)
+
     async def _remove(self, devnode: str, *, skip_umount: bool = False) -> None:
         async with self._lock:
             info = self.devices.pop(devnode, None)
             self._cache.pop(devnode, None)
             self._walkman_meta.pop(devnode, None)
             self._mount_refs.pop(devnode, None)
+            self._autosynced.discard(devnode)
             if self.selected == devnode:
                 known = [d for d in self.devices.values() if d.is_ipod or d.is_walkman]
                 self.selected = known[0].devnode if known else None
@@ -679,20 +738,18 @@ class DeviceService:
                 from app.services.gpod import fetch_library
                 from app.services.ratings import persist_ratings, persist_playcounts
                 from app.services.ipod_db import upsert_ipod
-                from app.services.track_key import track_key as _tk
+                from app.services.track_key import lib_track_key as _ltk
                 from app.services.db import DB_PATH as _DB_PATH
                 import aiosqlite as _aiosqlite
                 lib = await fetch_library(mount_str)
                 asyncio.create_task(persist_ratings(lib))
                 asyncio.create_task(persist_playcounts(lib))
-                # Merge stored ratings into cache before serving
+                # Merge stored ratings + cross-device played state into cache before serving
                 _key_to_track: dict[str, dict] = {}
                 for _a in lib.get("artists", []):
                     for _al in _a["albums"]:
                         for _t in _al["tracks"]:
-                            _k = _tk(_t.get("artist") or _a["name"], _al["name"],
-                                     _t.get("track_nr"), _t.get("disc_nr"), _t.get("title", ""))
-                            _key_to_track[_k] = _t
+                            _key_to_track[_ltk(_t, _a["name"], _al["name"])] = _t
                 if _key_to_track:
                     _ph = ",".join("?" * len(_key_to_track))
                     async with _aiosqlite.connect(_DB_PATH) as _db:
@@ -704,6 +761,18 @@ class DeviceService:
                                 _t2 = _key_to_track.get(_row[0])
                                 if _t2:
                                     _t2["rating"] = max(_t2.get("rating", 0), _row[1] * 20)
+                        # db_played: track was played on some device (this one or another)
+                        try:
+                            async with _db.execute(
+                                f"SELECT track_key FROM ipod_track_playcounts WHERE playcount > 0 AND track_key IN ({_ph})",
+                                list(_key_to_track),
+                            ) as _cur:
+                                for _row in await _cur.fetchall():
+                                    _t2 = _key_to_track.get(_row[0])
+                                    if _t2:
+                                        _t2["db_played"] = True
+                        except Exception:
+                            pass  # table may not exist before first migration
                 device_meta = lib.get("device", {})
                 uuid = device_meta.get("uuid") or ""
                 if uuid:

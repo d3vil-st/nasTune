@@ -25,6 +25,12 @@ function devicesModule() {
           this.selectedDevnode = data.selected;
           await this._fetchLibrary(true);
           await this.loadOpHistory(data.selected);
+        } else {
+          // Nothing selected server-side (e.g. known iPod connected but unmounted
+          // with auto-mount off) — activate the first identifiable device.
+          await this._loadKnownDevices();
+          const sel = this.devices.find(d => this._isSelectableDevice(d));
+          if (sel) await this.selectDevice(sel.devnode);
         }
       } catch (e) {
         this.libraryError = e.message;
@@ -122,8 +128,14 @@ function devicesModule() {
     startSSE() {
       const es = new EventSource('/devices/events');
       let _prevDevnodes = '';
+      let _seenSnapshot = false;
       es.onmessage = (e) => {
         const data = JSON.parse(e.data);
+        // The first SSE message is the startup baseline, regardless of content.
+        // Do NOT infer this from _prevDevnodes === '' — unplugging the only
+        // device also empties the list, which would mask the next connect.
+        const isFirstSnapshot = !_seenSnapshot;
+        _seenSnapshot = true;
         this.devices = data.devices;
         if (this.selectedDevnode && !data.devices.find(d => d.devnode === this.selectedDevnode)) {
           this.selectedDevnode = null;
@@ -141,6 +153,7 @@ function devicesModule() {
         // picker's "Disconnected" section stays in sync without a page reload.
         const devnodes = data.devices.map(d => d.devnode).sort().join(',');
         if (devnodes !== _prevDevnodes) {
+          const prevSet = new Set(_prevDevnodes.split(',').filter(Boolean));
           _prevDevnodes = devnodes;
           this._loadKnownDevices();
           // If browsing an offline device and it just connected, switch to live.
@@ -153,10 +166,26 @@ function devicesModule() {
               this._browsingOfflineDeviceId = null;
               this.selectDevice(match.devnode);
             }
+          } else if (!isFirstSnapshot && this.currentOp?.status !== 'running') {
+            // Freshly connected identifiable device becomes active. Skip the first
+            // SSE snapshot (startup baseline) and never steal focus mid-operation.
+            const fresh = data.devices.find(d =>
+              !prevSet.has(d.devnode) && this._isSelectableDevice(d));
+            if (fresh && fresh.devnode !== this.selectedDevnode) {
+              this.selectDevice(fresh.devnode);
+            }
           }
         }
       };
       es.onerror = () => { this._probeAuth(); };
+    },
+
+    // A device we can identify without mounting it. Random USB sticks also match
+    // the fstype filter and register unmounted — never auto-select those.
+    _isSelectableDevice(d) {
+      if (d.mounted) return d.is_ipod || d.is_walkman;
+      if (d.is_walkman) return true;  // probe-mount identified it
+      return !!(d.usb_serial && this.knownDevices?.ipods?.some(k => k.uuid === d.usb_serial));
     },
 
     async ejectDevice() {

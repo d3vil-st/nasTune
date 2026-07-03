@@ -10,9 +10,11 @@ playlists after every sync.
 evaluate() is a Python approximation of the same semantics used only for the
 live match preview in the rule editor modal.
 """
+import asyncio
 import json
 import logging
 import random
+import re
 import time
 
 import aiosqlite
@@ -21,8 +23,10 @@ from app.services.db import DB_PATH
 
 log = logging.getLogger(__name__)
 
-# field -> kind. The set mirrors what gpod-playlist's SPL vocabulary supports
-# (intersected with what gpod-ls exposes so the preview can evaluate them).
+# field -> kind. Mirrors the full gpod-playlist SPL vocabulary so rules read
+# back from iTunes-created smart playlists survive a round-trip. Fields not in
+# gpod-ls output (comment, grouping, skipcount, bpm, compilation, purchased)
+# evaluate as empty/0/unset in the preview — the device result is what counts.
 FIELDS = {
     "title":       "text",
     "artist":      "text",
@@ -30,22 +34,31 @@ FIELDS = {
     "albumartist": "text",
     "genre":       "text",
     "composer":    "text",
+    "comment":     "text",
+    "grouping":    "text",
     "rating":      "number",   # 0-5 stars
     "playcount":   "number",
+    "skipcount":   "number",
     "year":        "number",
     "bitrate":     "number",   # kbps
     "samplerate":  "number",   # Hz
+    "bpm":         "number",
     "duration":    "number",   # seconds
     "size":        "number",   # MB
     "track_nr":    "number",
     "disc_nr":     "number",
+    "compilation": "bool",     # value 'set' | 'unset'
+    "purchased":   "bool",
     "time_added":  "date",
     "time_played": "date",
+    "time_modified": "date",
+    "time_skipped":  "date",
 }
 
 TEXT_OPS   = {"contains", "not_contains", "is", "is_not", "starts_with", "ends_with"}
 NUMBER_OPS = {"is", "is_not", "gt", "lt", "gte", "lte", "in_range"}
 DATE_OPS   = {"in_last", "not_in_last"}
+DATE_UNITS = {"h": 3600, "d": 86400, "w": 604800, "m": 2629746, "y": 31536000}
 
 LIMIT_UNITS = {"items", "minutes", "hours", "MB", "GB"}
 LIMIT_BY = {
@@ -61,10 +74,14 @@ LIMIT_BY = {
 _GPOD_FIELDS = {
     "title": "title", "artist": "artist", "album": "album",
     "albumartist": "albumartist", "genre": "genre", "composer": "composer",
-    "rating": "rating", "playcount": "playcount", "year": "year",
-    "bitrate": "bitrate", "samplerate": "samplerate", "duration": "time",
-    "size": "size", "track_nr": "track", "disc_nr": "disc",
+    "comment": "comment", "grouping": "grouping",
+    "rating": "rating", "playcount": "playcount", "skipcount": "skipcount",
+    "year": "year", "bitrate": "bitrate", "samplerate": "samplerate",
+    "bpm": "bpm", "duration": "time", "size": "size",
+    "track_nr": "track", "disc_nr": "disc",
+    "compilation": "compilation", "purchased": "purchased",
     "time_added": "added", "time_played": "played",
+    "time_modified": "modified", "time_skipped": "skipped",
 }
 _GPOD_TEXT_OPS = {
     "is": "=", "is_not": "!=", "contains": "~", "not_contains": "!~",
@@ -123,16 +140,22 @@ def rule_expr(rule: dict) -> str | None:
             return None  # gpod rejects '>= 0' (always true)
         return f"{gf} {gop} {n}"
 
+    if kind == "bool":
+        if op != "is" or val not in ("set", "unset"):
+            return None
+        return f"{gf} = {val}"
+
     if kind == "date":
         if op not in ("in_last", "not_in_last"):
             return None
         try:
-            days = int(round(float(val if val not in (None, "") else 0)))
+            n = int(round(float(val if val not in (None, "") else 0)))
         except (TypeError, ValueError):
             return None
-        if days <= 0:
+        if n <= 0:
             return None
-        return f"{gf} {'<' if op == 'in_last' else '>'} {days}d"
+        unit = rule.get("unit") if rule.get("unit") in DATE_UNITS else "d"
+        return f"{gf} {'<' if op == 'in_last' else '>'} {n}{unit}"
 
     return None
 
@@ -160,6 +183,120 @@ def to_gpod_args(spec: dict) -> tuple[list[str], list[dict]]:
         sort = _GPOD_LIMIT_SORTS.get(spec.get("limit_by") or "random", "random")
         args += ["-L", f"{int(spec['limit_n'])}:{unit}:{sort}"]
     return args, dropped
+
+
+# ── reading rules back from the device (adopt iTunes-created playlists) ──────
+
+_REV_FIELDS      = {v: k for k, v in _GPOD_FIELDS.items()}
+_REV_TEXT_OPS    = {v: k for k, v in _GPOD_TEXT_OPS.items()}
+_REV_INT_OPS     = {v: k for k, v in _GPOD_INT_OPS.items()}
+_REV_LIMIT_UNITS = {v: k for k, v in _GPOD_LIMIT_UNITS.items()}
+_REV_LIMIT_SORTS = {v: k for k, v in _GPOD_LIMIT_SORTS.items()}
+
+_SMART_HEADER_RE = re.compile(
+    r"smart \{ match=(all|any) liveupdate=\w+(?: limit=(\d+):([\w-]+):([\w-]+))? \}"
+)
+_RULE_LINE_RE = re.compile(r"^\s*rule: (.+)$")
+_DATE_EXPR_RE = re.compile(r"^(\d+)([hdwmy])$")
+
+
+def _from_gpod_num(field: str, n: float) -> float | int:
+    if field == "size":
+        mb = n / 1048576
+        return round(mb, 1) if mb != int(mb) else int(mb)
+    return int(n)
+
+
+def parse_rule_expr(expr: str) -> dict | None:
+    """Reverse of rule_expr: parse a gpod-playlist rule dump line into a stored rule."""
+    parts = expr.split(None, 2)
+    if len(parts) != 3:
+        return None
+    gf, gop, val = parts
+    field = _REV_FIELDS.get(gf)
+    kind = FIELDS.get(field)
+    if kind is None:
+        return None
+
+    if kind == "text":
+        op = _REV_TEXT_OPS.get(gop)
+        return {"field": field, "op": op, "value": val} if op else None
+
+    if kind == "number":
+        try:
+            if gop == "=" and ".." in val:
+                a, b = val.split("..", 1)
+                return {"field": field, "op": "in_range",
+                        "value": _from_gpod_num(field, float(a)),
+                        "value2": _from_gpod_num(field, float(b))}
+            op = _REV_INT_OPS.get(gop)
+            if op is None:
+                return None
+            return {"field": field, "op": op, "value": _from_gpod_num(field, float(val))}
+        except ValueError:
+            return None
+
+    if kind == "bool":
+        if gop == "=" and val in ("set", "unset"):
+            return {"field": field, "op": "is", "value": val}
+        return None
+
+    if kind == "date":
+        m = _DATE_EXPR_RE.match(val)
+        if not m or gop not in ("<", ">"):
+            return None
+        return {"field": field, "op": "in_last" if gop == "<" else "not_in_last",
+                "value": int(m.group(1)), "unit": m.group(2)}
+
+    return None
+
+
+def parse_gpod_dump(text: str) -> dict | None:
+    """Parse `gpod-playlist -l -p <name>` output into a spec dict.
+
+    Returns None when the output has no smart-playlist header (regular playlist).
+    Unreadable rule lines are collected under 'unparsed'.
+    """
+    header = _SMART_HEADER_RE.search(text)
+    if not header:
+        return None
+    spec: dict = {
+        "id": None, "name": "", "match_all": header.group(1) == "all",
+        "limit_n": None, "limit_unit": "items", "limit_by": "random",
+        "live": False, "rules": [], "unparsed": [],
+    }
+    if header.group(2):
+        spec["limit_n"] = int(header.group(2))
+        spec["limit_unit"] = _REV_LIMIT_UNITS.get(header.group(3), "items")
+        spec["limit_by"] = _REV_LIMIT_SORTS.get(header.group(4), "random")
+    for line in text.splitlines():
+        m = _RULE_LINE_RE.match(line)
+        if not m:
+            continue
+        rule = parse_rule_expr(m.group(1))
+        if rule:
+            spec["rules"].append(rule)
+        else:
+            spec["unparsed"].append(m.group(1))
+    return spec
+
+
+async def read_device_spec(mount: str, name: str) -> dict | None:
+    """Read a smart playlist's rules off the device. None = not smart / unreadable."""
+    proc = await asyncio.create_subprocess_exec(
+        "gpod-playlist", "-M", mount, "-l", "-p", name,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    out, _ = await proc.communicate()
+    text = out.decode(errors="replace")
+    if proc.returncode != 0:
+        log.warning("read_device_spec '%s' failed (rc=%d): %s", name, proc.returncode, text.strip()[:200])
+        return None
+    spec = parse_gpod_dump(text)
+    if spec is not None:
+        spec["name"] = name
+    return spec
 
 
 def _flatten(lib: dict) -> list[dict]:
@@ -236,23 +373,21 @@ def _match_rule(track: dict, rule: dict) -> bool:
             return lo <= n <= hi
         return True
 
+    if kind == "bool":
+        if str(val) == "set":   return bool(v)
+        if str(val) == "unset": return not v
+        return True
+
     if kind == "date":
         ts = int(v or 0)
         if op in ("in_last", "not_in_last"):
             try:
-                days = float(val if val not in (None, "") else 0)
+                n = float(val if val not in (None, "") else 0)
             except (TypeError, ValueError):
                 return True
-            cutoff = time.time() - days * 86400
+            cutoff = time.time() - n * DATE_UNITS.get(rule.get("unit") or "d", 86400)
             hit = ts >= cutoff and ts > 0
             return hit if op == "in_last" else not hit
-        # before / after take a YYYY-MM-DD string
-        try:
-            ref = time.mktime(time.strptime(str(val), "%Y-%m-%d"))
-        except (TypeError, ValueError):
-            return True
-        if op == "before": return 0 < ts < ref
-        if op == "after":  return ts > ref
         return True
 
     return True

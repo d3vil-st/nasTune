@@ -117,6 +117,19 @@ class _Op:
         }
 
 
+async def _finish_device_op(devnode: str) -> None:
+    """Release the op's mount ref and drop the cached library.
+
+    Every op here mutates the device library, so the pre-op cache is stale.
+    The frontend refreshes after ops it can see, but backend-initiated ops
+    (auto-sync on connect) would otherwise leave /library serving old data —
+    freshly synced tracks then don't show as 'on device'.
+    """
+    from app.services.devices import device_service
+    device_service._cache.pop(devnode, None)
+    await device_service.release_mount(devnode)
+
+
 class OperationService:
     def __init__(self) -> None:
         self._op: _Op | None = None
@@ -148,11 +161,15 @@ class OperationService:
         self._op = op
         asyncio.create_task(self._do_delete(op, track_ids, mount, device_id, devnode))
 
-    async def run_sync(self, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "", copy_track_count: int | None = None, media_type: str = "music", ipod_db_id: int | None = None, devnode: str = "", playlist: dict | None = None) -> None:
+    async def run_sync(self, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "", copy_track_count: int | None = None, media_type: str = "music", ipod_db_id: int | None = None, devnode: str = "", playlist: dict | None = None, copy_groups: dict[str, list[str]] | None = None) -> None:
+        """copy_groups ({media_type: [paths]}) overrides copy_paths/media_type — used by
+        auto-sync where one run mixes music/podcast/audiobook rules."""
+        if copy_groups:
+            copy_paths = [p for paths in copy_groups.values() for p in paths]
         total = (copy_track_count if copy_track_count is not None else len(copy_paths)) + len(delete_ids)
         op = _Op("sync", total)
         self._op = op
-        asyncio.create_task(self._do_sync(op, copy_paths, delete_ids, mount, device_id, media_type, ipod_db_id, devnode, playlist))
+        asyncio.create_task(self._do_sync(op, copy_paths, delete_ids, mount, device_id, media_type, ipod_db_id, devnode, playlist, copy_groups))
 
     async def _gpod_rm_batch(self, track_ids: list, mount: str, op: _Op) -> str | None:
         ids_str = list(dict.fromkeys(str(t) for t in track_ids))
@@ -316,22 +333,25 @@ class OperationService:
                     _save_op_history(op, device_id)
         finally:
             if devnode:
-                from app.services.devices import device_service
-                await device_service.release_mount(devnode)
+                await _finish_device_op(devnode)
 
-    async def _gpod_rating_sync(self, mount: str, op: _Op, lib: dict | None = None) -> None:
-        """Run gpod-ls then apply stored DB ratings to iPod tracks that need updating."""
+    async def _gpod_rating_sync(self, mount: str, op: _Op, lib: dict | None = None) -> dict | None:
+        """Run gpod-ls then apply stored DB ratings to iPod tracks that need updating.
+
+        Returns the library it used (fetched or passed in) so later post-sync
+        steps (played sync) can reuse it instead of running gpod-ls again.
+        """
         import aiosqlite
         from app.services.db import DB_PATH
         from app.services.gpod import fetch_library
         from app.services.ratings import ipod_rating_to_stars
-        from app.services.track_key import track_key as _tk
+        from app.services.track_key import lib_track_key as _ltk
 
         # Skip the expensive gpod-ls entirely when no ratings are stored
         async with aiosqlite.connect(DB_PATH) as db:
             async with db.execute('SELECT COUNT(*) FROM ipod_track_ratings') as cur:
                 if (await cur.fetchone())[0] == 0:
-                    return
+                    return lib
 
         if lib is None:
             op.current = "Rating sync: reading library…"
@@ -341,7 +361,7 @@ class OperationService:
             except Exception as exc:
                 log.warning("rating sync: gpod-ls failed, skipping: %s", exc)
                 op.log.append(f"  WARN: rating sync skipped ({exc})")
-                return
+                return None
 
         # Build {track_key -> (id, current_stars)} from fresh library
         track_map: dict[str, tuple[int, int]] = {}
@@ -350,16 +370,11 @@ class OperationService:
             for album in artist.get('albums', []):
                 album_name = album['name']
                 for track in album.get('tracks', []):
-                    artist_tag = track.get('artist') or artist_name
-                    key = _tk(
-                        artist_tag, album_name,
-                        track.get('track_nr'), track.get('disc_nr'),
-                        track.get('title', ''),
-                    )
+                    key = _ltk(track, artist_name, album_name)
                     track_map[key] = (track['id'], ipod_rating_to_stars(track.get('rating') or 0))
 
         if not track_map:
-            return
+            return lib
 
         keys = list(track_map.keys())
         async with aiosqlite.connect(DB_PATH) as db:
@@ -382,7 +397,7 @@ class OperationService:
         if not by_rating:
             log.info("rating sync: no tracks need rating update")
             op.log.append("  rating sync: nothing to update")
-            return
+            return lib
 
         total = sum(len(ids) for ids in by_rating.values())
         log.info("rating sync: applying ratings to %d track(s)", total)
@@ -408,6 +423,88 @@ class OperationService:
                 log.warning("gpod-tag --rating %d exited %d", stars, proc.returncode)
             else:
                 log.info("gpod-tag --rating %d applied to %d track(s)", stars, len(track_ids))
+        return lib
+
+    async def _gpod_played_sync(self, mount: str, op: _Op, lib: dict | None = None) -> None:
+        """Mark podcasts played elsewhere as played on the iPod (gpod-tag --playcount).
+
+        Device podcast episodes with a local playcount of 0 whose track key has a
+        positive playcount in ipod_track_playcounts (fed by other devices and the
+        Plex import) get the stored count — which also clears the iPod's unplayed
+        bullet. Requires gpod-utils with `gpod-tag -p`; non-fatal on failure.
+        """
+        import aiosqlite
+        from app.services.db import DB_PATH
+        from app.services.gpod import fetch_library
+        from app.services.track_key import lib_track_key as _ltk
+
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute('SELECT COUNT(*) FROM ipod_track_playcounts WHERE playcount > 0') as cur:
+                if (await cur.fetchone())[0] == 0:
+                    return
+
+        if lib is None:
+            op.current = "Played sync: reading library…"
+            op.log.append("$ gpod-ls  # played sync")
+            try:
+                lib = await fetch_library(mount)
+            except Exception as exc:
+                log.warning("played sync: gpod-ls failed, skipping: %s", exc)
+                op.log.append(f"  WARN: played sync skipped ({exc})")
+                return
+
+        # Unplayed podcast episodes on the device, keyed like everything else
+        unplayed: dict[str, int] = {}
+        for artist in lib.get('artists', []):
+            for album in artist.get('albums', []):
+                for track in album.get('tracks', []):
+                    if track.get('mediatype') != 'podcast' or (track.get('playcount') or 0) > 0:
+                        continue
+                    unplayed[_ltk(track, artist['name'], album['name'])] = track['id']
+
+        if not unplayed:
+            return
+
+        keys = list(unplayed.keys())
+        by_count: dict[int, list[int]] = {}
+        async with aiosqlite.connect(DB_PATH) as db:
+            placeholders = ','.join('?' * len(keys))
+            async with db.execute(
+                f'SELECT track_key, playcount FROM ipod_track_playcounts '
+                f'WHERE playcount > 0 AND track_key IN ({placeholders})',
+                keys,
+            ) as cur:
+                for key, count in await cur.fetchall():
+                    by_count.setdefault(int(count), []).append(unplayed[key])
+
+        if not by_count:
+            return
+
+        total = sum(len(ids) for ids in by_count.values())
+        log.info("played sync: marking %d podcast episode(s) as played", total)
+
+        for count, track_ids in sorted(by_count.items()):
+            ids_str = [str(i) for i in track_ids]
+            op.current = f"Played sync: {len(track_ids)} episode(s)"
+            op.log.append(f"$ gpod-tag --playcount {count} {' '.join(ids_str)}")
+            if GPOD_DRY_RUN:
+                op.log.append("[dry-run] skipped")
+                continue
+            env = {**os.environ, "IPOD_MOUNT_POINT": mount}
+            proc = await asyncio.create_subprocess_exec(
+                "gpod-tag", "--playcount", str(count), *ids_str,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                env=env,
+            )
+            async for raw in proc.stdout:
+                op.log.append(raw.decode().rstrip())
+            await proc.wait()
+            if proc.returncode != 0:
+                log.warning("gpod-tag --playcount %d exited %d (gpod-utils with -p support required)", count, proc.returncode)
+                op.log.append("  WARN: gpod-tag --playcount failed — gpod-utils with -p support required")
+            else:
+                log.info("gpod-tag --playcount %d applied to %d episode(s)", count, len(track_ids))
 
     async def _run_gpod_playlist(self, mount: str, op: _Op, args: list[str]) -> str | None:
         """Run gpod-playlist -M <mount> <args>. Returns error string or None."""
@@ -513,6 +610,69 @@ class OperationService:
             log.warning("smart playlist refresh failed: %s", err)
             op.log.append(f"  WARN: smart playlist refresh failed ({err})")
 
+    async def run_playlist_delete(self, mount: str, name: str, device_id: str = "", devnode: str = "") -> None:
+        op = _Op("playlist_delete", 0)
+        self._op = op
+        asyncio.create_task(self._do_playlist_delete(op, mount, name, device_id, devnode))
+
+    async def _do_playlist_delete(self, op: _Op, mount: str, name: str, device_id: str = "", devnode: str = "") -> None:
+        try:
+            async with self._lock:
+                op.current = f"Deleting playlist '{name}'"
+                err = await self._run_gpod_playlist(mount, op, ["-d", name])
+                if err:
+                    op.status = "error"
+                    op.error = err
+                    log.error("playlist delete '%s' failed: %s", name, err)
+                    return
+                op.status = "done"
+                op.current = ""
+                log.info("playlist '%s' deleted from device", name)
+        finally:
+            if device_id:
+                _save_op_history(op, device_id)
+            if devnode:
+                await _finish_device_op(devnode)
+
+    async def run_playlist_edit(self, mount: str, name: str, add_paths: list[str] = (), remove_paths: list[str] = (),
+                                create: bool = False, device_id: str = "", devnode: str = "") -> None:
+        op = _Op("playlist_edit", 0)
+        self._op = op
+        asyncio.create_task(self._do_playlist_edit(op, mount, name, list(add_paths), list(remove_paths), create, device_id, devnode))
+
+    async def _do_playlist_edit(self, op: _Op, mount: str, name: str, add_paths: list[str], remove_paths: list[str],
+                                create: bool, device_id: str = "", devnode: str = "") -> None:
+        """Add/remove tracks on a regular device playlist (gpod-playlist -a / -r)."""
+        try:
+            async with self._lock:
+                op.current = f"Updating playlist '{name}'"
+                if create:
+                    err = await self._run_gpod_playlist(mount, op, ["-c", name])
+                    if err:
+                        op.status = "error"
+                        op.error = err
+                        return
+                for flag, raw_paths in (("-r", remove_paths), ("-a", add_paths)):
+                    # gpod-playlist expects fs-form paths; gpod-ls emits colon form
+                    paths = [p.replace(":", "/") for p in raw_paths if p]
+                    i = 0
+                    while i < len(paths):
+                        err = await self._run_gpod_playlist(mount, op, ["-p", name, flag, *paths[i:i + 200]])
+                        if err:
+                            op.status = "error"
+                            op.error = err
+                            log.error("playlist edit '%s' failed: %s", name, err)
+                            return
+                        i += 200
+                op.status = "done"
+                op.current = ""
+                log.info("playlist '%s' updated: +%d / -%d track(s)", name, len(add_paths), len(remove_paths))
+        finally:
+            if device_id:
+                _save_op_history(op, device_id)
+            if devnode:
+                await _finish_device_op(devnode)
+
     async def run_smart_playlist_apply(self, mount: str, spec: dict, device_id: str = "", devnode: str = "") -> None:
         op = _Op("smart_playlist", 0)
         self._op = op
@@ -550,13 +710,12 @@ class OperationService:
             if device_id:
                 _save_op_history(op, device_id)
             if devnode:
-                from app.services.devices import device_service
-                await device_service.release_mount(devnode)
+                await _finish_device_op(devnode)
 
-    async def _do_sync(self, op: _Op, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "", media_type: str = "music", ipod_db_id: int | None = None, devnode: str = "", playlist: dict | None = None) -> None:
+    async def _do_sync(self, op: _Op, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "", media_type: str = "music", ipod_db_id: int | None = None, devnode: str = "", playlist: dict | None = None, copy_groups: dict[str, list[str]] | None = None) -> None:
         try:
             force_aac, threads = await _load_sync_settings(ipod_db_id=ipod_db_id)
-            media_type_args = ['--tracks-media-type', media_type] if media_type in ('audiobook', 'podcast') else []
+            groups = list(copy_groups.items()) if copy_groups else [(media_type, copy_paths)]
             async with self._lock:
                 # Delete highest IDs first so lower IDs don't shift after each batch commit
                 delete_ids = sorted(delete_ids, key=lambda x: int(x), reverse=True)
@@ -573,23 +732,25 @@ class OperationService:
                     i += BATCH_SIZE
 
                 copy_offset = 0
-                i = 0
-                while i < len(copy_paths):
-                    batch = copy_paths[i:i + BATCH_SIZE]
-                    err, batch_tracks = await self._gpod_cp_batch(
-                        batch, mount, op, proc_offset=len(delete_ids) + copy_offset,
-                        force_aac=force_aac, threads=threads, media_type_args=media_type_args,
-                    )
-                    copy_offset += batch_tracks
-                    op.processed = len(delete_ids) + copy_offset
-                    if err:
-                        op.status = "error"
-                        op.error = err
-                        log.error("gpod-cp batch failed: %s", err)
-                        if device_id:
-                            _save_op_history(op, device_id)
-                        return
-                    i += BATCH_SIZE
+                for group_mt, group_paths in groups:
+                    media_type_args = ['--tracks-media-type', group_mt] if group_mt in ('audiobook', 'podcast') else []
+                    i = 0
+                    while i < len(group_paths):
+                        batch = group_paths[i:i + BATCH_SIZE]
+                        err, batch_tracks = await self._gpod_cp_batch(
+                            batch, mount, op, proc_offset=len(delete_ids) + copy_offset,
+                            force_aac=force_aac, threads=threads, media_type_args=media_type_args,
+                        )
+                        copy_offset += batch_tracks
+                        op.processed = len(delete_ids) + copy_offset
+                        if err:
+                            op.status = "error"
+                            op.error = err
+                            log.error("gpod-cp batch failed: %s", err)
+                            if device_id:
+                                _save_op_history(op, device_id)
+                            return
+                        i += BATCH_SIZE
 
                 lib = None
                 if playlist:
@@ -604,7 +765,8 @@ class OperationService:
                     if lib is not None:
                         await self._gpod_playlist_sync(mount, op, playlist, lib)
 
-                await self._gpod_rating_sync(mount, op, lib=lib)
+                lib = (await self._gpod_rating_sync(mount, op, lib=lib)) or lib
+                await self._gpod_played_sync(mount, op, lib=lib)
                 await self._smart_playlist_refresh(mount, op)
 
                 op.status = "done"
@@ -614,8 +776,7 @@ class OperationService:
                     _save_op_history(op, device_id)
         finally:
             if devnode:
-                from app.services.devices import device_service
-                await device_service.release_mount(devnode)
+                await _finish_device_op(devnode)
 
 
     # ── gpod-verify ──────────────────────────────────────────────────
@@ -663,8 +824,7 @@ class OperationService:
                         _save_op_history(op, device_id)
         finally:
             if devnode:
-                from app.services.devices import device_service
-                await device_service.release_mount(devnode)
+                await _finish_device_op(devnode)
 
     # ── Filesystem check (fsck) ──────────────────────────────────────
 
@@ -832,8 +992,7 @@ class OperationService:
                     _save_op_history(op, device_id)
         finally:
             if devnode:
-                from app.services.devices import device_service
-                await device_service.release_mount(devnode)
+                await _finish_device_op(devnode)
 
     async def _do_walkman_sync(self, op: _Op, copy_paths: list[str], delete_db_ids: list[int],
                                  mount: str, music_path: str, walkman_db_id: int, device_id: str,
@@ -967,8 +1126,7 @@ class OperationService:
                     _save_op_history(op, device_id)
         finally:
             if devnode:
-                from app.services.devices import device_service
-                await device_service.release_mount(devnode)
+                await _finish_device_op(devnode)
 
 
 def _podcast_episode_dest(fpath: Path) -> tuple[str, str]:
