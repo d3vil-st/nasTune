@@ -524,15 +524,19 @@
                   <div class="tile-cover" :style="gradientFor(al.name)">
                     <span class="tile-fallback" x-text="mediaType === 'podcast' ? '🎙' : mediaType === 'audiobook' ? '📖' : '♫'"></span>
                     <img :src="artUrl(al)" @error="$el.style.display='none'" loading="lazy" alt="">
+                    <div class="tile-play" @click.stop="pickAlbum(al.name); playAlbum(al)"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+                  </div>
+                  <div class="tile-info">
+                    <div class="tile-text">
+                      <div class="tile-artist" x-show="selectedArtist === '__ALL__'" x-text="al._artist"></div>
+                      <div class="tile-name" x-text="al.name"></div>
+                      <div class="tile-meta" x-text="(al.year > 0 ? al.year + ' · ' : '') + al.tracks.length + ' ' + (al.tracks.length === 1 ? devLabels.trackSg : devLabels.trackPl)"></div>
+                    </div>
                     <input type="checkbox" class="row-cb tile-cb" @click.stop
                            :checked="isAlbumSelected(al)"
                            x-effect="$el.indeterminate = isAlbumIndeterminate(al)"
                            @change="toggleAlbum(al, $event.target.checked)">
-                    <div class="tile-play" @click.stop="pickAlbum(al.name); playAlbum(al)"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
                   </div>
-                  <div class="tile-artist" x-show="selectedArtist === '__ALL__'" x-text="al._artist"></div>
-                  <div class="tile-name" x-text="al.name"></div>
-                  <div class="tile-meta" x-text="(al.year > 0 ? al.year + ' · ' : '') + al.tracks.length + ' ' + (al.tracks.length === 1 ? devLabels.trackSg : devLabels.trackPl)"></div>
                 </div>
               </template>
             </div>
@@ -772,15 +776,19 @@
                   <div class="tile-cover" :style="gradientFor(al.name)">
                     <span class="tile-fallback" x-text="mediaType === 'podcast' ? '🎙' : mediaType === 'audiobook' ? '📖' : '♫'"></span>
                     <img x-effect="$el.style.display=''; $el.src=sourceArtUrl(al)" @error="$el.style.display='none'" loading="lazy" alt="">
+                    <div class="tile-play" @click.stop="pickSrcAlbum(al.name); playSrcAlbum(al)"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+                  </div>
+                  <div class="tile-info">
+                    <div class="tile-text">
+                      <div class="tile-artist" x-show="srcArtist === '__ALL__'" x-text="al._artist"></div>
+                      <div class="tile-name" x-text="al.name"></div>
+                      <div class="tile-meta" x-text="(al.year > 0 ? al.year + ' · ' : '') + al.tracks.length + ' ' + (al.tracks.length === 1 ? srcLabels.trackSg : srcLabels.trackPl)"></div>
+                    </div>
                     <input type="checkbox" class="row-cb tile-cb" @click.stop
                            :checked="isSrcAlbumChecked(al)"
                            x-effect="$el.indeterminate = isSrcAlbumIndeterminate(al)"
                            @change="toggleSrcAlbum(al, $event.target.checked)">
-                    <div class="tile-play" @click.stop="pickSrcAlbum(al.name); playSrcAlbum(al)"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
                   </div>
-                  <div class="tile-artist" x-show="srcArtist === '__ALL__'" x-text="al._artist"></div>
-                  <div class="tile-name" x-text="al.name"></div>
-                  <div class="tile-meta" x-text="(al.year > 0 ? al.year + ' · ' : '') + al.tracks.length + ' ' + (al.tracks.length === 1 ? srcLabels.trackSg : srcLabels.trackPl)"></div>
                 </div>
               </template>
             </div>
