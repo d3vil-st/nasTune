@@ -92,6 +92,13 @@ function utilsModule() {
       return sec ? `${m}m ${sec}s` : `${m}m`;
     },
 
+    // Albums column presentation: 'list' | 'grid'. Shared by device + source panes.
+    albumView: localStorage.getItem('nastune-album-view') || 'list',
+    toggleAlbumView() {
+      this.albumView = this.albumView === 'grid' ? 'list' : 'grid';
+      localStorage.setItem('nastune-album-view', this.albumView);
+    },
+
     opKindLabel(kind, form = 'noun') {
       const m = {
         sync: ['Sync', 'Syncing…'],

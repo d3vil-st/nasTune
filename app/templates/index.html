@@ -472,6 +472,12 @@
                  x-effect="$el.indeterminate = someCurrentAlbumsSelected() && !allCurrentAlbumsSelected()"
                  @change="toggleAllCurrentAlbums($event.target.checked)">
           <span x-text="selectedArtist === '__ALL__' ? devLabels.allArtists : (selectedArtist || devLabels.album)"></span>
+          <button class="view-toggle" @click.stop="toggleAlbumView()"
+                  :title="albumView === 'grid' ? 'List view' : 'Grid view'"
+                  :aria-label="albumView === 'grid' ? 'List view' : 'Grid view'">
+            <svg x-show="albumView === 'grid'" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5h18v3H3V5zm0 5.5h18v3H3v-3zM3 16h18v3H3v-3z"/></svg>
+            <svg x-show="albumView !== 'grid'" style="display:none" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z"/></svg>
+          </button>
         </div>
         <div class="col-scroll">
           <template x-if="!selectedArtist">
@@ -480,7 +486,7 @@
               <span class="empty-label" x-text="devLabels.selectArtist"></span>
             </div>
           </template>
-          <template x-if="selectedArtist">
+          <template x-if="selectedArtist && albumView !== 'grid'">
             <div>
               <template x-for="al in currentAlbums" :key="(al._artist || '') + ':::' + al.name">
                 <div class="album-row"
@@ -502,6 +508,28 @@
                       <span x-text="al.year > 0 ? al.year + ' · ' : ''"></span><span x-text="al.tracks.length + ' ' + (al.tracks.length === 1 ? devLabels.trackSg : devLabels.trackPl)"></span>
                     </div>
                   </div>
+                </div>
+              </template>
+            </div>
+          </template>
+          <template x-if="selectedArtist && albumView === 'grid'">
+            <div class="album-grid">
+              <template x-for="al in currentAlbums" :key="'g' + (al._artist || '') + ':::' + al.name">
+                <div class="album-tile"
+                     :class="{ selected: selectedAlbum === al.name && (!_selectedAlbumArtist || al._artist === _selectedAlbumArtist), 'not-in-src': !isAlbumInSrc(al, selectedArtist === '__ALL__' ? '' : selectedArtist) }"
+                     @click="_focusedCol = 'album'; _selectedAlbumArtist = al._artist || null; pickAlbum(al.name)">
+                  <div class="tile-cover" :style="gradientFor(al.name)">
+                    <span class="tile-fallback" x-text="mediaType === 'podcast' ? '🎙' : mediaType === 'audiobook' ? '📖' : '♫'"></span>
+                    <img :src="artUrl(al)" @error="$el.style.display='none'" loading="lazy" alt="">
+                    <input type="checkbox" class="row-cb tile-cb" @click.stop
+                           :checked="isAlbumSelected(al)"
+                           x-effect="$el.indeterminate = isAlbumIndeterminate(al)"
+                           @change="toggleAlbum(al, $event.target.checked)">
+                    <div class="tile-play" @click.stop="pickAlbum(al.name); playAlbum(al)"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+                  </div>
+                  <div class="tile-artist" x-show="selectedArtist === '__ALL__'" x-text="al._artist"></div>
+                  <div class="tile-name" x-text="al.name"></div>
+                  <div class="tile-meta" x-text="(al.year > 0 ? al.year + ' · ' : '') + al.tracks.length + ' ' + (al.tracks.length === 1 ? devLabels.trackSg : devLabels.trackPl)"></div>
                 </div>
               </template>
             </div>
@@ -687,6 +715,12 @@
                  x-effect="$el.indeterminate = someSrcCurrentAlbumsSelected() && !allSrcCurrentAlbumsSelected()"
                  @change="toggleAllSrcCurrentAlbums($event.target.checked)">
           <span x-text="srcArtist === '__ALL__' ? srcLabels.allArtists : (srcArtist || srcLabels.album)"></span>
+          <button class="view-toggle" @click.stop="toggleAlbumView()"
+                  :title="albumView === 'grid' ? 'List view' : 'Grid view'"
+                  :aria-label="albumView === 'grid' ? 'List view' : 'Grid view'">
+            <svg x-show="albumView === 'grid'" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5h18v3H3V5zm0 5.5h18v3H3v-3zM3 16h18v3H3v-3z"/></svg>
+            <svg x-show="albumView !== 'grid'" style="display:none" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z"/></svg>
+          </button>
         </div>
         <div class="col-scroll">
           <template x-if="!srcArtist">
@@ -695,7 +729,7 @@
               <span class="empty-label" x-text="srcLabels.selectArtist"></span>
             </div>
           </template>
-          <template x-if="srcArtist">
+          <template x-if="srcArtist && albumView !== 'grid'">
             <div>
               <template x-for="al in srcCurrentAlbums" :key="(al._artist || '') + ':::' + al.name">
                 <div class="album-row"
@@ -719,6 +753,28 @@
                       <span x-text="al.tracks.length + ' ' + (al.tracks.length === 1 ? srcLabels.trackSg : srcLabels.trackPl)"></span>
                     </div>
                   </div>
+                </div>
+              </template>
+            </div>
+          </template>
+          <template x-if="srcArtist && albumView === 'grid'">
+            <div class="album-grid">
+              <template x-for="al in srcCurrentAlbums" :key="'g' + (al._artist || '') + ':::' + al.name">
+                <div class="album-tile"
+                     :class="{ selected: srcAlbum === al.name && (!_selectedAlbumArtist || al._artist === _selectedAlbumArtist) }"
+                     @click="_focusedCol = 'album'; _selectedAlbumArtist = al._artist || null; pickSrcAlbum(al.name)">
+                  <div class="tile-cover" :style="gradientFor(al.name)">
+                    <span class="tile-fallback" x-text="mediaType === 'podcast' ? '🎙' : mediaType === 'audiobook' ? '📖' : '♫'"></span>
+                    <img x-effect="$el.style.display=''; $el.src=sourceArtUrl(al)" @error="$el.style.display='none'" loading="lazy" alt="">
+                    <input type="checkbox" class="row-cb tile-cb" @click.stop
+                           :checked="isSrcAlbumChecked(al)"
+                           x-effect="$el.indeterminate = isSrcAlbumIndeterminate(al)"
+                           @change="toggleSrcAlbum(al, $event.target.checked)">
+                    <div class="tile-play" @click.stop="pickSrcAlbum(al.name); playSrcAlbum(al)"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+                  </div>
+                  <div class="tile-artist" x-show="srcArtist === '__ALL__'" x-text="al._artist"></div>
+                  <div class="tile-name" x-text="al.name"></div>
+                  <div class="tile-meta" x-text="(al.year > 0 ? al.year + ' · ' : '') + al.tracks.length + ' ' + (al.tracks.length === 1 ? srcLabels.trackSg : srcLabels.trackPl)"></div>
                 </div>
               </template>
             </div>
