@@ -364,6 +364,11 @@
         </div>
       </div>
     </div>
+    <span x-show="mediaType === 'playlist' && plexImport" style="font-size:11px;color:var(--muted)" x-text="plexImportLabel()"></span>
+    <button class="manage-btn" x-show="mediaType === 'playlist' && plexStatus?.linked && plexIsAdmin"
+            :disabled="plexImport?.status === 'running'"
+            title="Pull star ratings and play counts from Plex into the shared library database"
+            @click="startPlexImport()">Import ratings</button>
     <button class="manage-btn" x-show="mediaType === 'playlist' && plexPlaylist && selectedDevnode && !selectedDevice?.is_walkman"
             :disabled="currentOp?.status === 'running' || plexPlaylist?.matched_count === 0"
             :title="plexPlaylist?.matched_count === 0 ? 'No playlist tracks matched in your NAS sources' : (plexSyncablePaths.length ? plexSyncablePaths.length + ' track(s) will be copied' : 'All matched tracks are already on the device — playlist will be updated')"
@@ -1609,16 +1614,7 @@
                 </div>
               </label>
 
-              <div class="setting-row" style="align-items:center">
-                <div style="flex:1">
-                  <div style="font-size:13px;font-weight:500;color:var(--text)">Import ratings &amp; play counts</div>
-                  <div style="font-size:11px;color:var(--muted);margin-top:2px">
-                    <span x-show="!plexImport">Pull star ratings and play counts from Plex into the shared library database.</span>
-                    <span x-show="plexImport" x-text="plexImportLabel()"></span>
-                  </div>
-                </div>
-                <button class="btn-ghost" :disabled="plexImport?.status === 'running'" @click="startPlexImport()">Import</button>
-              </div>
+              <div style="font-size:11px;color:var(--muted)">Import ratings &amp; play counts from Plex — <strong>Playlists</strong> tab, Sources bar.</div>
 
               <div x-show="plexUsers.length > 1 || plexPendingUsers.length > 0">
                 <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px">Users</div>

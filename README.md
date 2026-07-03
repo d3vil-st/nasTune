@@ -187,7 +187,7 @@ Once linked, the **Playlists** media type's Sources tab shows your Plex audio pl
 
 ### Ratings and play counts
 
-- **Import** (Settings → Plex → Import) walks the whole Plex music library and merges `userRating` (converted 0–10 → 1–5 stars) and `viewCount` into nasTune's shared rating/play-count tables — highest value wins, so re-importing is safe. Imported ratings flow to the iPod on the next sync via `gpod-tag`.
+- **Import** (**Import ratings** button in the Sources bar, ♪ Playlists tab — admin only) walks the whole Plex music library and merges `userRating` (converted 0–10 → 1–5 stars) and `viewCount` into nasTune's shared rating/play-count tables — highest value wins, so re-importing is safe. Imported ratings flow to the iPod on the next sync via `gpod-tag`.
 - **Push-back**: rating a track in the nasTune UI (device or source pane) updates Plex within seconds. Clearing a rating clears it in Plex too.
 
 ### Sign in with Plex
