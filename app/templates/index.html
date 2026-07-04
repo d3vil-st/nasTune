@@ -1507,7 +1507,7 @@
         <span style="color:var(--dim);flex-shrink:0;font-variant-numeric:tabular-nums" x-text="fmtAgo(lastOp.finished_at)"></span>
       </span>
     </template>
-    <span class="build-ver" title="{{ build_version }}">{{ build_version }}</span>
+    <span class="build-ver" title="{{ build_version }} — click for changelog" style="cursor:pointer" @click="openChangelog()">{{ build_version }}</span>
     </div>
   </div>
 
@@ -1872,6 +1872,24 @@
           <button class="modal-close" @click="showOpLog = false; historyViewOp = null">&#x2715;</button>
         </div>
         <pre class="op-log-body" x-ref="opLogEl"></pre>
+      </div>
+    </template>
+  </div>
+
+  <!-- ── Changelog modal ── -->
+  <div class="modal-overlay"
+       x-show="showChangelog"
+       x-transition.opacity
+       @click.self="showChangelog = false"
+       @keydown.escape.window="showChangelog = false"
+       style="display:none">
+    <template x-if="showChangelog">
+      <div class="modal" style="width:640px">
+        <div class="modal-header">
+          <h2>Changelog</h2>
+          <button class="modal-close" @click="showChangelog = false">&#x2715;</button>
+        </div>
+        <div class="modal-body changelog-body" x-html="changelogHtml"></div>
       </div>
     </template>
   </div>

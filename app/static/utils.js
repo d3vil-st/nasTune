@@ -233,5 +233,54 @@ function utilsModule() {
       }
       return r;
     },
+
+    showChangelog: false,
+    changelogHtml: '',
+
+    async openChangelog() {
+      this.showChangelog = true;
+      if (this.changelogHtml) return;
+      try {
+        const r = await fetch('/changelog');
+        const text = await r.text();
+        this.changelogHtml = this._mdLite(text);
+      } catch (e) {
+        this.changelogHtml = '<p>Failed to load changelog.</p>';
+      }
+    },
+
+    // Tiny markdown-lite renderer for CHANGELOG.md: headings, hr, bullet
+    // lists, bold, and inline code. Not a general-purpose parser — just
+    // enough for this file's own formatting conventions.
+    _mdLite(text) {
+      const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const inline = s => esc(s)
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/`(.+?)`/g, '<code>$1</code>');
+
+      const lines = text.split('\n');
+      let html = '';
+      let inList = false;
+      const closeList = () => { if (inList) { html += '</ul>'; inList = false; } };
+
+      for (const line of lines) {
+        if (/^---\s*$/.test(line)) { closeList(); html += '<hr>'; continue; }
+        let m = line.match(/^##\s+(.*)/);
+        if (m) { closeList(); html += `<h2>${inline(m[1])}</h2>`; continue; }
+        m = line.match(/^###\s+(.*)/);
+        if (m) { closeList(); html += `<h3>${inline(m[1])}</h3>`; continue; }
+        m = line.match(/^-\s+(.*)/);
+        if (m) {
+          if (!inList) { html += '<ul>'; inList = true; }
+          html += `<li>${inline(m[1])}</li>`;
+          continue;
+        }
+        if (!line.trim()) { closeList(); continue; }
+        closeList();
+        html += `<p>${inline(line)}</p>`;
+      }
+      closeList();
+      return html;
+    },
   };
 }

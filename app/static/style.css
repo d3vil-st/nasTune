@@ -1433,6 +1433,24 @@
       border-top: 1px solid var(--border2);
       flex-shrink: 0;
     }
+    /* ── Changelog modal ── */
+    .changelog-body { font-size: 13px; line-height: 1.6; color: var(--text); }
+    .changelog-body h2 {
+      font-size: 15px; font-weight: 600; margin: 18px 0 8px;
+    }
+    .changelog-body h2:first-child { margin-top: 0; }
+    .changelog-body h3 {
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+      color: var(--muted); margin: 12px 0 6px;
+    }
+    .changelog-body ul { margin: 0 0 6px; padding-left: 18px; }
+    .changelog-body li { margin: 4px 0; }
+    .changelog-body p { margin: 6px 0; color: var(--muted); }
+    .changelog-body hr { border: none; border-top: 1px solid var(--border2); margin: 14px 0; }
+    .changelog-body code {
+      background: var(--fill-bg); padding: 1px 5px; border-radius: 4px; font-size: 12px;
+    }
+    .changelog-body strong { color: var(--text); font-weight: 600; }
     /* ── Settings modal ── */
     .setting-row {
       display: flex;

@@ -21,7 +21,7 @@ logging.getLogger("uvicorn.access").addFilter(_NoOperationsPoll())
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
@@ -43,6 +43,7 @@ from app.routers.smart_playlists import router as smart_playlists_router
 log = logging.getLogger(__name__)
 
 BUILD_VERSION = os.getenv("BUILD_VERSION", "dev")
+CHANGELOG_PATH = Path(__file__).resolve().parent.parent / "CHANGELOG.md"
 
 
 async def _cache_cleanup_loop():
@@ -86,6 +87,15 @@ templates.env.filters["tojson"] = lambda v: Markup(json.dumps(v, ensure_ascii=Fa
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse(request, "index.html", {"build_version": BUILD_VERSION})
+
+
+@app.get("/changelog")
+async def get_changelog():
+    try:
+        text = CHANGELOG_PATH.read_text()
+    except FileNotFoundError:
+        text = "# Changelog\n\nNot available in this build."
+    return PlainTextResponse(text)
 
 
 @app.get("/devices")

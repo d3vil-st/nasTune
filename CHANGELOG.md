@@ -4,6 +4,144 @@ All notable changes to nasTune are documented here, newest first.
 
 ---
 
+## [v0.9.1] — 2026-07-04
+
+### Fixed
+- gpod-utils bumped to 1.5.4 in both Dockerfiles
+- Offline/disconnected device library load never recomputed the Sources pane's "already on device" checkboxes — `browseOfflineLibrary()` was missing the `_initSrcChecked()` call that the live-device select path already had
+
+---
+
+## [v0.9.0] — 2026-07-03
+
+### Added
+- **Automatic iTunesDB backups** — every write op (sync, delete, playlist edit/delete, smart playlist, verify) gzips `iTunesDB` to `/data/itunesdb_backups/{device}/` before touching it, keeping the last 10; device settings lists snapshots with a Restore button (itself undoable — restore backs up the current DB first)
+- **Incremental pre-sync rescan** — both auto-sync paths rescan the sources referenced by a device's enabled sync rules before computing what to copy, so files added since the last manual scan are no longer silently missed
+- **Blank iPod initialization** — a freshly formatted/restored device with no iTunesDB is detected and offered an "Initialize iPod" action (`gpod-cp -I`); picker shows a "Not initialized" badge
+- **Rename iPod** — a "Device name" field in device settings renames the master playlist (the name shown on the iPod itself)
+- **Album tile/grid view** — list/grid toggle in both device and source panes; grid mode is a two-column layout where picking an album replaces the cover wall with the track list, with a back row to return
+
+### Changed
+- Device picker rows show a device-type icon and mounted-status dot; WALKMAN storage type is promoted into the name instead of trailing a serial number
+- Destructive actions (Remove device, Full rescan, Drop artwork cache) visually separated from routine ones; Rescan is a single button running the incremental scan directly, with Full rescan in its dropdown
+- Settings modal footers pinned outside the scrollable body so they no longer clip on short viewports; Maintenance section collapses by default
+- Plex "Import ratings" button moved from the settings modal to the sources bar (Playlists tab)
+- Header stats condensed back to one line; storage bar redesigned as a gauge with quarter-capacity tick marks and a colored delta chip
+- Symbol-only artist names ("#####") now sort after real names in all three library builders (iPod, WALKMAN, sources), Unicode-aware
+- **Auto-mount setting removed** — mount-on-demand (select, library load, auto-sync-on-connect) already covers every flow; the setting's only distinct effect was mounting unrelated USB sticks on plug-in
+
+---
+
+## [v0.8.0] — 2026-07-03
+
+### Added
+- Device playlists are now fully editable regardless of who created them — add/remove tracks on regular playlists, delete a playlist, or adopt an iTunes-created smart playlist by reading its rules off the device
+- Podcast played state syncs across devices and Plex via a unified track-key builder; episodes played elsewhere get `gpod-tag --playcount` on next sync, clearing the on-screen unplayed bullet
+- Per-iPod "auto-sync on connect" toggle — fires headlessly from the poll loop via USB serial → known UUID, before mounting
+
+### Fixed
+- Sync rules carry their media type through auto-sync (`--tracks-media-type`) so podcasts/audiobooks no longer land as music
+- Backend-initiated ops now invalidate the device library cache in every op's `finally` block, so synced items no longer show as not-on-device until a manual refresh
+- Plex connections self-heal: a stale `plex.direct` URL is re-resolved and retried once on connect error
+- Freshly connected identifiable devices become active in the UI automatically without stealing focus mid-op or auto-selecting random USB sticks
+
+---
+
+## [v0.7.1] — 2026-07-02
+
+### Changed
+- Smart playlists are now written natively into the iTunesDB as real SPL rules (`gpod-playlist -S`, gpod-utils 1.5.1) instead of static Python-evaluated snapshots — visible and editable in iTunes; every sync ends with a full smart-playlist member refresh
+
+---
+
+## [v0.7.0] — 2026-07-02
+
+### Added
+- **Plex integration** — PIN OAuth server link, admin-gated sign-in gate with pending-user approval, ratings/play-count import, two-way rating push, path-first track matching
+- **Playlists as a fourth media type** — browse device playlists, sync a Plex playlist to the iPod, publish a device playlist (including On-The-Go) back to Plex
+- **Smart playlists** with an iTunes-style rule editor (17 fields, live match preview)
+- Runtime "Auto-mount devices" setting, superseding the `IPOD_AUTOMOUNT` env var (later removed in v0.9.0)
+
+---
+
+## [v0.6.1] — 2026-06-30
+
+### Added
+- Keyboard navigation (arrow keys + space) across artists/albums/tracks in both device and source panes
+- Format labels (MP3/FLAC/ALAC/AAC/WAV/AIFF/OGG) get a distinct color per theme
+- Artist name shown above album name in the middle column when "All Artists" is selected
+
+### Fixed
+- Podcast/audiobook grouping uses the album tag (show name) consistently across `gpod.py`, the scanner, `sources.py`, and both device/source JS maps — the iPod itself navigates podcasts by album only, not artist
+- Offline library preserved when an unrelated USB device is removed; an offline-browsed device auto-switches to live view when it reconnects
+- gpod-utils bumped to 1.4.21
+
+---
+
+## [v0.6.0] — 2026-06-29
+
+### Added
+- **Sony WALKMAN support** — on-demand mount/unmount with ref-counting, probe-mount to identify Internal vs SD-card LUN via capability XML, dual-LUN devices tracked independently, offline browsing from SQLite without mounting
+- **Persistent artwork cache** with ffmpeg extraction and ref-counted ownership across devices/sources; "Drop artwork cache" button in settings
+- **Filesystem check** (`fsck.hfsplus` / `fsck.vfat`) for iPod volumes
+
+### Fixed
+- Podcast publication dates read via `ffprobe` (XMP) instead of mutagen's TDRC, which often holds the download timestamp rather than the real pub date
+- Op log `from=` query param handling, duplicate log lines on modal re-open, disconnected-WALKMAN offline browsing
+- gpod-utils bumped to 1.4.18, then 1.4.20
+
+---
+
+## [v0.5.4] — 2026-06-28
+
+### Fixed
+- CPU spikes from SSE polling and op log rendering — cached selection/sync computations, in-place mutation of running ops instead of object replacement, removed a CSS animation that forced 60fps VSync, replaced `x-for` log rendering with direct DOM append
+- Multi-disc track matching now uses title instead of track number when `disc_nr > 1`
+- Op history loads on init and device switch so a completed log survives a page reload
+
+---
+
+## [v0.5.3] — 2026-06-28
+
+### Fixed
+- Eject now unmounts before removing the device from tracked state, preventing a remount flash when the device reports busy
+
+---
+
+## [v0.5.2] — 2026-06-28
+
+### Fixed
+- Verify operation shows "Verifying…/Verify" in the status bar instead of "Syncing…/Sync"
+
+---
+
+## [v0.5.1] — 2026-06-28
+
+### Added
+- `gpod-verify` exposed as a tracked operation (`check`/`add`/`delete` modes) in device settings
+- Podcast publication date column (`pub_date`) with locale-aware, UTC-safe formatting
+- Unplayed-episode indicator backed by a new `ipod_track_playcounts` table mirroring the ratings table
+- Podcasts sort newest-first by publication date / track number
+
+### Fixed
+- Podcast/audiobook artwork now displays on device — `gpod-ls` reports `artwork=false` for podcasts even with an embedded cover, so the flag is now only trusted for music
+- gpod-utils bumped to 1.4.12
+
+---
+
+## [v0.5.0] — 2026-06-27
+
+### Added
+- **Media type system** — Music / Podcasts / Audiobooks tabs in both device and source panes, with per-type terminology and per-type source memory
+- Podcast and audiobook tag remapping so shows group correctly by album (show name) instead of episode-author artist tags
+- Per-device settings: `force_aac` override and per-media-type sync rules, with an auto-sync button that computes unsynced paths
+- **Smart audio encoder selection** — lossless sources go to ALAC, lossy sources to fdk-aac, MP3/AAC M4A pass through unchanged; `Dockerfile.non-free` rebuilds ffmpeg with `--enable-libfdk-aac` for personal use
+
+### Fixed
+- Directory-path collapsing no longer sends non-audio files (cover.jpg etc.) to `gpod-cp` — a directory is only collapsed when its audio track count matches its actual file count
+
+---
+
 ## [v0.4.0] — 2026-06-23
 
 ### Added

@@ -106,7 +106,7 @@ function app() {
       const anyModal = this.showSettings || this.showManageSources || this.showAddSource ||
                        this.showDeleteConfirm || this.showSyncConfirm || this.showDeviceSettings ||
                        this.showOpLog || this.coverPopupUrl || this.showDevicePicker || this.showSourcePicker ||
-                       this.showSmartModal;
+                       this.showSmartModal || this.showChangelog;
       if (anyModal) return;
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         if (!this._focusedCol) return;
