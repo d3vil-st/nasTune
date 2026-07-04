@@ -250,6 +250,7 @@ function settingsModule() {
         this._deviceIndex = null;
         this._deviceMap = null;
         this.showDevicePicker = false;
+        if (this.selectedSourceId) this._initSrcChecked();
       } catch (e) { alert('Failed to load offline library: ' + e.message); }
     },
 
