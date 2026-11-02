@@ -4,6 +4,14 @@ All notable changes to nasTune are documented here, newest first.
 
 ---
 
+## [v0.10.1] — 2026-11-02
+
+### Fixed
+- Sync size estimate ignored a per-device Force AAC override: the device's `ipod_db_id` reaches the browser only on a later devices push, and the USB-serial fallback can be missing, so the lookup fell back to the global setting. It now also matches the loaded library's UUID
+- Static JS/CSS are cache-busted with the build version (`?v=`), so browsers don't keep running a previous release's scripts after an upgrade
+
+---
+
 ## [v0.10.0] — 2026-11-02
 
 ### Changed

@@ -399,8 +399,11 @@ function selectionModule() {
     get syncForceAac() {
       const d = this.selectedDevice;
       if (!d || d.is_walkman) return false;
+      // ipod_db_id is assigned server-side after library load without a devices push, so it is
+      // often still null here — the loaded library's UUID is the reliable key
+      const uuid = (!this.library?.walkman && this.library?.device?.uuid) || d.usb_serial;
       const k = this.knownDevices?.ipods?.find(i =>
-        (d.ipod_db_id != null && i.id === d.ipod_db_id) || (d.usb_serial && i.uuid === d.usb_serial));
+        (d.ipod_db_id != null && i.id === d.ipod_db_id) || (uuid && i.uuid === uuid));
       return k?.force_aac != null ? !!k.force_aac : !!this.settings?.force_aac;
     },
     // On-device size: tracks gpod-cp transcodes to AAC are sized by duration, not source bytes.
