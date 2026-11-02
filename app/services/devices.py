@@ -13,7 +13,8 @@ from app.services.db import DB_PATH
 from app.services.fs_utils import FS_LABELS, fs_type, fs_usage
 from app.services.ipod import (is_ipod as detect_ipod,
                                is_uninitialized_ipod as detect_uninit_ipod,
-                               log_mount_contents as log_ipod_mount_contents)
+                               log_mount_contents as log_ipod_mount_contents,
+                               ensure_sysinfo_extended)
 from app.services.walkman import get_serial as _get_usb_serial
 
 log = logging.getLogger(__name__)
@@ -770,6 +771,7 @@ class DeviceService:
                 from app.services.track_key import lib_track_key as _ltk
                 from app.services.db import DB_PATH as _DB_PATH
                 import aiosqlite as _aiosqlite
+                await ensure_sysinfo_extended(devnode, mount_str)
                 lib = await fetch_library(mount_str)
                 asyncio.create_task(persist_ratings(lib))
                 asyncio.create_task(persist_playcounts(lib))

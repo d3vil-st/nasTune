@@ -19,6 +19,7 @@ RUN apt-get update \
         mount \
         hfsprogs \
         dosfstools \
+        libgpod-common \
     && curl -fsSL \
       "https://github.com/d3vil-st/gpod-utils/releases/download/v${GPOD_VERSION}/gpod-utils_${GPOD_VERSION}.${DISTRO}_${TARGETARCH}.deb" \
       -o /tmp/gpod-utils.deb \

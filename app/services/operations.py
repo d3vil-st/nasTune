@@ -901,6 +901,10 @@ class OperationService:
     async def _do_init_ipod(self, op: _Op, mount: str, device_id: str, devnode: str = "") -> None:
         try:
             async with self._lock:
+                from app.services.ipod import ensure_sysinfo_extended
+                msg = await ensure_sysinfo_extended(devnode, mount)
+                if msg:
+                    op.log.append(msg)
                 cmd = ["gpod-cp", "-M", mount, "-I"]
                 op.current = "Initializing iPod…"
                 log.info("exec: %s", " ".join(cmd))

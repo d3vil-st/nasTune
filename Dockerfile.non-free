@@ -51,6 +51,7 @@ RUN sed -i \
         mount \
         hfsprogs \
         dosfstools \
+        libgpod-common \
         libfdk-aac2 \
     && rm -rf /var/lib/apt/lists/*
 
