@@ -71,13 +71,13 @@ async def get_known_ipods(connected_uuids: set[str] | None = None,
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
             "SELECT d.id, d.uuid, d.model, d.ipod_name, d.capacity, d.first_seen, d.last_seen, "
-            "d.library_json IS NOT NULL, s.force_aac FROM ipod_devices d "
+            "d.library_json IS NOT NULL, s.force_aac, s.native_flac FROM ipod_devices d "
             "LEFT JOIN ipod_device_settings s ON s.device_id = d.id ORDER BY d.last_seen DESC"
         ) as cur:
             rows = await cur.fetchall()
     result = []
     for row in rows:
-        device_id, uuid, model, ipod_name, capacity, first_seen, last_seen, has_cache, force_aac = row
+        device_id, uuid, model, ipod_name, capacity, first_seen, last_seen, has_cache, force_aac, native_flac = row
         connected = (
             (connected_uuids is not None and uuid in connected_uuids) or
             (connected_db_ids is not None and device_id in connected_db_ids)
@@ -93,6 +93,7 @@ async def get_known_ipods(connected_uuids: set[str] | None = None,
             "has_cache": bool(has_cache),
             "connected": connected,
             "force_aac": force_aac,  # None = use global, 0/1 = per-device override
+            "native_flac": native_flac,  # same tri-state
         })
     return result
 
@@ -104,7 +105,7 @@ async def delete_ipod(device_id: int) -> None:
 
 
 async def get_device_settings(device_id: int, device_type: str = "ipod") -> dict:
-    """Return {force_aac: None|0|1, sync_rules: [{media_type, enabled, source_id}]}."""
+    """Return {force_aac: None|0|1, native_flac: None|0|1, auto_sync, sync_rules: [{media_type, enabled, source_id}]}."""
     if device_type == "ipod":
         settings_table = "ipod_device_settings"
         rules_table = "ipod_sync_rules"
@@ -115,11 +116,12 @@ async def get_device_settings(device_id: int, device_type: str = "ipod") -> dict
     async with aiosqlite.connect(DB_PATH) as db:
         if device_type == "ipod":
             async with db.execute(
-                f"SELECT force_aac, auto_sync FROM {settings_table} WHERE device_id=?", (device_id,)
+                f"SELECT force_aac, auto_sync, native_flac FROM {settings_table} WHERE device_id=?", (device_id,)
             ) as cur:
                 srow = await cur.fetchone()
             force_aac = srow[0] if srow else None
             auto_sync = bool(srow[1]) if srow else False
+            native_flac = srow[2] if srow else None
         else:
             async with db.execute(
                 f"SELECT force_aac FROM {settings_table} WHERE device_id=?", (device_id,)
@@ -127,6 +129,7 @@ async def get_device_settings(device_id: int, device_type: str = "ipod") -> dict
                 srow = await cur.fetchone()
             force_aac = srow[0] if srow else None
             auto_sync = False
+            native_flac = None
 
         async with db.execute(
             f"""SELECT r.media_type, r.enabled, r.source_id, s.name
@@ -144,12 +147,12 @@ async def get_device_settings(device_id: int, device_type: str = "ipod") -> dict
     sync_rules = [existing.get(mt, {"media_type": mt, "enabled": False,
                                      "source_id": None, "source_name": None})
                   for mt in _MEDIA_TYPES]
-    return {"force_aac": force_aac, "auto_sync": auto_sync, "sync_rules": sync_rules}
+    return {"force_aac": force_aac, "native_flac": native_flac, "auto_sync": auto_sync, "sync_rules": sync_rules}
 
 
 async def save_device_settings(device_id: int, force_aac: int | None,
                                 sync_rules: list[dict], device_type: str = "ipod",
-                                auto_sync: bool = False) -> None:
+                                auto_sync: bool = False, native_flac: int | None = None) -> None:
     if device_type == "ipod":
         settings_table = "ipod_device_settings"
         rules_table = "ipod_sync_rules"
@@ -160,9 +163,11 @@ async def save_device_settings(device_id: int, force_aac: int | None,
     async with aiosqlite.connect(DB_PATH) as db:
         if device_type == "ipod":
             await db.execute(
-                "INSERT INTO ipod_device_settings(device_id, force_aac, auto_sync) VALUES(?,?,?) "
-                "ON CONFLICT(device_id) DO UPDATE SET force_aac=excluded.force_aac, auto_sync=excluded.auto_sync",
-                (device_id, None if force_aac is None else int(force_aac), int(bool(auto_sync))),
+                "INSERT INTO ipod_device_settings(device_id, force_aac, auto_sync, native_flac) VALUES(?,?,?,?) "
+                "ON CONFLICT(device_id) DO UPDATE SET force_aac=excluded.force_aac, auto_sync=excluded.auto_sync, "
+                "native_flac=excluded.native_flac",
+                (device_id, None if force_aac is None else int(force_aac), int(bool(auto_sync)),
+                 None if native_flac is None else int(native_flac)),
             )
         elif force_aac is None:
             await db.execute(f"DELETE FROM {settings_table} WHERE device_id=?", (device_id,))
@@ -208,6 +213,18 @@ async def get_effective_force_aac(device_id: int, device_type: str = "ipod") -> 
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
             f"SELECT force_aac FROM {table} WHERE device_id=?", (device_id,)
+        ) as cur:
+            row = await cur.fetchone()
+    if row is None or row[0] is None:
+        return None
+    return bool(row[0])
+
+
+async def get_effective_native_flac(device_id: int) -> bool | None:
+    """Return the iPod's 'Skip FLAC transcoding' override as bool, or None if 'use global'."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT native_flac FROM ipod_device_settings WHERE device_id=?", (device_id,)
         ) as cur:
             row = await cur.fetchone()
     if row is None or row[0] is None:

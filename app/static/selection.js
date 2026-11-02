@@ -15,6 +15,16 @@ function _srcAudioClass(t) {
   return 'lossy';
 }
 
+// Same rule as _gpod_cp_batch: lossy non-native → AAC; lossless → AAC only with force_aac,
+// except FLAC copied as-is under native_flac (FLAC above 48 kHz is still transcoded)
+function _transcodesToAac(t, forceAac, nativeFlac) {
+  const cls = _srcAudioClass(t);
+  if (cls === 'lossy') return true;
+  if (!forceAac || cls !== 'lossless') return false;
+  const nativeOk = nativeFlac && /\.flac$/i.test(t.path || '') && (t.samplerate || 0) <= 48000;
+  return !nativeOk;
+}
+
 function selectionModule() {
   // Non-reactive closure caches — writing here never triggers Alpine reactive effects.
   // Both Sets are always replaced (never mutated in-place), so === is a valid signal.
@@ -386,17 +396,19 @@ function selectionModule() {
     get syncCopyTracks()   { this.syncToCopy;   return _syncCache?.cpyTracks || []; },
     get syncDeleteBytes()  { return this.syncDeleteTracks.reduce((s, t) => s + (t.size || 0), 0); },
     get syncCopyBytes()    {
-      const forceAac = this.syncForceAac;
-      return this.syncCopyTracks.reduce((s, t) => s + this._estCopyBytes(t, forceAac), 0);
+      const forceAac = this.syncForceAac, nativeFlac = this.syncNativeFlac;
+      return this.syncCopyTracks.reduce((s, t) => s + this._estCopyBytes(t, forceAac, nativeFlac), 0);
     },
     // True when the sync will transcode at least one track, so syncCopyBytes is an estimate
     get syncCopyEstimated() {
       if (this.selectedDevice?.is_walkman) return false;
-      const forceAac = this.syncForceAac;
-      return this.syncCopyTracks.some(t => forceAac || _srcAudioClass(t) === 'lossy');
+      const forceAac = this.syncForceAac, nativeFlac = this.syncNativeFlac;
+      return this.syncCopyTracks.some(t => _transcodesToAac(t, forceAac, nativeFlac));
     },
-    // Effective force_aac for the selected iPod: per-device override, else global setting
-    get syncForceAac() {
+    get syncForceAac()   { return this._effectiveSyncFlag('force_aac'); },
+    get syncNativeFlac() { return this._effectiveSyncFlag('native_flac'); },
+    // Effective sync flag for the selected iPod: per-device override, else global setting
+    _effectiveSyncFlag(key) {
       const d = this.selectedDevice;
       if (!d || d.is_walkman) return false;
       // ipod_db_id is assigned server-side after library load without a devices push, so it is
@@ -404,13 +416,13 @@ function selectionModule() {
       const uuid = (!this.library?.walkman && this.library?.device?.uuid) || d.usb_serial;
       const k = this.knownDevices?.ipods?.find(i =>
         (d.ipod_db_id != null && i.id === d.ipod_db_id) || (uuid && i.uuid === uuid));
-      return k?.force_aac != null ? !!k.force_aac : !!this.settings?.force_aac;
+      return k?.[key] != null ? !!k[key] : !!this.settings?.[key];
     },
     // On-device size: tracks gpod-cp transcodes to AAC are sized by duration, not source bytes.
     // Mirrors _classify_audio_path in operations.py (ALAC ≈ FLAC size, MP3/AAC copied as-is).
-    _estCopyBytes(t, forceAac) {
+    _estCopyBytes(t, forceAac, nativeFlac) {
       if (this.selectedDevice?.is_walkman) return t.size || 0;
-      if ((forceAac || _srcAudioClass(t) === 'lossy') && t.duration_ms)
+      if (_transcodesToAac(t, forceAac, nativeFlac) && t.duration_ms)
         return Math.round(t.duration_ms / 1000 * AAC_EST_KBPS * 125);
       return t.size || 0;
     },

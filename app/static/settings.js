@@ -3,8 +3,8 @@ function settingsModule() {
     // Global settings modal
     showSettings: false,
     settingsCpuCount: 1,
-    settings: { force_aac: false, max_threads: 1 },
-    settingsDraft: { force_aac: false, max_threads: 1 },
+    settings: { force_aac: false, native_flac: false, max_threads: 1 },
+    settingsDraft: { force_aac: false, native_flac: false, max_threads: 1 },
 
     // Device settings modal (independent from global)
     showDeviceSettings: false,
@@ -67,7 +67,7 @@ function settingsModule() {
         if (!r.ok) return;
         const data = await r.json();
         this.settingsCpuCount = data.cpu_count;
-        this.settings = { force_aac: data.force_aac, max_threads: data.max_threads };
+        this.settings = { force_aac: data.force_aac, native_flac: data.native_flac, max_threads: data.max_threads };
         this.settingsDraft = { ...this.settings };
       } catch (e) { console.error('loadSettings:', e); }
     },
@@ -336,15 +336,16 @@ function settingsModule() {
       } catch (e) { alert('Filesystem check failed: ' + e.message); }
     },
 
-    cycleDeviceForceAac() {
+    // Tri-state per-device override (force_aac, native_flac): null = global → 1 → 0 → null
+    cycleDeviceOverride(key) {
       if (!this.deviceSettingsDraft) return;
-      const cur = this.deviceSettingsDraft.force_aac;
-      this.deviceSettingsDraft.force_aac = cur === null ? 1 : cur === 1 ? 0 : null;
+      const cur = this.deviceSettingsDraft[key] ?? null;
+      this.deviceSettingsDraft[key] = cur === null ? 1 : cur === 1 ? 0 : null;
     },
 
-    deviceForceAacLabel() {
+    deviceOverrideLabel(key) {
       if (!this.deviceSettingsDraft) return '';
-      const v = this.deviceSettingsDraft.force_aac;
+      const v = this.deviceSettingsDraft[key] ?? null;
       if (v === null) return 'Global default';
       return v ? 'Always on' : 'Always off';
     },

@@ -1529,12 +1529,25 @@
         <label class="setting-row" style="cursor:pointer">
           <div style="flex:1">
             <div style="font-size:13px;font-weight:500;color:var(--text)">Force encode to AAC</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:2px">Convert all files to AAC during sync, ignoring lossless detection. Can be overridden per device.</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px">Encode lossless files (FLAC, ALAC, WAV…) to AAC 256 kbps instead of ALAC. MP3/AAC files are copied as-is. Can be overridden per device.</div>
           </div>
           <div class="setting-toggle" :class="{ active: settingsDraft.force_aac }"
                @click.stop="settingsDraft.force_aac = !settingsDraft.force_aac" role="switch"
                :aria-checked="settingsDraft.force_aac" tabindex="0"
                @keydown.space.prevent="settingsDraft.force_aac = !settingsDraft.force_aac">
+            <div class="setting-toggle-thumb"></div>
+          </div>
+        </label>
+
+        <label class="setting-row" style="cursor:pointer">
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:500;color:var(--text)">Skip FLAC transcoding</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px">Copy FLAC files as-is, for iPod firmware with native FLAC playback (stock Apple firmware can't play them). Takes precedence over Force AAC; FLAC above 48 kHz is still transcoded. Can be overridden per device.</div>
+          </div>
+          <div class="setting-toggle" :class="{ active: settingsDraft.native_flac }"
+               @click.stop="settingsDraft.native_flac = !settingsDraft.native_flac" role="switch"
+               :aria-checked="settingsDraft.native_flac" tabindex="0"
+               @keydown.space.prevent="settingsDraft.native_flac = !settingsDraft.native_flac">
             <div class="setting-toggle-thumb"></div>
           </div>
         </label>
@@ -1695,17 +1708,35 @@
             </template>
 
             <!-- Force AAC override -->
-            <div class="setting-row" style="cursor:pointer" @click="cycleDeviceForceAac()">
+            <div class="setting-row" style="cursor:pointer" @click="cycleDeviceOverride('force_aac')">
               <div style="flex:1">
                 <div style="font-size:13px;font-weight:500;color:var(--text)">Force encode to AAC</div>
                 <div style="font-size:11px;color:var(--muted);margin-top:2px">Override global setting for this device</div>
               </div>
               <div style="display:flex;align-items:center;gap:8px">
-                <span style="font-size:12px;color:var(--muted)" x-text="deviceForceAacLabel()"></span>
+                <span style="font-size:12px;color:var(--muted)" x-text="deviceOverrideLabel('force_aac')"></span>
                 <div class="setting-toggle"
                      :class="{ active: deviceSettingsDraft.force_aac === 1, dim: deviceSettingsDraft.force_aac === null }"
                      role="switch" :aria-checked="deviceSettingsDraft.force_aac === 1" tabindex="0"
-                     @keydown.space.prevent="cycleDeviceForceAac()">
+                     @keydown.space.prevent="cycleDeviceOverride('force_aac')">
+                  <div class="setting-toggle-thumb"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Skip FLAC transcoding override (iPod only — WALKMAN copies files as-is) -->
+            <div class="setting-row" style="cursor:pointer" x-show="_deviceSettingsType !== 'walkman'"
+                 @click="cycleDeviceOverride('native_flac')">
+              <div style="flex:1">
+                <div style="font-size:13px;font-weight:500;color:var(--text)">Skip FLAC transcoding</div>
+                <div style="font-size:11px;color:var(--muted);margin-top:2px">Copy FLAC as-is — only for firmware with native FLAC playback</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:12px;color:var(--muted)" x-text="deviceOverrideLabel('native_flac')"></span>
+                <div class="setting-toggle"
+                     :class="{ active: deviceSettingsDraft.native_flac === 1, dim: (deviceSettingsDraft.native_flac ?? null) === null }"
+                     role="switch" :aria-checked="deviceSettingsDraft.native_flac === 1" tabindex="0"
+                     @keydown.space.prevent="cycleDeviceOverride('native_flac')">
                   <div class="setting-toggle-thumb"></div>
                 </div>
               </div>

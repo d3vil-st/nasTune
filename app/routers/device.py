@@ -475,6 +475,7 @@ async def get_op_history(devnode: str):
 
 class DeviceSettingsBody(BaseModel):
     force_aac: int | None = None  # None=global, 0=off, 1=on
+    native_flac: int | None = None  # skip FLAC transcoding (iPod only); None=global, 0=off, 1=on
     auto_sync: bool = False       # run sync rules automatically on connect (iPod only)
     sync_rules: list[dict] = []
 
@@ -557,7 +558,8 @@ async def save_device_settings_endpoint(devnode: str = Query(...), body: DeviceS
     if db_id is None:
         raise HTTPException(404, "Device not yet registered — load its library first")
     from app.services.ipod_db import save_device_settings
-    await save_device_settings(db_id, body.force_aac, body.sync_rules, device_type, auto_sync=body.auto_sync)
+    await save_device_settings(db_id, body.force_aac, body.sync_rules, device_type, auto_sync=body.auto_sync,
+                               native_flac=body.native_flac)
     return {"ok": True}
 
 
@@ -570,7 +572,8 @@ async def get_known_device_settings(device_id: int, device_type: str = "ipod"):
 @router.put("/devices/known/{device_id}/settings")
 async def save_known_device_settings(device_id: int, body: DeviceSettingsBody, device_type: str = "ipod"):
     from app.services.ipod_db import save_device_settings
-    await save_device_settings(device_id, body.force_aac, body.sync_rules, device_type, auto_sync=body.auto_sync)
+    await save_device_settings(device_id, body.force_aac, body.sync_rules, device_type, auto_sync=body.auto_sync,
+                               native_flac=body.native_flac)
     return {"ok": True}
 
 

@@ -12,6 +12,7 @@ router = APIRouter(tags=["settings"])
 
 class SettingsBody(BaseModel):
     force_aac: bool = False
+    native_flac: bool = False
     max_threads: int = 0
 
 
@@ -26,6 +27,7 @@ async def get_settings():
         max_threads = cpu_count
     return JSONResponse({
         "force_aac": stored.get("force_aac", "false") == "true",
+        "native_flac": stored.get("native_flac", "false") == "true",
         "max_threads": max_threads,
         "cpu_count": cpu_count,
     })
@@ -37,6 +39,10 @@ async def save_settings(body: SettingsBody):
         await db.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
             ("force_aac", "true" if body.force_aac else "false"),
+        )
+        await db.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            ("native_flac", "true" if body.native_flac else "false"),
         )
         await db.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",

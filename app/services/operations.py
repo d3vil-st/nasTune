@@ -104,28 +104,31 @@ _LOSSLESS_EXTS    = frozenset({'.flac', '.wav', '.aiff', '.aif', '.ape', '.wv'})
 _PASSTHROUGH_EXTS = frozenset({'.mp3'})
 
 
-async def _load_sync_settings(ipod_db_id: int | None = None) -> tuple[bool, int]:
-    """Returns (force_aac, max_threads). Per-device override wins over global when set."""
+async def _load_sync_settings(ipod_db_id: int | None = None) -> tuple[bool, int, bool]:
+    """Returns (force_aac, max_threads, native_flac). Per-device overrides win over global when set."""
     try:
         import aiosqlite
         async with aiosqlite.connect(_DB_PATH) as db:
             async with db.execute("SELECT key, value FROM settings") as cur:
                 stored = {k: v for k, v in await cur.fetchall()}
-        global_force_aac = stored.get("force_aac", "false") == "true"
+        force_aac = stored.get("force_aac", "false") == "true"
+        native_flac = stored.get("native_flac", "false") == "true"
         max_threads = int(stored.get("max_threads", "0") or "0")
         if ipod_db_id is not None:
-            from app.services.ipod_db import get_effective_force_aac
+            from app.services.ipod_db import get_effective_force_aac, get_effective_native_flac
             override = await get_effective_force_aac(ipod_db_id, "ipod")
-            force_aac = global_force_aac if override is None else override
-        else:
-            force_aac = global_force_aac
-        return force_aac, max_threads
+            force_aac = force_aac if override is None else override
+            override = await get_effective_native_flac(ipod_db_id)
+            native_flac = native_flac if override is None else override
+        return force_aac, max_threads, native_flac
     except Exception:
-        return False, 0
+        return False, 0, False
 
 
 def _classify_audio_path(path: str) -> str:
-    """Return 'lossless', 'passthrough', or 'lossy' for a file or directory path."""
+    """Return 'lossless', 'flac', 'passthrough', or 'lossy' for a file or directory path.
+
+    'flac' is lossless; it is split out so native FLAC passthrough can route it separately."""
     p = Path(path.rstrip('/'))
     if p.is_dir():
         for f in sorted(p.rglob('*')):
@@ -133,6 +136,8 @@ def _classify_audio_path(path: str) -> str:
                 return _classify_audio_path(str(f))
         return 'lossy'
     ext = p.suffix.lower()
+    if ext == '.flac':
+        return 'flac'
     if ext in _LOSSLESS_EXTS:
         return 'lossless'
     if ext in _PASSTHROUGH_EXTS:
@@ -270,35 +275,41 @@ class OperationService:
     _PASSTHROUGH_ARGS: list[str] = []
     # ffmpeg 9.1 native aac (NMR coder), bundled statically in gpod-utils >= 1.6.0
     _LOSSY_ARGS       = ['--encoder', 'aac-ffmpeg', '--encoder-quality', 'cbr256', '--disable-encoder-fallback']
+    # gpod-cp copies iPod-playable ALAC as-is; --transcode-lossless (gpod-utils >= 1.6.1) re-encodes it
+    _FORCE_AAC_LOSSLESS_ARGS = _LOSSY_ARGS + ['--transcode-lossless']
 
     async def _gpod_cp_batch(self, paths: list[str], mount: str, op: _Op, proc_offset: int = 0,
-                              *, force_aac: bool = False, threads: int = 0,
+                              *, force_aac: bool = False, native_flac: bool = False, threads: int = 0,
                               media_type_args: list[str] = ()) -> tuple[str | None, int]:
         """Split paths by format and dispatch with the appropriate encoder.
 
         lossless (FLAC/WAV/…) → ALAC
         passthrough (MP3)      → copied as-is (no encoder args)
         lossy (AAC/OGG/…)     → AAC 256k (ffmpeg native encoder)
-        force_aac=True         → everything goes through AAC 256k (passthrough ignored)
+        force_aac=True         → lossless goes to AAC 256k too; MP3/AAC still copied as-is
+        native_flac=True       → FLAC copied as-is (--native-flac, wins over force_aac);
+                                 out-of-spec FLAC (>48 kHz, surround) still transcoded
         media_type_args        → e.g. ['--tracks-media-type', 'audiobook']
         """
         paths = list(dict.fromkeys(paths))
-        if force_aac:
-            lossless, passthrough, lossy = [], [], paths
-        else:
-            lossless, passthrough, lossy = [], [], []
-            for p in paths:
-                cls = _classify_audio_path(p)
-                if cls == 'lossless':
-                    lossless.append(p)
-                elif cls == 'passthrough':
-                    passthrough.append(p)
-                else:
-                    lossy.append(p)
+        lossless, flac, passthrough, lossy = [], [], [], []
+        for p in paths:
+            cls = _classify_audio_path(p)
+            if cls == 'flac' and native_flac:
+                flac.append(p)
+            elif cls in ('lossless', 'flac'):
+                lossless.append(p)
+            elif cls == 'passthrough':
+                passthrough.append(p)
+            else:
+                lossy.append(p)
+        lossless_args = self._FORCE_AAC_LOSSLESS_ARGS if force_aac else self._LOSSLESS_ARGS
+        flac_args = (self._LOSSY_ARGS if force_aac else self._LOSSLESS_ARGS) + ['--native-flac']
 
         total = 0
         for group, extra_args in (
-            (lossless,    self._LOSSLESS_ARGS),
+            (lossless,    lossless_args),
+            (flac,        flac_args),
             (passthrough, self._PASSTHROUGH_ARGS),
             (lossy,       self._LOSSY_ARGS),
         ):
@@ -776,7 +787,7 @@ class OperationService:
 
     async def _do_sync(self, op: _Op, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "", media_type: str = "music", ipod_db_id: int | None = None, devnode: str = "", playlist: dict | None = None, copy_groups: dict[str, list[str]] | None = None) -> None:
         try:
-            force_aac, threads = await _load_sync_settings(ipod_db_id=ipod_db_id)
+            force_aac, threads, native_flac = await _load_sync_settings(ipod_db_id=ipod_db_id)
             groups = list(copy_groups.items()) if copy_groups else [(media_type, copy_paths)]
             async with self._lock:
                 await _backup_itunesdb(mount, device_id, op)
@@ -802,7 +813,8 @@ class OperationService:
                         batch = group_paths[i:i + BATCH_SIZE]
                         err, batch_tracks = await self._gpod_cp_batch(
                             batch, mount, op, proc_offset=len(delete_ids) + copy_offset,
-                            force_aac=force_aac, threads=threads, media_type_args=media_type_args,
+                            force_aac=force_aac, native_flac=native_flac, threads=threads,
+                            media_type_args=media_type_args,
                         )
                         copy_offset += batch_tracks
                         op.processed = len(delete_ids) + copy_offset

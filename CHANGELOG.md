@@ -4,6 +4,16 @@ All notable changes to nasTune are documented here, newest first.
 
 ---
 
+## [v0.10.2] — 2026-11-02
+
+### Added
+- **Skip FLAC transcoding** setting (global + per-iPod override) for firmware with native FLAC playback — FLAC is copied as-is via `gpod-cp --native-flac`; takes precedence over Force AAC; FLAC above 48 kHz or surround is still transcoded
+
+### Fixed
+- **Force AAC now actually re-encodes ALAC** — gpod-cp only transcodes formats the iPod can't play, so ALAC sources were copied byte-for-byte regardless of `--encoder`. gpod-utils bumped to 1.6.1 (`--transcode-lossless`); Force AAC now re-encodes all lossless sources (ALAC, FLAC, WAV…) to AAC 256 kbps, while MP3/AAC sources are still copied as-is (no lossy-to-lossy re-encode). The size estimate follows the same rules
+
+---
+
 ## [v0.10.1] — 2026-11-02
 
 ### Added
