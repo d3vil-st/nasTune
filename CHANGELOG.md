@@ -4,6 +4,25 @@ All notable changes to nasTune are documented here, newest first.
 
 ---
 
+## [v0.10.0] — 2026-11-02
+
+### Changed
+- **AAC transcoding uses ffmpeg 9.1's native encoder** — gpod-utils bumped to 1.6.0 in both Dockerfiles; its packages statically link ffmpeg 9.1, whose rewritten AAC encoder (NMR coder) is on par with fdk-aac. Lossy and Force-AAC transcodes now run `gpod-cp --encoder aac-ffmpeg --encoder-quality cbr256`
+- Sync copy size is estimated from track duration at 256 kbps for tracks that will be transcoded to AAC (Force AAC on, or OGG/WMA/Opus sources) instead of the source file size; the storage bar, out-of-space warning, and sync dialog (shown as `≈`) use it. Per-device Force AAC overrides are honoured
+
+### Fixed
+- Force AAC produced MP3 files: the image's ffmpeg has no libfdk_aac, and gpod-cp ≤ 1.5.6 silently fell back to MP3 even with `--disable-encoder-fallback`
+- `--encoder-quality 9` was ignored by gpod-cp (it only parsed `vbrN`/`cbrN`); now replaced by an explicit `cbr256`
+
+---
+
+## [v0.9.2] — 2026-07-04
+
+### Added
+- In-app changelog viewer — click the build version in the status bar
+
+---
+
 ## [v0.9.1] — 2026-07-04
 
 ### Fixed

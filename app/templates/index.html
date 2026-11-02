@@ -1408,7 +1408,7 @@
               <span style="color:#30d158">&#x2B;</span>
               <strong x-text="syncCopyTracks.length + ' track' + (syncCopyTracks.length !== 1 ? 's' : '')"></strong>
               will be copied
-              <span style="color:var(--muted)" x-text="'(' + fmtSize(syncCopyBytes) + ')'"></span>
+              <span style="color:var(--muted)" x-text="'(' + (syncCopyEstimated ? '≈ ' : '') + fmtSize(syncCopyBytes) + ')'"></span>
             </p>
           </template>
           <template x-if="syncSpaceWarning">

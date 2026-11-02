@@ -1,3 +1,20 @@
+// Matches _LOSSY_ARGS in operations.py: gpod-cp encodes AAC at CBR 256 kbps
+const AAC_EST_KBPS = 256;
+const _LOSSLESS_EXTS = new Set(['flac', 'wav', 'aiff', 'aif', 'ape', 'wv']);
+
+// 'lossless' | 'passthrough' | 'lossy' — same buckets as _classify_audio_path in operations.py
+function _srcAudioClass(t) {
+  const ext = (t.path || '').split('.').pop().toLowerCase();
+  if (_LOSSLESS_EXTS.has(ext)) return 'lossless';
+  if (ext === 'mp3') return 'passthrough';
+  if (ext === 'm4a') {
+    const codec = (t.codec || '').toLowerCase();
+    if (codec.includes('alac')) return 'lossless';
+    if (codec.includes('aac') || codec.includes('mp4a')) return 'passthrough';
+  }
+  return 'lossy';
+}
+
 function selectionModule() {
   // Non-reactive closure caches — writing here never triggers Alpine reactive effects.
   // Both Sets are always replaced (never mutated in-place), so === is a valid signal.
@@ -368,7 +385,32 @@ function selectionModule() {
     get syncDeleteTracks() { this.syncToDelete; return _syncCache?.delTracks || []; },
     get syncCopyTracks()   { this.syncToCopy;   return _syncCache?.cpyTracks || []; },
     get syncDeleteBytes()  { return this.syncDeleteTracks.reduce((s, t) => s + (t.size || 0), 0); },
-    get syncCopyBytes()    { return this.syncCopyTracks.reduce((s, t) => s + (t.size || 0), 0); },
+    get syncCopyBytes()    {
+      const forceAac = this.syncForceAac;
+      return this.syncCopyTracks.reduce((s, t) => s + this._estCopyBytes(t, forceAac), 0);
+    },
+    // True when the sync will transcode at least one track, so syncCopyBytes is an estimate
+    get syncCopyEstimated() {
+      if (this.selectedDevice?.is_walkman) return false;
+      const forceAac = this.syncForceAac;
+      return this.syncCopyTracks.some(t => forceAac || _srcAudioClass(t) === 'lossy');
+    },
+    // Effective force_aac for the selected iPod: per-device override, else global setting
+    get syncForceAac() {
+      const d = this.selectedDevice;
+      if (!d || d.is_walkman) return false;
+      const k = this.knownDevices?.ipods?.find(i =>
+        (d.ipod_db_id != null && i.id === d.ipod_db_id) || (d.usb_serial && i.uuid === d.usb_serial));
+      return k?.force_aac != null ? !!k.force_aac : !!this.settings?.force_aac;
+    },
+    // On-device size: tracks gpod-cp transcodes to AAC are sized by duration, not source bytes.
+    // Mirrors _classify_audio_path in operations.py (ALAC ≈ FLAC size, MP3/AAC copied as-is).
+    _estCopyBytes(t, forceAac) {
+      if (this.selectedDevice?.is_walkman) return t.size || 0;
+      if ((forceAac || _srcAudioClass(t) === 'lossy') && t.duration_ms)
+        return Math.round(t.duration_ms / 1000 * AAC_EST_KBPS * 125);
+      return t.size || 0;
+    },
     get hasSyncChanges()   { return this.syncToDelete.length > 0 || this.syncToCopy.length > 0; },
     get syncSpaceWarning() {
       if (!this.library || !this.syncCopyTracks.length) return false;

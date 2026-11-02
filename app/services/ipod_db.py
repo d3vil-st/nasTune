@@ -70,12 +70,14 @@ async def get_known_ipods(connected_uuids: set[str] | None = None,
                           connected_db_ids: set[int] | None = None) -> list[dict]:
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT id, uuid, model, ipod_name, capacity, first_seen, last_seen, library_json IS NOT NULL FROM ipod_devices ORDER BY last_seen DESC"
+            "SELECT d.id, d.uuid, d.model, d.ipod_name, d.capacity, d.first_seen, d.last_seen, "
+            "d.library_json IS NOT NULL, s.force_aac FROM ipod_devices d "
+            "LEFT JOIN ipod_device_settings s ON s.device_id = d.id ORDER BY d.last_seen DESC"
         ) as cur:
             rows = await cur.fetchall()
     result = []
     for row in rows:
-        device_id, uuid, model, ipod_name, capacity, first_seen, last_seen, has_cache = row
+        device_id, uuid, model, ipod_name, capacity, first_seen, last_seen, has_cache, force_aac = row
         connected = (
             (connected_uuids is not None and uuid in connected_uuids) or
             (connected_db_ids is not None and device_id in connected_db_ids)
@@ -90,6 +92,7 @@ async def get_known_ipods(connected_uuids: set[str] | None = None,
             "last_seen": last_seen,
             "has_cache": bool(has_cache),
             "connected": connected,
+            "force_aac": force_aac,  # None = use global, 0/1 = per-device override
         })
     return result
 

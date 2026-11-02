@@ -268,7 +268,8 @@ class OperationService:
 
     _LOSSLESS_ARGS    = ['--encoder', 'alac', '--disable-encoder-fallback']
     _PASSTHROUGH_ARGS: list[str] = []
-    _LOSSY_ARGS       = ['--encoder', 'fdk-aac', '--encoder-quality', '9', '--disable-encoder-fallback']
+    # ffmpeg 9.1 native aac (NMR coder), bundled statically in gpod-utils >= 1.6.0
+    _LOSSY_ARGS       = ['--encoder', 'aac-ffmpeg', '--encoder-quality', 'cbr256', '--disable-encoder-fallback']
 
     async def _gpod_cp_batch(self, paths: list[str], mount: str, op: _Op, proc_offset: int = 0,
                               *, force_aac: bool = False, threads: int = 0,
@@ -277,8 +278,8 @@ class OperationService:
 
         lossless (FLAC/WAV/…) → ALAC
         passthrough (MP3)      → copied as-is (no encoder args)
-        lossy (AAC/OGG/…)     → fdk-aac
-        force_aac=True         → everything goes through fdk-aac (passthrough ignored)
+        lossy (AAC/OGG/…)     → AAC 256k (ffmpeg native encoder)
+        force_aac=True         → everything goes through AAC 256k (passthrough ignored)
         media_type_args        → e.g. ['--tracks-media-type', 'audiobook']
         """
         paths = list(dict.fromkeys(paths))

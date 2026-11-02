@@ -216,6 +216,7 @@ function settingsModule() {
         if (!r.ok) { alert('Failed to save device settings'); return; }
         this.deviceSettings = JSON.parse(JSON.stringify(this.deviceSettingsDraft));
         this.showDeviceSettings = false;
+        this._loadKnownDevices();  // refresh force_aac override used by the sync size estimate
       } catch (e) { alert('Save device settings failed: ' + e.message); }
     },
 
