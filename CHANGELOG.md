@@ -4,6 +4,13 @@ All notable changes to nasTune are documented here, newest first.
 
 ---
 
+## [v0.11.2] — 2026-11-06
+
+### Changed
+- **Docker image 631 MB → 527 MB** (1.11 GB in v0.11.0). The image now installs **gpod-utils-shared 1.6.3**: every `gpod-*` tool shares one private build of ffmpeg 9.1 instead of each embedding its own copy (~9 MB vs ~50 MB), and the package ships `ffmpeg`/`ffprobe` programs on those same libraries, which nasTune now uses for playback transcoding, cover art and tag reads. The Dockerfile's own ffmpeg build stage (`docker/build-ffmpeg.sh`) is gone — one ffmpeg to maintain, and faster image builds
+
+---
+
 ## [v0.11.1] — 2026-11-05
 
 ### Changed

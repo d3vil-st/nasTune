@@ -1,26 +1,7 @@
-# ── Stage 1: minimal ffmpeg/ffprobe (see docker/build-ffmpeg.sh) ─────────────
-FROM ubuntu:26.04 AS ffmpeg-builder
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends --no-install-suggests \
-        build-essential \
-        ca-certificates \
-        git \
-        nasm \
-        pkg-config \
-        zlib1g-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY docker/build-ffmpeg.sh /tmp/build-ffmpeg.sh
-RUN /tmp/build-ffmpeg.sh /opt/ffmpeg
-
-# ── Stage 2: runtime image ────────────────────────────────────────────────────
 FROM ubuntu:26.04
 
 ARG TARGETARCH=amd64
-ARG GPOD_VERSION=1.6.1
+ARG GPOD_VERSION=1.6.3
 ARG DISTRO=ubuntu26.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -39,13 +20,17 @@ RUN apt-get update \
         dosfstools \
         libgpod-common \
     && curl -fsSL \
-      "https://github.com/d3vil-st/gpod-utils/releases/download/v${GPOD_VERSION}/gpod-utils_${GPOD_VERSION}.${DISTRO}_${TARGETARCH}.deb" \
+      "https://github.com/d3vil-st/gpod-utils/releases/download/v${GPOD_VERSION}/gpod-utils-shared_${GPOD_VERSION}.${DISTRO}_${TARGETARCH}.deb" \
       -o /tmp/gpod-utils.deb \
     && apt-get update \
     && apt-get install -y --no-install-recommends --no-install-suggests /tmp/gpod-utils.deb \
     && rm -rf /tmp/gpod-utils.deb /var/lib/apt/lists/*
 
-COPY --from=ffmpeg-builder /opt/ffmpeg/bin/ffmpeg /opt/ffmpeg/bin/ffprobe /usr/local/bin/
+# gpod-utils-shared: all gpod-* tools share one private minimal ffmpeg 9.1, and it
+# ships ffmpeg/ffprobe programs on those libs (playback transcode, artwork, tag
+# reads) - used instead of the distro ffmpeg package (~355 MB of dependencies)
+RUN ln -s /usr/lib/*/gpod-utils/ffmpeg /usr/lib/*/gpod-utils/ffprobe /usr/local/bin/ \
+    && ffmpeg -hide_banner -version | head -1
 
 WORKDIR /app
 
