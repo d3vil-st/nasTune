@@ -35,7 +35,9 @@ class TranscodeCache:
         try:
             proc = await asyncio.create_subprocess_exec(
                 "ffmpeg", "-hide_banner", "-loglevel", "error",
-                "-i", src, "-c:a", "flac", "-f", "flac", str(tmp),
+                # audio only: the cover would otherwise be re-encoded to PNG for the FLAC
+                # muxer (the image's minimal ffmpeg has no PNG encoder; artwork is served separately)
+                "-i", src, "-map", "0:a:0", "-c:a", "flac", "-f", "flac", str(tmp),
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
             )

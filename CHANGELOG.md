@@ -4,6 +4,14 @@ All notable changes to nasTune are documented here, newest first.
 
 ---
 
+## [v0.11.1] — 2026-11-05
+
+### Changed
+- **Docker image ~43% smaller (1.11 GB → 631 MB).** The distro `ffmpeg` package pulled ~355 MB of dependencies (LLVM and Mesa via libplacebo/Vulkan, flite, x265, SVT-AV1…) for the three things nasTune uses it for: ALAC → FLAC playback transcoding, cover art extraction, and ffprobe tag reads. The Dockerfile now builds a minimal static ffmpeg + ffprobe (`docker/build-ffmpeg.sh`, ffmpeg 9.1, ~5.5 MB each) in a builder stage. Sync transcoding is unaffected — gpod-cp uses its own bundled ffmpeg
+- ALAC → FLAC playback transcoding now converts the audio stream only, instead of also re-encoding the embedded cover into the temporary FLAC
+
+---
+
 ## [v0.11.0] — 2026-11-05
 
 ### Changed

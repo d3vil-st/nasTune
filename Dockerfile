@@ -1,3 +1,22 @@
+# ── Stage 1: minimal ffmpeg/ffprobe (see docker/build-ffmpeg.sh) ─────────────
+FROM ubuntu:26.04 AS ffmpeg-builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends --no-install-suggests \
+        build-essential \
+        ca-certificates \
+        git \
+        nasm \
+        pkg-config \
+        zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY docker/build-ffmpeg.sh /tmp/build-ffmpeg.sh
+RUN /tmp/build-ffmpeg.sh /opt/ffmpeg
+
+# ── Stage 2: runtime image ────────────────────────────────────────────────────
 FROM ubuntu:26.04
 
 ARG TARGETARCH=amd64
@@ -15,7 +34,6 @@ RUN apt-get update \
         less \
         udev \
         util-linux \
-        ffmpeg \
         mount \
         hfsprogs \
         dosfstools \
@@ -26,6 +44,8 @@ RUN apt-get update \
     && apt-get update \
     && apt-get install -y --no-install-recommends --no-install-suggests /tmp/gpod-utils.deb \
     && rm -rf /tmp/gpod-utils.deb /var/lib/apt/lists/*
+
+COPY --from=ffmpeg-builder /opt/ffmpeg/bin/ffmpeg /opt/ffmpeg/bin/ffprobe /usr/local/bin/
 
 WORKDIR /app
 
