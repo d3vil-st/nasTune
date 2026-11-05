@@ -626,9 +626,14 @@ async def run_auto_sync(body: AutoSyncBody):
     if rescanned:
         log.info("auto-sync: rescanned source(s): %s", ", ".join(rescanned))
     groups = await compute_auto_sync_paths(lib, db_id, "ipod")
+    from app.services.sync_failures import filter_known_bad
+    groups, known_bad = await filter_known_bad(groups)
     total = sum(len(p) for p in groups.values())
     if not total:
-        return {"ok": True, "queued": 0, "message": "Nothing to sync"}
+        msg = "Nothing to sync"
+        if known_bad:
+            msg += f" ({len(known_bad)} file(s) skipped: failed in an earlier sync, unchanged since)"
+        return {"ok": True, "queued": 0, "message": msg}
     device_id = _resolve_device_id(devnode)
     try:
         mount = await device_service.ensure_mounted(devnode)
@@ -638,6 +643,7 @@ async def run_auto_sync(body: AutoSyncBody):
         [], [], mount,
         device_id=device_id, copy_track_count=total,
         ipod_db_id=db_id, devnode=devnode, copy_groups=groups,
+        skipped_known_bad=known_bad,
     )
     return {"ok": True, "queued": total}
 

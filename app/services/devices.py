@@ -624,6 +624,11 @@ class DeviceService:
                 log.info("auto-sync on connect: rescanned source(s): %s", ", ".join(rescanned))
 
             groups = await compute_auto_sync_paths(lib, info.ipod_db_id or db_id, "ipod")
+            from app.services.sync_failures import filter_known_bad
+            groups, known_bad = await filter_known_bad(groups)
+            if known_bad:
+                log.info("auto-sync on connect: %s — skipping %d file(s) that failed before",
+                         devnode, len(known_bad))
             total = sum(len(p) for p in groups.values())
             if not total:
                 log.info("auto-sync on connect: %s — nothing to sync", devnode)
@@ -637,6 +642,7 @@ class DeviceService:
                 [], [], mount,
                 device_id=device_id, copy_track_count=total,
                 ipod_db_id=info.ipod_db_id or db_id, devnode=devnode, copy_groups=groups,
+                skipped_known_bad=known_bad,
             )
         except Exception:
             log.exception("auto-sync on connect failed for %s", devnode)

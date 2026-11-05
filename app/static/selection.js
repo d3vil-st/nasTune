@@ -558,6 +558,7 @@ function selectionModule() {
             // Replacing the whole object would fire every effect that reads any currentOp property.
             existing.processed = op.processed;
             existing.current = op.current;
+            existing.failed_count = op.failed_count;
           } else {
             this.currentOp = op;
           }

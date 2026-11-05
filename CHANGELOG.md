@@ -4,6 +4,17 @@ All notable changes to nasTune are documented here, newest first.
 
 ---
 
+## [v0.11.0] — 2026-11-05
+
+### Changed
+- **One bad file no longer aborts a sync.** gpod-cp already skips a track it can't read, transcode or copy and commits the rest, but nasTune treated any shortfall as a failed batch and dropped every remaining batch plus the playlist / rating / played / smart-playlist steps. Failed tracks are now collected per line and the sync carries on; it finishes as done with an amber "⚠ N failed" in the status bar and log, and the skipped files with reasons at the end of the op log (and in op history)
+- A sync still aborts — stopping gpod-cp with SIGINT so it commits what it already copied — on failures that would hit every remaining track: iPod out of space, iTunesDB write failure, requested encoder unavailable, a non-zero gpod-cp exit, or 25 tracks failing in a row
+
+### Added
+- Files gpod-cp can't read or transcode (corrupt, no audio stream) are remembered; **auto-sync skips them until the file changes** (mtime/size) so one broken file isn't retried and reported on every connect. Manual syncs always retry, and a successful copy clears the record
+
+---
+
 ## [v0.10.2] — 2026-11-02
 
 ### Added

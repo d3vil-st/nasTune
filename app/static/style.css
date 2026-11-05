@@ -1093,6 +1093,7 @@
     .op-log-badge-run { background: rgba(48,209,88,.15); color: #30d158; }
     .op-log-badge-done { background: rgba(48,209,88,.15); color: #30d158; }
     .op-log-badge-err { background: rgba(255,69,58,.15); color: #ff453a; }
+    .op-log-badge-warn { background: rgba(255,159,10,.15); color: #ff9f0a; }
     .op-log-body {
       flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
       padding: 14px 16px;
@@ -1169,6 +1170,11 @@
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
       color: var(--muted);
+    }
+    .statusbar-op-failed {
+      flex-shrink: 0;
+      white-space: nowrap;
+      color: #ff9f0a;
     }
     .statusbar-op-current {
       max-width: 160px;

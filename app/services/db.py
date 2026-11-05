@@ -217,6 +217,14 @@ CREATE TABLE IF NOT EXISTS smart_playlists (
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS sync_failures (
+    path       TEXT PRIMARY KEY,
+    file_mtime REAL NOT NULL,
+    size       INTEGER NOT NULL,
+    reason     TEXT,
+    failed_at  INTEGER NOT NULL
+);
 """
 
 

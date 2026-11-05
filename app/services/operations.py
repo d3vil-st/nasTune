@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import shutil
+import signal
 import time
 from pathlib import Path
 
@@ -90,6 +91,8 @@ def _save_op_history(op: "_Op", device_id: str) -> None:
         "finished_at": finished_at,
         "duration_s": round(finished_at - op.started_at, 1),
         "error": op.error,
+        "failed_count": len(op.failed),
+        "failed": op.failed,
         "log": op.log,
     }
     (dir_path / f"{ts}.json").write_text(json.dumps(record, ensure_ascii=False))
@@ -99,6 +102,12 @@ def _save_op_history(op: "_Op", device_id: str) -> None:
 _PROGRESS_RE = re.compile(r'^\[\s*\d+/\d+\]')
 _PROGRESS_NM_RE = re.compile(r'^\[\s*(\d+)/(\d+)\]')
 _TITLE_ARTIST_RE = re.compile(r"title='(.*?)'\s+artist='(.*?)'")
+# gpod-cp per-track line: "[  N/M]  /source/path -> { ... }"
+_CP_TRACK_RE = re.compile(r'^\[\s*\d+/\d+\]\s+(.*?) -> (\{.*)$')
+# Lines meaning every remaining track would fail too — stop gpod-cp and abort the sync
+_CP_FATAL_MARKERS = ("failed write iPod database", "transcoding NOT available", "No space left on device")
+# Consecutive failed tracks (no success/duplicate in between) treated as systemic
+CP_FAIL_STREAK_LIMIT = 25
 
 _LOSSLESS_EXTS    = frozenset({'.flac', '.wav', '.aiff', '.aif', '.ape', '.wv'})
 _PASSTHROUGH_EXTS = frozenset({'.mp3'})
@@ -165,6 +174,11 @@ class _Op:
         self.error: str | None = None
         self.log: list[str] = []
         self.started_at = time.time()
+        # Tracks gpod-cp skipped; the sync carries on past them
+        self.failed: list[dict] = []
+        self._fail_streak = 0
+        self._bad_files: list[tuple[str, str]] = []  # unreadable/untranscodable → sync_failures
+        self._copied: list[str] = []                 # copied or duplicate → clears sync_failures
 
     def to_dict(self) -> dict:
         return {
@@ -174,6 +188,8 @@ class _Op:
             "processed": self.processed,
             "current": self.current,
             "error": self.error,
+            "failed_count": len(self.failed),
+            "failed": self.failed,
             "log": self.log,
             "started_at": self.started_at,
         }
@@ -192,6 +208,19 @@ async def _finish_device_op(devnode: str) -> None:
     await device_service.release_mount(devnode)
 
 
+async def _update_sync_failures(op: _Op, *, record: bool) -> None:
+    """Clear sync_failures for files that copied; record unreadable/untranscodable
+    ones (only when the sync wasn't aborted, so a systemic failure such as a missing
+    encoder doesn't blacklist healthy files). Non-fatal."""
+    from app.services import sync_failures
+    try:
+        await sync_failures.clear(op._copied)
+        if record:
+            await sync_failures.record(op._bad_files)
+    except Exception as exc:
+        log.warning("sync_failures update failed: %s", exc)
+
+
 class OperationService:
     def __init__(self) -> None:
         self._op: _Op | None = None
@@ -206,6 +235,7 @@ class OperationService:
             return None
         d = self._op.to_dict()
         del d["log"]
+        del d["failed"]
         return d
 
     def current_log(self, from_line: int = 0) -> dict:
@@ -223,14 +253,18 @@ class OperationService:
         self._op = op
         asyncio.create_task(self._do_delete(op, track_ids, mount, device_id, devnode))
 
-    async def run_sync(self, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "", copy_track_count: int | None = None, media_type: str = "music", ipod_db_id: int | None = None, devnode: str = "", playlist: dict | None = None, copy_groups: dict[str, list[str]] | None = None) -> None:
+    async def run_sync(self, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "", copy_track_count: int | None = None, media_type: str = "music", ipod_db_id: int | None = None, devnode: str = "", playlist: dict | None = None, copy_groups: dict[str, list[str]] | None = None, skipped_known_bad: list[tuple[str, str]] | None = None) -> None:
         """copy_groups ({media_type: [paths]}) overrides copy_paths/media_type — used by
-        auto-sync where one run mixes music/podcast/audiobook rules."""
+        auto-sync where one run mixes music/podcast/audiobook rules.
+        skipped_known_bad: (path, reason) auto-sync left out via sync_failures — logged only."""
         if copy_groups:
             copy_paths = [p for paths in copy_groups.values() for p in paths]
         total = (copy_track_count if copy_track_count is not None else len(copy_paths)) + len(delete_ids)
         op = _Op("sync", total)
         self._op = op
+        if skipped_known_bad:
+            op.log.append(f"Skipping {len(skipped_known_bad)} file(s) that failed in an earlier sync and haven't changed since:")
+            op.log.extend(f"  {p} — {reason}" for p, reason in skipped_known_bad)
         asyncio.create_task(self._do_sync(op, copy_paths, delete_ids, mount, device_id, media_type, ipod_db_id, devnode, playlist, copy_groups))
 
     async def _gpod_rm_batch(self, track_ids: list, mount: str, op: _Op) -> str | None:
@@ -290,6 +324,9 @@ class OperationService:
         native_flac=True       → FLAC copied as-is (--native-flac, wins over force_aac);
                                  out-of-spec FLAC (>48 kHz, surround) still transcoded
         media_type_args        → e.g. ['--tracks-media-type', 'audiobook']
+
+        Returns (fatal_error, track_count). Individual failed tracks are not fatal —
+        they land in op.failed and the remaining groups still run.
         """
         paths = list(dict.fromkeys(paths))
         lossless, flac, passthrough, lossy = [], [], [], []
@@ -315,19 +352,28 @@ class OperationService:
         ):
             if not group:
                 continue
-            err, n = await self._gpod_cp_exec(
+            fatal, n = await self._gpod_cp_exec(
                 group, extra_args, mount, op, proc_offset + total,
                 threads=threads, media_type_args=media_type_args,
             )
             total += n
-            if err:
-                return err, total
+            if fatal:
+                return fatal, total
         return None, total
 
     async def _gpod_cp_exec(self, paths: list[str], extra_args: list[str], mount: str, op: _Op,
                              proc_offset: int = 0, *, threads: int = 0,
                              media_type_args: list[str] = ()) -> tuple[str | None, int]:
-        """Execute gpod-cp with given extra args. Returns (error, track_count)."""
+        """Execute gpod-cp with given extra args. Returns (fatal_error, track_count).
+
+        gpod-cp skips a track it can't read, transcode or copy, keeps going and
+        commits the rest — exit status only reflects the final iTunesDB write.
+        Per-track failures are recorded in op.failed and are not fatal. Fatal:
+        non-zero exit, a _CP_FATAL_MARKERS line, CP_FAIL_STREAK_LIMIT failures in
+        a row, or tracks missing from the summary without a failure line. On a
+        mid-run fatal gpod-cp gets SIGINT: it stops picking up new tracks and
+        still writes the iTunesDB for what it already copied.
+        """
         thread_args = ['--threads', str(threads)] if threads > 0 else []
         all_flags = extra_args + thread_args + media_type_args
         cmd_str = f"gpod-cp {' '.join(all_flags)} {' '.join(paths)}"
@@ -346,8 +392,19 @@ class OperationService:
         )
         batch_lines = []
         batch_total = 0
+        run_failed = 0
+        fatal: str | None = None
+
+        def stop(reason: str) -> None:
+            nonlocal fatal
+            if fatal is None:
+                fatal = reason
+                op.log.append(f"  ERROR: {reason} — stopping gpod-cp")
+                if proc.returncode is None:
+                    proc.send_signal(signal.SIGINT)
+
         async for raw in proc.stdout:
-            line = raw.decode().rstrip()
+            line = raw.decode(errors="replace").rstrip()
             batch_lines.append(line)
             op.log.append(line)
             nm = _PROGRESS_NM_RE.match(line)
@@ -360,22 +417,56 @@ class OperationService:
                 else:
                     path_part = line.split("->")[0].strip().split()[-1] if "->" in line else ""
                     op.current = os.path.basename(path_part) if path_part else line
+            reason = None
+            tm = _CP_TRACK_RE.match(line)
+            if tm:
+                src, rest = tm.group(1), tm.group(2)
+                if rest.startswith("{ } "):
+                    # "{ } track err - …" (unreadable / transcode failed) or "{ } No such file or directory"
+                    reason = rest[4:].strip()
+                    if reason.startswith("track err"):
+                        op._bad_files.append((src, reason))
+                elif "ipod_path=N/A }" in rest:
+                    # file copy to the iPod failed
+                    reason = rest.split("ipod_path=N/A }", 1)[1].strip() or "copy failed"
+                else:
+                    reason = None  # copied, or "*** DUPL ***" (already on the iPod)
+                if reason is None:
+                    op._fail_streak = 0
+                    op._copied.append(src)
+                else:
+                    run_failed += 1
+                    op._fail_streak += 1
+                    op.failed.append({"path": src, "reason": reason})
+                    if op._fail_streak >= CP_FAIL_STREAK_LIMIT:
+                        stop(f"{op._fail_streak} tracks failed in a row")
+            for marker in _CP_FATAL_MARKERS:
+                if marker in line:
+                    stop(f"{reason} ({os.path.basename(tm.group(1))})" if reason else line.strip())
+                    break
         await proc.wait()
         output = "\n".join(batch_lines)
         if output:
             log.debug("gpod-cp output:\n%s", output)
+        if fatal:
+            log.error("gpod-cp aborted: %s", fatal)
+            return fatal, batch_total
         if proc.returncode != 0:
-            return output or f"gpod-cp exited {proc.returncode}", batch_total
-        # "N/M items (size)  dupl=D" — duplicates count as success
+            tail = "\n".join(batch_lines[-5:])
+            return tail or f"gpod-cp exited {proc.returncode}", batch_total
+        # "N/M items (size)  dupl=D" — duplicates count as success; failed tracks
+        # were reported per line above. Anything else unaccounted is unexplained.
         m = re.search(r'(\d+)/(\d+)\s+items.*?dupl=(\d+)', output)
         if m:
             added, total, dupl = int(m.group(1)), int(m.group(2)), int(m.group(3))
             if batch_total == 0:
                 batch_total = total
-            if added + dupl < total:
-                msg = f"gpod-cp partial: copied {added + dupl}/{total} items ({dupl} duplicate(s))"
+            if added + dupl + run_failed < total:
+                msg = f"gpod-cp partial: copied {added + dupl}/{total} items ({dupl} duplicate(s), {run_failed} failed)"
                 log.warning("%s\n%s", msg, output)
                 return msg, batch_total
+            if run_failed:
+                log.warning("gpod-cp: %d/%d track(s) failed, continuing", run_failed, total)
         return None, batch_total
 
     async def _do_delete(self, op: _Op, track_ids: list, mount: str, device_id: str = "", devnode: str = "") -> None:
@@ -785,6 +876,13 @@ class OperationService:
             if devnode:
                 await _finish_device_op(devnode)
 
+    @staticmethod
+    def _log_failed_tracks(op: _Op) -> None:
+        if not op.failed:
+            return
+        op.log.append(f"WARN: {len(op.failed)} track(s) could not be copied and were skipped:")
+        op.log.extend(f"  {f['path']} — {f['reason']}" for f in op.failed)
+
     async def _do_sync(self, op: _Op, copy_paths: list[str], delete_ids: list, mount: str, device_id: str = "", media_type: str = "music", ipod_db_id: int | None = None, devnode: str = "", playlist: dict | None = None, copy_groups: dict[str, list[str]] | None = None) -> None:
         try:
             force_aac, threads, native_flac = await _load_sync_settings(ipod_db_id=ipod_db_id)
@@ -822,10 +920,15 @@ class OperationService:
                             op.status = "error"
                             op.error = err
                             log.error("gpod-cp batch failed: %s", err)
+                            self._log_failed_tracks(op)
+                            await _update_sync_failures(op, record=False)
                             if device_id:
                                 _save_op_history(op, device_id)
                             return
                         i += BATCH_SIZE
+
+                self._log_failed_tracks(op)
+                await _update_sync_failures(op, record=True)
 
                 lib = None
                 if playlist:
@@ -846,7 +949,8 @@ class OperationService:
 
                 op.status = "done"
                 op.current = ""
-                log.info("Sync done: deleted %d, copied %d", len(delete_ids), len(copy_paths))
+                log.info("Sync done: deleted %d, copied %d path(s), %d track(s) failed",
+                         len(delete_ids), len(copy_paths), len(op.failed))
                 if device_id:
                     _save_op_history(op, device_id)
         finally:

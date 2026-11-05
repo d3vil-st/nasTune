@@ -1490,6 +1490,7 @@
               :style="currentOp.kind === 'delete' ? 'color:#ff453a' : 'color:#30d158'"
               x-text="opKindLabel(currentOp.kind, 'progressive')"></span>
         <span class="statusbar-op-count" x-show="currentOp.total > 0" x-text="currentOp.processed + ' / ' + currentOp.total"></span>
+        <span class="statusbar-op-failed" x-show="currentOp.failed_count > 0" x-text="currentOp.failed_count + ' failed'"></span>
         <template x-if="currentOp.current">
           <span class="statusbar-op-current" x-text="currentOp.current"></span>
         </template>
@@ -1500,10 +1501,11 @@
       <span class="statusbar-op" style="cursor:pointer"
             title="Click to view output" @click="openLastOpLog()">
         <span style="flex-shrink:0"
-              :style="lastOp.status === 'done' ? 'color:#30d158' : 'color:#ff453a'"
-              x-text="lastOp.status === 'done' ? '✓' : '✗'"></span>
+              :style="lastOp.status !== 'done' ? 'color:#ff453a' : lastOp.failed_count > 0 ? 'color:#ff9f0a' : 'color:#30d158'"
+              x-text="lastOp.status !== 'done' ? '✗' : lastOp.failed_count > 0 ? '⚠' : '✓'"></span>
         <span style="color:var(--muted);flex-shrink:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px"
               x-text="opKindLabel(lastOp.kind) + (lastOp.total > 0 ? ' · ' + lastOp.total + ' tracks' : '') + (fmtOpDuration(lastOp) ? ' · ' + fmtOpDuration(lastOp) : '')"></span>
+        <span class="statusbar-op-failed" x-show="lastOp.failed_count > 0" x-text="lastOp.failed_count + ' failed'"></span>
         <span style="color:var(--dim);flex-shrink:0;font-variant-numeric:tabular-nums" x-text="fmtAgo(lastOp.finished_at)"></span>
       </span>
     </template>
@@ -1900,6 +1902,8 @@
           <span x-show="(historyViewOp || currentOp).status === 'running'" class="op-log-badge op-log-badge-run">running</span>
           <span x-show="(historyViewOp || currentOp).status === 'done'"    class="op-log-badge op-log-badge-done">done</span>
           <span x-show="(historyViewOp || currentOp).status === 'error'"   class="op-log-badge op-log-badge-err">error</span>
+          <span x-show="(historyViewOp || currentOp).failed_count > 0"     class="op-log-badge op-log-badge-warn"
+                x-text="(historyViewOp || currentOp).failed_count + ' failed'"></span>
           <button class="modal-close" @click="showOpLog = false; historyViewOp = null">&#x2715;</button>
         </div>
         <pre class="op-log-body" x-ref="opLogEl"></pre>
